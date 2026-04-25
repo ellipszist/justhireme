@@ -1,0 +1,66 @@
+# ─── Logs ───
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ─── Node / Vite ───
+node_modules
+dist
+dist-ssr
+*.local
+
+# ─── Editor / OS ───
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+
+# ─── Env / secrets ───
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+
+# ─── Python (backend) ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Rust / Tauri ───
+src-tauri/target/
+src-tauri/gen/schemas/
+src-tauri/WixTools/
+
+# Tauri build resources we don't want to commit
+src-tauri/resources/python-runtime/*
+!src-tauri/resources/python-runtime/.gitkeep
+src-tauri/resources/bin/chromium/*
+!src-tauri/resources/bin/chromium/.gitkeep
+
+# ─── Local data / DBs ───
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+BoomBoom/
