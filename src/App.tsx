@@ -1393,6 +1393,7 @@ function ApprovalDrawer({ j, port, onClose, onFired }: {
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfLoadErr, setPdfLoadErr] = useState<string | null>(null);
   const [generateErr, setGenerateErr] = useState<string | null>(null);
+  const [fireErr, setFireErr] = useState<string | null>(null);
 
   const resumeReady = Boolean(j.resume_asset || j.asset);
   const coverReady = Boolean(j.cover_letter_asset);
@@ -1437,10 +1438,18 @@ function ApprovalDrawer({ j, port, onClose, onFired }: {
   const fire = async () => {
     if (!canFire) return;
     setFiring(true);
+    setFireErr(null);
     try {
-      await fetch(`http://127.0.0.1:${port}/api/v1/fire/${j.job_id}`, { method: "POST" });
+      const r = await fetch(`http://127.0.0.1:${port}/api/v1/fire/${j.job_id}`, { method: "POST" });
+      if (!r.ok) {
+        const detail = await r.json().then(d => d.detail).catch(() => "");
+        throw new Error(detail || `Server returned ${r.status}`);
+      }
       setDone(true); setTimeout(onFired, 1500);
-    } catch { setFiring(false); }
+    } catch (err) {
+      setFireErr(err instanceof Error ? err.message : "Fire failed");
+      setFiring(false);
+    }
   };
 
   const generatePdf = async () => {
@@ -1656,6 +1665,11 @@ function ApprovalDrawer({ j, port, onClose, onFired }: {
                     <button className="btn btn-accent" onClick={fire} disabled={!canFire} style={{ fontSize: 15, padding: "12px 24px", width: "100%", cursor: canFire ? "pointer" : "not-allowed", opacity: canFire ? 1 : 0.58, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                       <Icon name="fire" size={15} color="#fff" /> {firing ? "Firing..." : "Fire Application"}
                     </button>
+                    {fireErr ? (
+                      <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--bad)", lineHeight: 1.45 }}>
+                        {fireErr}
+                      </div>
+                    ) : null}
                     {!resumeReady || !coverReady ? (
                       <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
                         Generate the resume and cover letter before firing the application.
@@ -1698,7 +1712,10 @@ export default function App() {
     setScanning(true); setScanErr(null);
     try {
       const r = await fetch(`http://127.0.0.1:${port}/api/v1/scan`, { method: "POST" });
-      if (!r.ok) throw new Error("Backend unreachable");
+      if (!r.ok) {
+        const detail = await r.json().then(d => d.detail).catch(() => "");
+        throw new Error(detail || "Backend unreachable");
+      }
     } catch (e: any) {
       setScanErr(e.message || "Scan failed"); setScanning(false);
     }

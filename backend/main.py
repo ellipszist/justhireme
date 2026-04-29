@@ -9,7 +9,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -48,8 +48,9 @@ class _CM:
 cm = _CM()
 
 # ── Scan stop flag ─────────────────────────────────────────────────────────────
-# Set by /api/v1/scan/stop; cleared at the start of every _run_scan call.
+# Set by /api/v1/scan/stop; cleared when a new scan is accepted.
 _scan_stop = asyncio.Event()
+_scan_task: asyncio.Task | None = None
 
 
 async def _ghost_tick():
@@ -362,17 +363,33 @@ async def delete_project_endpoint(pid: str):
 
 
 @app.post("/api/v1/scan")
-async def scan(bt: BackgroundTasks):
+async def scan():
+    global _scan_task
+    if _scan_task and not _scan_task.done():
+        raise HTTPException(status_code=409, detail="Scan already running")
     _scan_stop.clear()
-    bt.add_task(_run_scan)
+    _scan_task = asyncio.create_task(_run_scan_task())
     return {"status": "scanning"}
 
 
 @app.post("/api/v1/scan/stop")
 async def stop_scan():
+    if not _scan_task or _scan_task.done():
+        return {"status": "idle"}
     _scan_stop.set()
     await cm.broadcast({"type": "agent", "event": "eval_done", "msg": "Scan stopped by user."})
-    return {"status": "stopped"}
+    return {"status": "stopping"}
+
+
+async def _run_scan_task():
+    global _scan_task
+    try:
+        await _run_scan()
+    except Exception as exc:
+        print(f"[scan] failed: {exc}", file=sys.stderr)
+        await cm.broadcast({"type": "agent", "event": "eval_done", "msg": f"Scan failed: {exc}"})
+    finally:
+        _scan_task = None
 
 
 async def _run_scan():
@@ -500,10 +517,34 @@ async def ingest(
             os.unlink(pdf_path)
 
 
+def _asset_ready(path: str) -> bool:
+    return bool(path) and os.path.isfile(path)
+
+
+def _fire_blocker(lead: dict, asset: str) -> tuple[int, str]:
+    if not lead:
+        return 404, "Lead not found"
+    if lead.get("status") == "applied":
+        return 409, "Lead is already marked applied"
+    if not lead.get("url"):
+        return 409, "Lead has no application URL"
+    if not _asset_ready(asset):
+        return 409, "Generate a resume before firing this application"
+    cover = lead.get("cover_letter_asset") or lead.get("cover_letter_path") or ""
+    if not _asset_ready(cover):
+        return 409, "Generate a cover letter before firing this application"
+    return 0, ""
+
+
 @app.post("/api/v1/fire/{job_id}")
 async def fire(job_id: str, bt: BackgroundTasks):
+    from db.client import get_lead_for_fire
+    lead, asset = await asyncio.to_thread(get_lead_for_fire, job_id)
+    status, detail = _fire_blocker(lead, asset)
+    if detail:
+        raise HTTPException(status_code=status, detail=detail)
     bt.add_task(_actuate, job_id)
-    return {"status": "fired", "job_id": job_id}
+    return {"status": "firing", "job_id": job_id}
 
 
 async def _generate_one(jid: str):
@@ -541,12 +582,24 @@ async def _generate_one(jid: str):
 async def _actuate(jid: str):
     from agents.actuator import run as _act
     from db.client import get_lead_for_fire, mark_applied
-    lead, asset = get_lead_for_fire(jid)
-    await cm.broadcast({"type": "agent", "event": "actuating", "job_id": jid,
-                        "msg": f"Opening browser for {lead.get('title','')} @ {lead.get('company','')}"})
-    ok = await asyncio.to_thread(_act, lead, asset)
+    try:
+        lead, asset = await asyncio.to_thread(get_lead_for_fire, jid)
+        _status, detail = _fire_blocker(lead, asset)
+        if detail:
+            await cm.broadcast({"type": "agent", "event": "failed", "job_id": jid,
+                                "msg": f"Submission blocked for {jid}: {detail}"})
+            return
+
+        await cm.broadcast({"type": "agent", "event": "actuating", "job_id": jid,
+                            "msg": f"Opening browser for {lead.get('title','')} @ {lead.get('company','')}"})
+        ok = await asyncio.to_thread(_act, lead, asset)
+    except Exception as exc:
+        await cm.broadcast({"type": "agent", "event": "failed", "job_id": jid,
+                            "msg": f"Submission failed for {jid}: {exc}"})
+        return
+
     if ok:
-        mark_applied(jid)
+        await asyncio.to_thread(mark_applied, jid)
         await cm.broadcast({"type": "agent", "event": "applied", "job_id": jid,
                             "msg": f"Application submitted for {jid}"})
     else:

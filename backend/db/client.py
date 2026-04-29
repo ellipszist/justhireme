@@ -96,8 +96,8 @@ def save_lead(jid: str, t: str, co: str, u: str, plat: str, desc: str = ""):
 
 def update_lead_score(jid: str, s: int, r: str, match_points: list | None = None, gaps: list | None = None):
     status = "tailoring" if s >= 76 else "discarded"
-    mp  = ",".join(match_points) if match_points else ""
-    gps = ",".join(gaps) if gaps else ""
+    mp  = _json_dumps_list(match_points)
+    gps = _json_dumps_list(gaps)
     c = _sq.connect(sql)
     c.execute(
         "UPDATE leads SET status=?, score=?, reason=?, match_points=?, gaps=? WHERE job_id=?",
@@ -162,10 +162,10 @@ def get_all_leads() -> list:
             "job_id": r[0], "title": r[1], "company": r[2], "url": r[3],
             "platform": r[4], "status": r[5], "score": r[6] or 0,
             "reason": r[7] or "",
-            "match_points": [m for m in (r[8] or "").split(",") if m],
+            "match_points": _json_list(r[8] or "[]"),
             "asset": r[9] or "",
             "description": r[10] or "",
-            "gaps": [g for g in (r[11] or "").split(",") if g],
+            "gaps": _json_list(r[11] or "[]"),
             "resume_asset": r[9] or "",
             "cover_letter_asset": r[12] or "",
             "selected_projects": _json_list(r[13] or "[]"),
@@ -175,23 +175,132 @@ def get_all_leads() -> list:
 
 
 def _json_list(s: str) -> list:
+    if isinstance(s, list):
+        return s
+    raw = str(s or "").strip()
+    if not raw:
+        return []
     try:
-        v = json.loads(s or "[]")
+        v = json.loads(raw)
         return v if isinstance(v, list) else []
     except Exception:
-        return []
+        return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def _json_dumps_list(items: list | None) -> str:
+    return json.dumps([str(x).strip() for x in (items or []) if str(x).strip()], ensure_ascii=False)
+
+
+def _read_pdf_text(path: str) -> str:
+    if not path or not os.path.exists(path):
+        return ""
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(path)
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception:
+        return ""
+
+
+def _pick_first_line(text: str) -> str:
+    for line in (text or "").splitlines():
+        value = line.strip()
+        if value and len(value) <= 80 and "@" not in value and "http" not in value.lower():
+            return value
+    return ""
+
+
+def _contact_from_text(text: str) -> dict:
+    import re
+
+    email = ""
+    m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text or "")
+    if m:
+        email = m.group(0)
+
+    phone = ""
+    m = re.search(r"(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?){2,5}\d{2,4}", text or "")
+    if m:
+        phone = m.group(0).strip()
+
+    urls = re.findall(r"(?:https?://)?(?:www\.)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:/[^\s),;]*)?", text or "")
+    linkedin = next((u for u in urls if "linkedin.com" in u.lower()), "")
+    github = next((u for u in urls if "github.com" in u.lower()), "")
+    website = next((u for u in urls if u not in {linkedin, github} and "@" not in u), "")
+
+    def norm_url(u: str) -> str:
+        if not u:
+            return ""
+        return u if u.startswith(("http://", "https://")) else f"https://{u}"
+
+    return {
+        "email": email,
+        "phone": phone,
+        "linkedin_url": norm_url(linkedin),
+        "github": norm_url(github),
+        "website": norm_url(website or github or linkedin),
+    }
 
 
 def get_lead_for_fire(jid: str) -> tuple:
     c = _sq.connect(sql)
     row = c.execute(
-        "SELECT job_id,title,company,url,platform,asset_path FROM leads WHERE job_id=?", (jid,)
+        "SELECT job_id,title,company,url,platform,status,score,reason,match_points,asset_path,description,gaps,cover_letter_path,selected_projects FROM leads WHERE job_id=?",
+        (jid,)
     ).fetchone()
     c.close()
     if not row:
         return {}, ""
-    lead = {"job_id": row[0], "title": row[1], "company": row[2], "url": row[3], "platform": row[4]}
-    path = row[5] or ""
+
+    path = row[9] or ""
+    cover_path = row[12] or ""
+    try:
+        profile = get_profile()
+    except Exception:
+        profile = {}
+    resume_text = _read_pdf_text(path)
+    cover_text = _read_pdf_text(cover_path)
+    try:
+        settings = get_settings()
+    except Exception:
+        settings = {}
+    contact = _contact_from_text("\n".join([
+        resume_text,
+        cover_text,
+        profile.get("s", ""),
+        "\n".join(str(p.get("repo", "")) for p in profile.get("projects", [])),
+    ]))
+
+    name = (profile.get("n") or settings.get("candidate_name") or _pick_first_line(resume_text)).strip()
+    parts = name.split()
+    first_name = parts[0] if parts else ""
+    last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+    lead = {
+        "job_id": row[0], "title": row[1], "company": row[2], "url": row[3],
+        "platform": row[4], "status": row[5], "score": row[6] or 0,
+        "reason": row[7] or "",
+        "match_points": _json_list(row[8] or "[]"),
+        "asset": path,
+        "resume_asset": path,
+        "asset_path": path,
+        "description": row[10] or "",
+        "gaps": _json_list(row[11] or "[]"),
+        "cover_letter_asset": cover_path,
+        "cover_letter_path": cover_path,
+        "selected_projects": _json_list(row[13] or "[]"),
+        "profile": profile,
+        "name": name,
+        "candidate_name": name,
+        "first_name": settings.get("first_name") or first_name,
+        "last_name": settings.get("last_name") or last_name,
+        "email": settings.get("candidate_email") or settings.get("email") or contact["email"],
+        "phone": settings.get("candidate_phone") or settings.get("phone") or contact["phone"],
+        "linkedin_url": settings.get("linkedin_url") or settings.get("candidate_linkedin") or contact["linkedin_url"],
+        "website": settings.get("website") or settings.get("portfolio_url") or contact["website"],
+        "github": settings.get("github") or settings.get("github_url") or contact["github"],
+        "cover_letter": cover_text.strip(),
+    }
     return lead, path
 
 
@@ -234,10 +343,10 @@ def get_lead_by_id(jid: str) -> dict:
         "job_id": row[0], "title": row[1], "company": row[2], "url": row[3],
         "platform": row[4], "status": row[5], "score": row[6] or 0,
         "reason": row[7] or "",
-        "match_points": [m for m in (row[8] or "").split(",") if m],
+        "match_points": _json_list(row[8] or "[]"),
         "asset": row[9] or "",
         "description": row[10] or "",
-        "gaps": [g for g in (row[11] or "").split(",") if g],
+        "gaps": _json_list(row[11] or "[]"),
         "resume_asset": row[9] or "",
         "cover_letter_asset": row[12] or "",
         "selected_projects": _json_list(row[13] or "[]"),

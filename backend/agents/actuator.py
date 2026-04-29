@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import os
 import sys
 from pydantic import BaseModel, Field
 from typing import List
@@ -28,8 +29,20 @@ _DOM_MAP = [
 _FILL_DELAY = 500
 
 
+async def _upload_resume(p, asset: str) -> bool:
+    if not asset or not os.path.isfile(asset):
+        return False
+    try:
+        u = p.locator("input[type='file']").first
+        await u.set_input_files(asset, timeout=5000)
+        await p.wait_for_timeout(_FILL_DELAY)
+        return True
+    except Exception:
+        return False
+
+
 async def _fill_dom(p, j: dict, a: str):
-    filled = []
+    result = {"fields": [], "uploaded": False, "vision_actions": 0}
     for sel, key in _DOM_MAP:
         v = j.get(key, "")
         if not v:
@@ -40,17 +53,18 @@ async def _fill_dom(p, j: dict, a: str):
             await el.focus()
             await p.wait_for_timeout(_FILL_DELAY)
             await el.fill(str(v), timeout=3000)
-            filled.append(key)
+            result["fields"].append(key)
             await p.wait_for_timeout(_FILL_DELAY)
         except Exception:
             pass
-    try:
-        u = p.locator("input[type='file']").first
-        await u.set_input_files(a, timeout=5000)
-        await p.wait_for_timeout(_FILL_DELAY)
-    except Exception:
-        pass
-    return filled
+    result["uploaded"] = await _upload_resume(p, a)
+    return result
+
+
+def _ready_to_submit(result: dict) -> bool:
+    return bool(result.get("uploaded")) and (
+        bool(result.get("fields")) or int(result.get("vision_actions") or 0) > 0
+    )
 
 
 class _Act(BaseModel):
@@ -174,7 +188,9 @@ async def _fill_vision(p, j: dict, a: str):
     b64  = base64.standard_b64encode(shot).decode()
     ctx  = (
         f"Name: {j.get('name','')} | Email: {j.get('email','')} | "
-        f"Phone: {j.get('phone','')} | LinkedIn: {j.get('linkedin_url','')}"
+        f"Phone: {j.get('phone','')} | LinkedIn: {j.get('linkedin_url','')} | "
+        f"Website: {j.get('website','')} | GitHub: {j.get('github','')} | "
+        f"Cover letter: {j.get('cover_letter','')[:1500]}"
     )
     acts = await asyncio.to_thread(_vision_actions, b64, ctx)
     for act in acts.actions:
@@ -186,6 +202,7 @@ async def _fill_vision(p, j: dict, a: str):
             await p.wait_for_timeout(200)
             await p.keyboard.type(act.text, delay=40)
             await p.wait_for_timeout(_FILL_DELAY)
+    return len(acts.actions)
 
 
 async def _find_submit(p):
@@ -207,47 +224,70 @@ async def _find_submit(p):
 
 
 async def _run(job: dict, asset: str, dry_run: bool = False) -> bool:
+    if not job.get("url") or not asset or not os.path.isfile(asset):
+        return False
+
     from playwright.async_api import async_playwright
     async with async_playwright() as pw:
         from db.client import get_setting as _gs
         _headed = _gs("headed_browser", "false").lower() == "true"
-        b   = await pw.chromium.launch(headless=not _headed, slow_mo=80 if _headed else 20)
-        ctx = await b.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-        )
-        pg = await ctx.new_page()
-        await pg.goto(job.get("url", ""), wait_until="domcontentloaded", timeout=30000)
-        await pg.wait_for_timeout(2000)
-
-        filled = []
-        try:
-            filled = await _fill_dom(pg, job, asset)
-        except Exception:
-            await _fill_vision(pg, job, asset)
-
-        submit_btn = await _find_submit(pg)
-
-        if dry_run:
-            if submit_btn:
-                await submit_btn.scroll_into_view_if_needed()
-                await submit_btn.evaluate("el => el.style.outline = '3px solid #ef4444'")
-            await pg.wait_for_timeout(4000)
-            await ctx.close()
-            await b.close()
-            return bool(filled)
-
         ok = False
-        if submit_btn:
-            await submit_btn.click(timeout=5000)
-            ok = True
-        await pg.wait_for_timeout(2000)
-        await ctx.close()
-        await b.close()
+        b = None
+        ctx = None
+        try:
+            b   = await pw.chromium.launch(headless=not _headed, slow_mo=80 if _headed else 20)
+            ctx = await b.new_context(
+                viewport={"width": 1280, "height": 900},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+            )
+            pg = await ctx.new_page()
+            await pg.goto(job.get("url", ""), wait_until="domcontentloaded", timeout=30000)
+            await pg.wait_for_timeout(2000)
+
+            filled = {"fields": [], "uploaded": False, "vision_actions": 0}
+            try:
+                filled = await _fill_dom(pg, job, asset)
+            except Exception as exc:
+                print(f"[actuator] DOM fill failed: {exc}", file=sys.stderr)
+
+            if not _ready_to_submit(filled):
+                try:
+                    filled["vision_actions"] = await _fill_vision(pg, job, asset)
+                    if not filled.get("uploaded"):
+                        filled["uploaded"] = await _upload_resume(pg, asset)
+                except Exception as exc:
+                    print(f"[actuator] vision fallback failed: {exc}", file=sys.stderr)
+
+            submit_btn = await _find_submit(pg)
+            ready = _ready_to_submit(filled)
+
+            if dry_run:
+                if submit_btn:
+                    await submit_btn.scroll_into_view_if_needed()
+                    await submit_btn.evaluate("el => el.style.outline = '3px solid #ef4444'")
+                await pg.wait_for_timeout(4000)
+                return bool(submit_btn and ready)
+
+            if submit_btn and ready:
+                await submit_btn.click(timeout=5000)
+                ok = True
+            else:
+                print(
+                    f"[actuator] submit blocked: submit={bool(submit_btn)} "
+                    f"uploaded={bool(filled.get('uploaded'))} fields={filled.get('fields')} "
+                    f"vision_actions={filled.get('vision_actions')}",
+                    file=sys.stderr,
+                )
+            await pg.wait_for_timeout(2000)
+        finally:
+            if ctx:
+                await ctx.close()
+            if b:
+                await b.close()
     return ok
 
 
