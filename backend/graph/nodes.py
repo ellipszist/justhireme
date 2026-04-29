@@ -101,14 +101,25 @@ class GenSt(TypedDict):
 
 
 def generator(s: GenSt) -> GenSt:
-    from agents.generator import run as _gen
-    from db.client import save_asset_path
+    from agents.generator import run_package as _gen
+    from db.client import save_asset_package
     assets = []
     try:
         for lead in (s.get("approved") or []):
-            path = _gen(lead)
-            save_asset_path(lead["job_id"], path)
-            assets.append({"job_id": lead["job_id"], "path": path})
+            package = _gen(lead)
+            save_asset_package(
+                lead["job_id"],
+                package["resume"],
+                package["cover_letter"],
+                package.get("selected_projects", []),
+            )
+            assets.append({
+                "job_id": lead["job_id"],
+                "path": package["resume"],
+                "resume": package["resume"],
+                "cover_letter": package["cover_letter"],
+                "selected_projects": package.get("selected_projects", []),
+            })
         return {**s, "assets": assets, "err": None}
     except Exception as e:
         return {**s, "assets": assets, "err": str(e)}
@@ -138,14 +149,26 @@ class PipeSt(TypedDict):
 
 
 def _gen_pipe(s: PipeSt) -> PipeSt:
-    from agents.generator import run as _gen
-    from db.client import save_asset_path
+    from agents.generator import run_package as _gen
+    from db.client import save_asset_package
     assets = []
     try:
         for lead in (s.get("approved") or []):
-            path = _gen(lead)
-            save_asset_path(lead["job_id"], path)
-            assets.append({"job_id": lead["job_id"], "path": path, "lead": lead})
+            package = _gen(lead)
+            save_asset_package(
+                lead["job_id"],
+                package["resume"],
+                package["cover_letter"],
+                package.get("selected_projects", []),
+            )
+            assets.append({
+                "job_id": lead["job_id"],
+                "path": package["resume"],
+                "resume": package["resume"],
+                "cover_letter": package["cover_letter"],
+                "selected_projects": package.get("selected_projects", []),
+                "lead": lead,
+            })
         return {**s, "assets": assets, "err": None}
     except Exception as e:
         return {**s, "assets": assets, "err": str(e)}

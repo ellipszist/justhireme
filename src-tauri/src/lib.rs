@@ -15,15 +15,24 @@ fn get_sidecar_port(state: State<SidecarPort>) -> Result<u16, String> {
         .ok_or_else(|| "Sidecar port not yet discovered".into())
 }
 
-fn bundled_sidecar_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    let p = app
+fn bundled_python_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    let runtime_dir = app
         .path()
         .resource_dir()
         .ok()?
         .join("resources")
-        .join("python-runtime")
-        .join("python");
-    if p.exists() { Some(p) } else { None }
+        .join("python-runtime");
+
+    let candidates = if cfg!(windows) {
+        vec!["python.exe", "python"]
+    } else {
+        vec!["bin/python3", "bin/python", "python"]
+    };
+
+    candidates
+        .into_iter()
+        .map(|candidate| runtime_dir.join(candidate))
+        .find(|path| path.exists())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -44,18 +53,18 @@ pub fn run() {
                     std::env::current_dir().unwrap_or_default().join("backend")
                 });
 
-            let bundled = bundled_sidecar_path(&handle);
+            let bundled = bundled_python_path(&handle);
             if let Some(ref py) = bundled {
                 eprintln!("[tauri] Using bundled runtime: {}", py.display());
             } else {
                 eprintln!("[tauri] No bundled runtime found — falling back to `uv`");
             }
 
-            let sidecar_cmd = if bundled.is_some() {
+            let sidecar_cmd = if let Some(py) = bundled {
                 handle
                     .shell()
-                    .command("uv")
-                    .args(["run", "python", "main.py"])
+                    .command(py.to_string_lossy().to_string())
+                    .args(["main.py"])
                     .current_dir(&backend_dir)
             } else {
                 handle
@@ -67,7 +76,7 @@ pub fn run() {
 
             let (mut rx, child) = sidecar_cmd
                 .spawn()
-                .expect("Failed to spawn Python sidecar — is `uv` installed?");
+                .expect("Failed to spawn Python sidecar");
 
             // Store child handle so it persists for app lifetime and is killed on drop
             if let Ok(mut guard) = handle.state::<SidecarChild>().0.lock() {

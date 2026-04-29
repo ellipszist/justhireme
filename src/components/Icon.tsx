@@ -126,7 +126,16 @@ export default function Icon({ name, size = 16, stroke = 1.7, color = "currentCo
           <path d="M14 2v6h6" />
         </svg>
       );
+    case "download":
+      return (
+        <svg {...props}>
+          <path d="M12 3v12" />
+          <path d="m7 10 5 5 5-5" />
+          <path d="M5 21h14" />
+        </svg>
+      );
     case "external":
+    case "external-link":
       return (
         <svg {...props}>
           <path d="M15 3h6v6M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />

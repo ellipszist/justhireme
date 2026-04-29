@@ -53,10 +53,10 @@ _scan_stop = asyncio.Event()
 
 
 async def _ghost_tick():
-    from db.client import get_setting, get_settings, get_discovered_leads, update_lead_score, get_profile, save_asset_path
+    from db.client import get_setting, get_settings, get_discovered_leads, update_lead_score, get_profile, save_asset_package
     from agents.scout import run as _scout
     from agents.evaluator import score as _score
-    from agents.generator import run as _gen
+    from agents.generator import run_package as _gen
 
     if get_setting("ghost_mode") != "true":
         return
@@ -119,11 +119,23 @@ async def _ghost_tick():
     generated = []
     for lead in approved:
         try:
-            path = await asyncio.to_thread(_gen, lead)
-            await asyncio.to_thread(save_asset_path, lead["job_id"], path)
-            generated.append({**lead, "asset": path})
+            package = await asyncio.to_thread(_gen, lead)
+            await asyncio.to_thread(
+                save_asset_package,
+                lead["job_id"],
+                package["resume"],
+                package["cover_letter"],
+                package.get("selected_projects", []),
+            )
+            generated.append({
+                **lead,
+                "asset": package["resume"],
+                "resume_asset": package["resume"],
+                "cover_letter_asset": package["cover_letter"],
+                "selected_projects": package.get("selected_projects", []),
+            })
             await cm.broadcast({"type": "agent", "event": "ghost_gen",
-                                "msg": f"Generated PDF for {lead.get('title','?')}"})
+                                "msg": f"Generated resume and cover letter for {lead.get('title','?')}"})
         except Exception as exc:
             await cm.broadcast({"type": "agent", "event": "ghost_error",
                                 "msg": f"Generation failed for {lead.get('title','?')}: {exc}"})
@@ -225,17 +237,24 @@ async def generate_for_lead(job_id: str, bt: BackgroundTasks):
 
 
 @app.get("/api/v1/leads/{job_id}/pdf")
-async def get_lead_pdf(job_id: str):
+async def get_lead_pdf(job_id: str, kind: str = "resume"):
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
     from db.client import get_lead_by_id
     lead = get_lead_by_id(job_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    path = lead.get("asset") or ""
+    if kind in {"cover", "cover_letter", "cover-letter"}:
+        path = lead.get("cover_letter_asset") or ""
+        filename = f"{job_id}_cover_letter.pdf"
+        missing = "Cover letter not generated yet"
+    else:
+        path = lead.get("resume_asset") or lead.get("asset") or ""
+        filename = f"{job_id}_resume.pdf"
+        missing = "Resume not generated yet"
     if not path or not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="PDF not generated yet")
-    return FileResponse(path, media_type="application/pdf", filename=f"{job_id}.pdf")
+        raise HTTPException(status_code=404, detail=missing)
+    return FileResponse(path, media_type="application/pdf", filename=filename)
 
 
 @app.get("/api/v1/template")
@@ -488,8 +507,8 @@ async def fire(job_id: str, bt: BackgroundTasks):
 
 
 async def _generate_one(jid: str):
-    from agents.generator import run as _gen
-    from db.client import get_lead_by_id, save_asset_path, get_setting
+    from agents.generator import run_package as _gen
+    from db.client import get_lead_by_id, save_asset_package, get_setting
     lead = get_lead_by_id(jid)
     if not lead:
         await cm.broadcast({"type": "agent", "event": "gen_error", "msg": f"Lead {jid} not found"})
@@ -498,10 +517,22 @@ async def _generate_one(jid: str):
     await cm.broadcast({"type": "agent", "event": "gen_start",
                         "msg": f"Generating for {lead.get('title','?')} @ {lead.get('company','?')}"})
     try:
-        path = await asyncio.to_thread(_gen, lead, template)
-        save_asset_path(jid, path)
-        await cm.broadcast({"type": "LEAD_UPDATED", "data": {**lead, "asset": path, "status": "approved"}})
-        await cm.broadcast({"type": "agent", "event": "gen_done", "msg": f"PDF ready: {lead.get('title','?')}"})
+        package = await asyncio.to_thread(_gen, lead, template)
+        save_asset_package(
+            jid,
+            package["resume"],
+            package["cover_letter"],
+            package.get("selected_projects", []),
+        )
+        await cm.broadcast({"type": "LEAD_UPDATED", "data": {
+            **lead,
+            "asset": package["resume"],
+            "resume_asset": package["resume"],
+            "cover_letter_asset": package["cover_letter"],
+            "selected_projects": package.get("selected_projects", []),
+            "status": "approved",
+        }})
+        await cm.broadcast({"type": "agent", "event": "gen_done", "msg": f"Resume and cover letter ready: {lead.get('title','?')}"})
     except Exception as exc:
         await cm.broadcast({"type": "agent", "event": "gen_error",
                             "msg": f"Generation failed for {lead.get('title','?')}: {exc}"})

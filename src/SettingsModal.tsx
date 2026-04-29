@@ -140,14 +140,16 @@ function ModelChips({ provider, value, onChange }: { provider: string; value: st
   );
 }
 
-function ApiKeyInput({ value, onChange, provider, isStep }: { value: string; onChange: (v: string) => void; provider: string; isStep?: boolean }) {
+function ApiKeyInput({ value, onChange, provider, isStep, disabled = false, placeholder }: {
+  value: string; onChange: (v: string) => void; provider: string; isStep?: boolean; disabled?: boolean; placeholder?: string;
+}) {
   if (provider === "ollama") return null;
   const ph: Record<string, string> = { anthropic: "sk-ant-••••", groq: "gsk_••••", nvidia: "nvapi-••••", openai: "sk-••••", deepseek: "sk-••••" };
   return (
-    <input type="password" value={value} onChange={e => onChange(e.target.value)}
-      placeholder={isStep ? `API key for ${provider} (blank = use global)` : ph[provider] || "API key"}
+    <input type="password" value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
+      placeholder={placeholder || (isStep ? `API key for ${provider}` : ph[provider] || "API key")}
       className="mono field-input"
-      style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 12 }}
+      style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: disabled ? "var(--paper-3)" : "var(--card)", fontSize: 12, opacity: disabled ? 0.75 : 1, cursor: disabled ? "not-allowed" : "text" }}
     />
   );
 }
@@ -158,8 +160,13 @@ function StepCard({ step, cfg, onChange }: { step: typeof STEPS[0]; cfg: Cfg; on
   const modelKey = `${step.id}_model`    as keyof Cfg;
   const isCustom = !!(cfg[provKey] as string);
   const stepProv = (cfg[provKey] as string) || cfg.llm_provider || "ollama";
-  const enable  = () => onChange(provKey, cfg.llm_provider || "ollama");
-  const disable = () => { onChange(provKey, ""); onChange(apiKey, ""); onChange(modelKey, ""); };
+  const [forceStepKey, setForceStepKey] = useState(false);
+  const usesGlobalKey = stepProv !== "ollama" && !forceStepKey && !(cfg[apiKey] as string);
+  const keySourceLabel = stepProv === cfg.llm_provider
+    ? `Use global ${stepProv} API key`
+    : `Use saved ${stepProv} API key`;
+  const enable  = () => { setForceStepKey(false); onChange(provKey, cfg.llm_provider || "ollama"); };
+  const disable = () => { setForceStepKey(false); onChange(provKey, ""); onChange(apiKey, ""); onChange(modelKey, ""); };
 
   return (
     <div style={{ padding: 14, borderRadius: 14, background: isCustom ? "var(--card)" : "var(--paper-2)", border: `1.5px solid ${isCustom ? `var(--${step.tone})` : "var(--line)"}`, transition: "all .15s ease" }}>
@@ -186,9 +193,36 @@ function StepCard({ step, cfg, onChange }: { step: typeof STEPS[0]; cfg: Cfg; on
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 7 }}>Provider</div>
-            <ProviderPills value={stepProv} onChange={v => onChange(provKey, v)} small />
+            <ProviderPills value={stepProv} onChange={v => { setForceStepKey(false); onChange(provKey, v); onChange(apiKey, ""); }} small />
           </div>
-          <ApiKeyInput value={cfg[apiKey] as string} onChange={v => onChange(apiKey, v)} provider={stepProv} isStep />
+          {stepProv !== "ollama" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--ink-2)", cursor: "pointer", userSelect: "none" }}>
+                <input
+                  type="checkbox"
+                  checked={usesGlobalKey}
+                  onChange={e => {
+                    if (e.target.checked) {
+                      setForceStepKey(false);
+                      onChange(apiKey, "");
+                    } else {
+                      setForceStepKey(true);
+                    }
+                  }}
+                  style={{ width: 14, height: 14, accentColor: "var(--accent)", cursor: "pointer" }}
+                />
+                <span>{keySourceLabel}</span>
+              </label>
+              <ApiKeyInput
+                value={usesGlobalKey ? "" : (cfg[apiKey] as string)}
+                onChange={v => { setForceStepKey(true); onChange(apiKey, v); }}
+                provider={stepProv}
+                isStep
+                disabled={usesGlobalKey}
+                placeholder={usesGlobalKey ? "Using global key; choose any model below" : `Optional ${stepProv} key for this step`}
+              />
+            </div>
+          )}
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 7 }}>Model</div>
             <ModelChips provider={stepProv} value={cfg[modelKey] as string} onChange={v => onChange(modelKey, v)} />
@@ -261,7 +295,7 @@ export default function SettingsModal({ port, onClose }: Props) {
           <div>
             <div className="eyebrow">Configuration</div>
             <h2 style={{ fontSize: 26, marginTop: 2 }}>Settings</h2>
-            <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3 }}>Set a global default, then override each pipeline step independently</div>
+            <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3 }}>Set a global default, then override each step's model, provider, or key independently</div>
           </div>
           <button className="btn btn-icon" onClick={onClose}><Icon name="x" size={15} /></button>
         </div>
@@ -292,7 +326,7 @@ export default function SettingsModal({ port, onClose }: Props) {
 
           {/* 2. Per-step */}
           <div>
-            <SectionLabel label="Per-Step Configuration" sub="toggle any step to give it its own provider, key & model" />
+            <SectionLabel label="Per-Step Configuration" sub="reuse the global key, or give any step its own provider, key & model" />
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {STEPS.map(step => <StepCard key={step.id} step={step} cfg={cfg} onChange={onChange} />)}
             </div>

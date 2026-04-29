@@ -1,11 +1,9 @@
 import asyncio
 import base64
-import anthropic
+import json
+import sys
 from pydantic import BaseModel, Field
 from typing import List
-
-_client = anthropic.Anthropic()
-_MODEL  = "claude-sonnet-4-6"
 
 _DOM_MAP = [
     ("input[name*='first_name']",  "first_name"),
@@ -66,24 +64,36 @@ class _Acts(BaseModel):
     actions: List[_Act] = Field(default_factory=list)
 
 
-async def _fill_vision(p, j: dict, a: str):
-    shot = await p.screenshot(type="png")
-    b64  = base64.standard_b64encode(shot).decode()
-    ctx  = (
-        f"Name: {j.get('name','')} | Email: {j.get('email','')} | "
-        f"Phone: {j.get('phone','')} | LinkedIn: {j.get('linkedin_url','')}"
-    )
-    r = _client.messages.parse(
-        model=_MODEL,
+_VISION_SYSTEM = (
+    "You are a browser automation agent using Set-of-Mark visual grounding. "
+    "Examine the job application form screenshot. "
+    "Return ordered actions (click or type) with exact pixel coordinates (x, y) "
+    "to fill every visible field with the candidate's details. "
+    "For file upload inputs, emit a click action on the upload element. "
+    "kind must be exactly 'click' or 'type'. "
+    "Return only valid JSON in this exact shape: "
+    '{"actions":[{"kind":"click","x":123,"y":456,"text":""}]}'
+)
+
+
+def _parse_actions(text: str) -> _Acts:
+    try:
+        return _Acts.model_validate_json(text)
+    except Exception:
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        return _Acts.model_validate(json.loads(text[start:end + 1]))
+
+
+def _vision_actions_anthropic(model: str, key: str, b64: str, ctx: str) -> _Acts:
+    import anthropic
+
+    c = anthropic.Anthropic(api_key=key, timeout=120.0)
+    r = c.messages.parse(
+        model=model,
         max_tokens=2048,
-        system=(
-            "You are a browser automation agent using Set-of-Mark visual grounding. "
-            "Examine the job application form screenshot. "
-            "Return ordered actions (click or type) with exact pixel coordinates (x, y) "
-            "to fill every visible field with the candidate's details. "
-            "For file upload inputs, emit a click action on the upload element. "
-            "kind must be exactly 'click' or 'type'."
-        ),
+        system=_VISION_SYSTEM,
         messages=[{
             "role": "user",
             "content": [
@@ -93,7 +103,81 @@ async def _fill_vision(p, j: dict, a: str):
         }],
         output_format=_Acts,
     )
-    for act in r.parsed_output.actions:
+    return r.parsed_output
+
+
+def _vision_actions_openai_compatible(provider: str, model: str, key: str, b64: str, ctx: str) -> _Acts:
+    from openai import OpenAI
+    from db.client import get_setting
+
+    kwargs = {"api_key": key, "timeout": 120.0, "max_retries": 0}
+    extra_body = None
+
+    if provider == "groq":
+        kwargs["base_url"] = "https://api.groq.com/openai/v1"
+    elif provider == "nvidia":
+        kwargs["base_url"] = "https://integrate.api.nvidia.com/v1"
+        extra_body = {"chat_template_kwargs": {"enable_thinking": False}}
+    elif provider == "ollama":
+        kwargs["base_url"] = get_setting("ollama_url", "http://localhost:11434/v1")
+        kwargs["api_key"] = "ollama"
+
+    c = OpenAI(**kwargs)
+    body = {
+        "model": model,
+        "max_tokens": 2048,
+        "messages": [
+            {"role": "system", "content": _VISION_SYSTEM},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": ctx},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                ],
+            },
+        ],
+    }
+    if extra_body:
+        body["extra_body"] = extra_body
+    try:
+        body["response_format"] = {"type": "json_object"}
+        r = c.chat.completions.create(**body)
+    except Exception:
+        body.pop("response_format", None)
+        r = c.chat.completions.create(**body)
+
+    content = r.choices[0].message.content or ""
+    return _parse_actions(content)
+
+
+def _vision_actions(b64: str, ctx: str) -> _Acts:
+    from llm import resolve_config
+
+    provider, key, model = resolve_config("actuator")
+
+    if provider != "ollama" and not key:
+        raise RuntimeError(f"Vision fallback requires an API key for provider '{provider}'")
+
+    print(f"[actuator] vision fallback via {provider} model={model}", file=sys.stderr)
+
+    if provider == "anthropic":
+        return _vision_actions_anthropic(model, key, b64, ctx)
+
+    if provider in {"openai", "groq", "nvidia", "ollama"}:
+        return _vision_actions_openai_compatible(provider, model, key, b64, ctx)
+
+    raise RuntimeError(f"Vision fallback is not supported for provider '{provider}'")
+
+
+async def _fill_vision(p, j: dict, a: str):
+    shot = await p.screenshot(type="png")
+    b64  = base64.standard_b64encode(shot).decode()
+    ctx  = (
+        f"Name: {j.get('name','')} | Email: {j.get('email','')} | "
+        f"Phone: {j.get('phone','')} | LinkedIn: {j.get('linkedin_url','')}"
+    )
+    acts = await asyncio.to_thread(_vision_actions, b64, ctx)
+    for act in acts.actions:
         if act.kind == "click":
             await p.mouse.click(act.x, act.y)
             await p.wait_for_timeout(_FILL_DELAY)

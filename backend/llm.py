@@ -76,6 +76,11 @@ def _resolve(step: str | None = None) -> tuple[str, str, str]:
     return p, k, model
 
 
+def resolve_config(step: str | None = None) -> tuple[str, str, str]:
+    """Public resolver for agents that need provider-specific request shapes."""
+    return _resolve(step)
+
+
 def _client_nvidia(k: str):
     return instructor.from_openai(
         OpenAI(

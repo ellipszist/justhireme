@@ -528,6 +528,32 @@
   animation: fade-in .2s ease;
 }
 
+.approval-modal-grid {
+  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.75fr);
+}
+
+.approval-doc-pane,
+.approval-detail-pane {
+  min-width: 0;
+}
+
+@media (max-width: 920px) {
+  .approval-modal-grid {
+    grid-template-columns: 1fr;
+    overflow-y: auto !important;
+  }
+
+  .approval-doc-pane {
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--line);
+    min-height: 620px;
+  }
+
+  .approval-detail-pane {
+    min-height: 420px;
+  }
+}
+
 @keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }

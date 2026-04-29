@@ -1,5 +1,6 @@
 import os
 import sqlite3 as _sq
+import json
 import kuzu
 import lancedb
 
@@ -41,6 +42,8 @@ def _init_sql():
             reason TEXT DEFAULT '',
             match_points TEXT DEFAULT '',
             asset_path TEXT DEFAULT '',
+            cover_letter_path TEXT DEFAULT '',
+            selected_projects TEXT DEFAULT '',
             description TEXT DEFAULT '',
             gaps TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now'))
@@ -59,6 +62,8 @@ def _init_sql():
         ("reason",       "TEXT DEFAULT ''"),
         ("match_points", "TEXT DEFAULT ''"),
         ("asset_path",   "TEXT DEFAULT ''"),
+        ("cover_letter_path", "TEXT DEFAULT ''"),
+        ("selected_projects", "TEXT DEFAULT ''"),
         ("description",  "TEXT DEFAULT ''"),
         ("gaps",         "TEXT DEFAULT ''"),
     ]:
@@ -120,6 +125,21 @@ def save_asset_path(jid: str, path: str):
     c.close()
 
 
+def save_asset_package(jid: str, resume_path: str, cover_letter_path: str = "", selected_projects: list | None = None):
+    projects = json.dumps(selected_projects or [])
+    c = _sq.connect(sql)
+    c.execute(
+        "UPDATE leads SET status='approved', asset_path=?, cover_letter_path=?, selected_projects=? WHERE job_id=?",
+        (resume_path, cover_letter_path, projects, jid),
+    )
+    c.execute(
+        "INSERT INTO events(job_id,action) VALUES(?,?)",
+        (jid, f"assets=resume:{resume_path} cover:{cover_letter_path}"),
+    )
+    c.commit()
+    c.close()
+
+
 def mark_applied(jid: str):
     c = _sq.connect(sql)
     c.execute("UPDATE leads SET status='applied' WHERE job_id=?", (jid,))
@@ -134,7 +154,7 @@ def mark_applied(jid: str):
 def get_all_leads() -> list:
     c = _sq.connect(sql)
     rows = c.execute(
-        "SELECT job_id,title,company,url,platform,status,score,reason,match_points,asset_path,description,gaps FROM leads ORDER BY created_at DESC"
+        "SELECT job_id,title,company,url,platform,status,score,reason,match_points,asset_path,description,gaps,cover_letter_path,selected_projects FROM leads ORDER BY created_at DESC"
     ).fetchall()
     c.close()
     return [
@@ -146,9 +166,20 @@ def get_all_leads() -> list:
             "asset": r[9] or "",
             "description": r[10] or "",
             "gaps": [g for g in (r[11] or "").split(",") if g],
+            "resume_asset": r[9] or "",
+            "cover_letter_asset": r[12] or "",
+            "selected_projects": _json_list(r[13] or "[]"),
         }
         for r in rows
     ]
+
+
+def _json_list(s: str) -> list:
+    try:
+        v = json.loads(s or "[]")
+        return v if isinstance(v, list) else []
+    except Exception:
+        return []
 
 
 def get_lead_for_fire(jid: str) -> tuple:
@@ -189,7 +220,7 @@ def get_setting(k: str, default: str = "") -> str:
 def get_lead_by_id(jid: str) -> dict:
     c = _sq.connect(sql)
     row = c.execute(
-        "SELECT job_id,title,company,url,platform,status,score,reason,match_points,asset_path FROM leads WHERE job_id=?",
+        "SELECT job_id,title,company,url,platform,status,score,reason,match_points,asset_path,description,gaps,cover_letter_path,selected_projects FROM leads WHERE job_id=?",
         (jid,)
     ).fetchone()
     evs = c.execute(
@@ -205,6 +236,11 @@ def get_lead_by_id(jid: str) -> dict:
         "reason": row[7] or "",
         "match_points": [m for m in (row[8] or "").split(",") if m],
         "asset": row[9] or "",
+        "description": row[10] or "",
+        "gaps": [g for g in (row[11] or "").split(",") if g],
+        "resume_asset": row[9] or "",
+        "cover_letter_asset": row[12] or "",
+        "selected_projects": _json_list(row[13] or "[]"),
         "events": [{"action": e[0], "ts": e[1]} for e in evs],
     }
 

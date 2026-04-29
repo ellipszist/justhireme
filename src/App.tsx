@@ -15,6 +15,7 @@ type PipelineTab = "found" | "evaluated" | "generated" | "applied" | "discarded"
 interface Lead {
   job_id: string; title: string; company: string;
   url: string; platform: string; status: string; asset: string;
+  resume_asset?: string; cover_letter_asset?: string; selected_projects?: string[];
   score: number; reason: string; match_points: string[]; gaps?: string[];
   description?: string;
   events?: { action: string; ts: string }[];
@@ -518,7 +519,7 @@ function JobCard({ lead, onOpen, onDelete, showScore = false, showGenerate = fal
                 border: "1px solid var(--purple)", background: "var(--purple-soft)",
                 color: "var(--purple-ink)", cursor: generating ? "wait" : "pointer",
               }}
-            >{generating ? "Queued…" : "Generate PDF"}</button>
+            >{generating ? "Queued..." : "Generate Package"}</button>
           )}
           <button
             onClick={e => { e.stopPropagation(); onOpen(lead); }}
@@ -584,7 +585,7 @@ function PipelineView({ leads, openDrawer, deleteLead, port }: {
       id: "discarded",
       label: "Discarded",
       tone: "red",
-      leads: filter(leads.filter(l => l.status === "discarded" && l.score === 0)),
+      leads: filter(leads.filter(l => l.status === "discarded")),
     },
   ];
 
@@ -1293,36 +1294,57 @@ function IngestionView({ port }: { port: number }) {
 function ApprovalDrawer({ j, port, onClose, onFired }: {
   j: Lead; port: number; onClose: () => void; onFired: () => void;
 }) {
+  type DocKind = "resume" | "cover";
   const [firing, setFiring] = useState(false);
   const [done,   setDone]   = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [activeDoc, setActiveDoc] = useState<DocKind>("resume");
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfLoadErr, setPdfLoadErr] = useState<string | null>(null);
+  const [generateErr, setGenerateErr] = useState<string | null>(null);
 
-  const pdfApiUrl = j.asset ? `http://127.0.0.1:${port}/api/v1/leads/${j.job_id}/pdf` : null;
+  const resumeReady = Boolean(j.resume_asset || j.asset);
+  const coverReady = Boolean(j.cover_letter_asset);
+  const activeReady = activeDoc === "resume" ? resumeReady : coverReady;
+  const activeDocUrl = activeReady
+    ? `http://127.0.0.1:${port}/api/v1/leads/${j.job_id}/pdf?kind=${activeDoc === "resume" ? "resume" : "cover_letter"}`
+    : null;
+  const selectedProjects = j.selected_projects || [];
+  const canFire = resumeReady && coverReady && !firing;
 
   // Tauri WebView blocks <iframe src="http://..."> for localhost — fetch as blob instead
   useEffect(() => {
-    if (!pdfApiUrl) { setPdfBlobUrl(null); setPdfLoadErr(null); return; }
+    if (!activeDocUrl) { setPdfBlobUrl(null); setPdfLoadErr(null); return; }
     let revoke: string | null = null;
+    let alive = true;
     setPdfLoadErr(null);
-    fetch(pdfApiUrl)
+    setPdfBlobUrl(null);
+    fetch(activeDocUrl)
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.blob(); })
       .then(blob => {
+        if (!alive) return;
         const url = URL.createObjectURL(blob);
         revoke = url;
         setPdfBlobUrl(url);
       })
-      .catch(err => { setPdfLoadErr(String(err)); setPdfBlobUrl(null); });
-    return () => { if (revoke) URL.revokeObjectURL(revoke); };
-  }, [pdfApiUrl]);
+      .catch(err => {
+        if (!alive) return;
+        setPdfLoadErr(String(err));
+        setPdfBlobUrl(null);
+      });
+    return () => {
+      alive = false;
+      if (revoke) URL.revokeObjectURL(revoke);
+    };
+  }, [activeDocUrl]);
 
-  // Clear generating flag when the lead actually receives its asset (via LEAD_UPDATED WS event)
+  // Clear generating flag when the lead actually receives its generated documents.
   useEffect(() => {
-    if (generating && j.asset) setGenerating(false);
-  }, [j.asset, generating]);
+    if (generating && resumeReady && coverReady) setGenerating(false);
+  }, [resumeReady, coverReady, generating]);
 
   const fire = async () => {
+    if (!canFire) return;
     setFiring(true);
     try {
       await fetch(`http://127.0.0.1:${port}/api/v1/fire/${j.job_id}`, { method: "POST" });
@@ -1332,34 +1354,45 @@ function ApprovalDrawer({ j, port, onClose, onFired }: {
 
   const generatePdf = async () => {
     setGenerating(true);
+    setGenerateErr(null);
     setPdfBlobUrl(null);
     setPdfLoadErr(null);
-    await fetch(`http://127.0.0.1:${port}/api/v1/leads/${j.job_id}/generate`, { method: "POST" });
+    setActiveDoc("resume");
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/api/v1/leads/${j.job_id}/generate`, { method: "POST" });
+      if (!r.ok) throw new Error(`Server returned ${r.status}`);
+    } catch (err) {
+      setGenerateErr(String(err));
+      setGenerating(false);
+    }
   };
 
-  const openPdf = () => { if (pdfApiUrl) openUrl(pdfApiUrl); };
+  const openPdf = () => { if (activeDocUrl) openUrl(activeDocUrl); };
 
   return (
-    <div className="drawer-backdrop" onClick={onClose} style={{ zIndex: 100 }}>
+    <div className="drawer-backdrop" onClick={onClose} style={{ zIndex: 100, display: "grid", placeItems: "center", padding: 16, overflow: "auto" }}>
       <motion.div className="card"
-        initial={{ y: "100%" }} animate={{ y: "15%" }} exit={{ y: "100%" }}
-        transition={{ type: "spring", damping: 30, stiffness: 300 }}
+        initial={{ opacity: 0, y: 24, scale: 0.985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 18, scale: 0.985 }}
+        transition={{ type: "spring", damping: 28, stiffness: 260 }}
         onClick={e => e.stopPropagation()}
-        style={{ width: "100%", height: "85vh", position: "fixed", bottom: 0, left: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, display: "flex", flexDirection: "column", background: "var(--paper)", zIndex: 101 }}>
+        style={{ width: "min(1240px, calc(100vw - 32px))", height: "min(900px, calc(100vh - 32px))", maxHeight: "calc(100vh - 32px)", display: "flex", flexDirection: "column", background: "var(--paper)", zIndex: 101, overflow: "hidden", borderRadius: 18 }}>
 
-        <div style={{ width: 60, height: 5, background: "var(--ink-4)", borderRadius: 99, margin: "14px auto 0", flexShrink: 0 }} />
-
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "12px 22px 14px", borderBottom: "1px solid var(--line)", flexShrink: 0, gap: 16 }}>
-          <div>
-            <h2 style={{ fontSize: 24, fontWeight: 600 }}>{j.title}</h2>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "18px 22px 16px", borderBottom: "1px solid var(--line)", flexShrink: 0, gap: 16, background: "var(--paper)", flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="row gap-2" style={{ marginBottom: 7, flexWrap: "wrap" }}>
+              <span className="pill" style={{ background: `var(--${getTone(j.status)})`, color: `var(--${getTone(j.status)}-ink)` }}>{j.status}</span>
+              <span className="pill mono" style={{ background: "var(--paper-3)", color: "var(--ink-3)" }}>{j.platform}</span>
+              {j.score > 0 && <span className="pill mono" style={{ background: j.score >= 85 ? "var(--green-soft)" : j.score >= 60 ? "var(--yellow-soft)" : "var(--bad-soft)", color: j.score >= 85 ? "var(--green-ink)" : j.score >= 60 ? "var(--yellow-ink)" : "var(--bad)" }}>{j.score}/100 match</span>}
+            </div>
+            <h2 style={{ fontSize: 26, fontWeight: 600, overflowWrap: "anywhere" }}>{j.title}</h2>
             <p style={{ color: "var(--ink-3)", fontSize: 13, marginTop: 2 }}>{j.company} · {j.platform}</p>
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <span className="pill" style={{ background: `var(--${getTone(j.status)})`, color: `var(--${getTone(j.status)}-ink)` }}>{j.status}</span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
             <button
               onClick={() => openUrl(j.url)}
               title="Open original job posting"
-              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, border: "1px solid var(--teal)", background: "var(--teal-soft)", color: "var(--teal)", cursor: "pointer" }}
+              className="btn"
+              style={{ fontSize: 12, borderColor: "var(--teal)", background: "var(--teal-soft)", color: "var(--teal)" }}
             >
               <Icon name="external-link" size={12} color="var(--teal)" /> View Posting
             </button>
@@ -1367,44 +1400,91 @@ function ApprovalDrawer({ j, port, onClose, onFired }: {
           </div>
         </div>
 
-        <div style={{ flex: 1, overflow: "hidden", display: "grid", gridTemplateColumns: "1.1fr 1fr", minHeight: 0 }}>
+        <div className="approval-modal-grid" style={{ flex: 1, overflow: "hidden", display: "grid", minHeight: 0 }}>
           {/* Left: PDF */}
-          <div style={{ padding: 18, borderRight: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 12, overflowY: "auto" }}>
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <div className="eyebrow">Tailored Resume</div>
-              <div className="row" style={{ gap: 8 }}>
+          <div className="approval-doc-pane" style={{ padding: 18, borderRight: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <div className="eyebrow">Application Package</div>
+                <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3 }}>Resume and cover letter are generated separately for this role.</div>
+              </div>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                 {pdfBlobUrl && (
-                  <button onClick={openPdf} title="Open PDF in system viewer / download" style={{
+                  <button onClick={openPdf} title="Open PDF in system viewer" style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700,
                     border: "1px solid var(--teal)", background: "var(--teal-soft)", color: "var(--teal)", cursor: "pointer",
                   }}>
-                    <Icon name="download" size={12} color="var(--teal)" /> Download PDF
+                    <Icon name="download" size={12} color="var(--teal)" /> Open PDF
                   </button>
                 )}
                 <button onClick={generatePdf} disabled={generating} style={{
                   padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700,
                   border: "1px solid var(--purple)", background: "var(--purple-soft)", color: "var(--purple-ink)", cursor: generating ? "wait" : "pointer",
-                }}>{generating ? "Generating…" : pdfBlobUrl ? "Re-generate" : "Generate PDF"}</button>
+                }}>{generating ? "Generating..." : resumeReady || coverReady ? "Regenerate Package" : "Generate Package"}</button>
               </div>
             </div>
-            <div style={{ flex: 1, minHeight: 500 }}>
+            <div className="row gap-2" style={{ background: "var(--paper-3)", padding: 5, borderRadius: 10, flexShrink: 0 }}>
+              {[
+                ["resume", "Resume", resumeReady],
+                ["cover", "Cover Letter", coverReady],
+              ].map(([kind, label, ready]) => (
+                <button key={kind as string} onClick={() => setActiveDoc(kind as DocKind)} style={{
+                  flex: 1, padding: "8px 10px", borderRadius: 7, border: "none", cursor: "pointer",
+                  background: activeDoc === kind ? "var(--card)" : "transparent",
+                  color: activeDoc === kind ? "var(--ink)" : "var(--ink-3)",
+                  fontSize: 12, fontWeight: 700, boxShadow: activeDoc === kind ? "var(--shadow-xs)" : "none",
+                  display: "flex", justifyContent: "center", alignItems: "center", gap: 7,
+                }}>
+                  {label}
+                  <span className="dot" style={{ color: ready ? "var(--ok)" : "var(--ink-4)" }} />
+                </button>
+              ))}
+            </div>
+            {selectedProjects.length > 0 && (
+              <div className="row gap-2" style={{ flexWrap: "wrap" }}>
+                <span className="eyebrow" style={{ marginRight: 2 }}>Projects used</span>
+                {selectedProjects.map((p, i) => (
+                  <span key={i} className="pill" style={{ background: "var(--green-soft)", color: "var(--green-ink)", border: "1px solid var(--green)" }}>{p}</span>
+                ))}
+              </div>
+            )}
+            {generateErr && <div style={{ color: "var(--bad)", fontSize: 12, padding: "8px 10px", background: "var(--bad-soft)", border: "1px solid var(--bad)", borderRadius: 8 }}>{generateErr}</div>}
+            <div style={{ flex: 1, minHeight: 0, background: "var(--card)", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
+              {activeReady && pdfBlobUrl && (
+                <iframe
+                  key={pdfBlobUrl}
+                  src={pdfBlobUrl}
+                  title={activeDoc === "resume" ? "Resume" : "Cover Letter"}
+                  width="100%"
+                  style={{ height: "100%", minHeight: 520, border: "none", display: "block" }}
+                />
+              )}
               {generating && !pdfBlobUrl && (
-                <div style={{ height: "100%", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: "var(--ink-3)", fontSize: 12 }}>
-                  <div className="mono pulse">AI is tailoring your resume — this takes ~30 seconds…</div>
+                <div style={{ height: "100%", minHeight: 420, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: "var(--ink-3)", fontSize: 12, padding: 24, textAlign: "center" }}>
+                  <div className="mono pulse">Tailoring resume and cover letter for {j.company}...</div>
+                  <div style={{ maxWidth: 360, lineHeight: 1.5 }}>The generator is choosing the strongest profile projects for this job description.</div>
                 </div>
               )}
-              {!generating && pdfBlobUrl && (
-                <iframe key={pdfBlobUrl} src={pdfBlobUrl} title="Resume" width="100%" style={{ height: "100%", minHeight: 500, border: "none", borderRadius: 8, display: "block" }} />
-              )}
-              {!generating && !pdfBlobUrl && (
-                <div style={{ height: "100%", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: "var(--ink-3)", fontSize: 12 }}>
+              {!generating && activeReady && !pdfBlobUrl && (
+                <div style={{ height: "100%", minHeight: 420, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: "var(--ink-3)", fontSize: 12, padding: 24, textAlign: "center" }}>
                   {pdfLoadErr
-                    ? <div style={{ color: "var(--bad)", textAlign: "center", padding: "0 24px" }}>Failed to load PDF: {pdfLoadErr}</div>
-                    : <div>{j.status === "tailoring" ? "Generating tailored resume…" : "No resume generated yet."}</div>
+                    ? <div style={{ color: "var(--bad)" }}>Failed to load PDF: {pdfLoadErr}</div>
+                    : <div>Loading {activeDoc === "resume" ? "resume" : "cover letter"}...</div>
                   }
-                  <button onClick={generatePdf} disabled={generating} style={{ padding: "8px 18px", borderRadius: 8, fontSize: 12, fontWeight: 700, border: "1px solid var(--purple)", background: "var(--purple-soft)", color: "var(--purple-ink)", cursor: "pointer" }}>
-                    Generate PDF
+                </div>
+              )}
+              {!generating && !activeReady && (
+                <div style={{ height: "100%", minHeight: 420, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: "var(--ink-3)", fontSize: 12, padding: 24, textAlign: "center" }}>
+                  <Icon name="file" size={26} color="var(--ink-4)" />
+                  <div style={{ fontWeight: 700, color: "var(--ink-2)" }}>
+                    No tailored {activeDoc === "resume" ? "resume" : "cover letter"} yet.
+                  </div>
+                  <div style={{ maxWidth: 380, lineHeight: 1.5 }}>
+                    Generate the application package to create separate PDFs using the job description, company context, and best-matching projects.
+                  </div>
+                  <button onClick={generatePdf} disabled={generating} style={{ padding: "8px 18px", borderRadius: 8, fontSize: 12, fontWeight: 700, border: "1px solid var(--purple)", background: "var(--purple-soft)", color: "var(--purple-ink)", cursor: generating ? "wait" : "pointer" }}>
+                    Generate Package
                   </button>
                 </div>
               )}
@@ -1412,7 +1492,8 @@ function ApprovalDrawer({ j, port, onClose, onFired }: {
           </div>
 
           {/* Right: Score + actions */}
-          <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
+          <div className="approval-detail-pane" style={{ display: "flex", flexDirection: "column", minHeight: 0, background: "var(--paper)" }}>
+            <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", minHeight: 0, flex: 1 }}>
             <div className="eyebrow">Match Reasoning</div>
 
             {/* Description */}
@@ -1476,12 +1557,20 @@ function ApprovalDrawer({ j, port, onClose, onFired }: {
               </div>
             )}
 
-            <div style={{ textAlign: "center", padding: "16px 0", marginTop: "auto" }}>
+            </div>
+            <div style={{ textAlign: "center", padding: 16, borderTop: "1px solid var(--line)", background: "var(--paper)", flexShrink: 0 }}>
               {done
-                ? <div style={{ fontSize: 20, color: "var(--ok)", fontWeight: 600 }}>✓ Fired — automation running</div>
-                : <button className="btn btn-accent" onClick={fire} disabled={firing} style={{ fontSize: 16, padding: "12px 36px", width: "100%" }}>
-                    {firing ? "Firing…" : "🔥 Fire Application"}
-                  </button>
+                ? <div style={{ fontSize: 15, color: "var(--ok)", fontWeight: 700 }}>Fired - automation running</div>
+                : <>
+                    <button className="btn btn-accent" onClick={fire} disabled={!canFire} style={{ fontSize: 15, padding: "12px 24px", width: "100%", cursor: canFire ? "pointer" : "not-allowed", opacity: canFire ? 1 : 0.58, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                      <Icon name="fire" size={15} color="#fff" /> {firing ? "Firing..." : "Fire Application"}
+                    </button>
+                    {!resumeReady || !coverReady ? (
+                      <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
+                        Generate the resume and cover letter before firing the application.
+                      </div>
+                    ) : null}
+                  </>
               }
             </div>
           </div>
