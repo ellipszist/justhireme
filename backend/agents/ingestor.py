@@ -1,5 +1,6 @@
 import sys
 import hashlib
+import re
 import kuzu
 from db.client import vec
 from models.schema import C
@@ -71,8 +72,16 @@ def _put_rel(a: str, aid: str, b: str, bid: str, rel: str):
 def _put_vec(name: str, rows: list):
     if not rows:
         return
+    ids = [str(row.get("id") or "") for row in rows if row.get("id")]
     if name in vec.list_tables():
-        vec.open_table(name).add(rows)
+        table = vec.open_table(name)
+        if ids:
+            quoted = ["'" + item.replace("'", "''") + "'" for item in ids]
+            try:
+                table.delete("id IN (" + ", ".join(quoted) + ")")
+            except Exception:
+                pass
+        table.add(rows)
     else:
         vec.create_table(name, data=rows)
 
@@ -105,6 +114,30 @@ def _graph(p: C):
             sid = _h(sn)
             _put_node("Skill", {"id": sid, "n": sn, "cat": "general"})
             _put_rel("Project", pid, "Skill", sid, "PROJ_UTILIZES")
+
+    for cert in getattr(p, "certifications", []) or []:
+        title = str(cert or "").strip()
+        if not title:
+            continue
+        sid = _h(title)
+        _put_node("Certification", {"id": sid, "title": title})
+        _put_rel("Candidate", cid, "Certification", sid, "HAS_CERTIFICATION")
+
+    for item in getattr(p, "education", []) or []:
+        title = str(item or "").strip()
+        if not title:
+            continue
+        sid = _h(title)
+        _put_node("Education", {"id": sid, "title": title})
+        _put_rel("Candidate", cid, "Education", sid, "HAS_EDUCATION")
+
+    for item in getattr(p, "achievements", []) or []:
+        title = str(item or "").strip()
+        if not title:
+            continue
+        sid = _h(title)
+        _put_node("Achievement", {"id": sid, "title": title})
+        _put_rel("Candidate", cid, "Achievement", sid, "HAS_ACHIEVEMENT")
 
 
 def _vectors(p: C):
@@ -143,8 +176,204 @@ def _pdf(path: str) -> str:
         return ""
 
 
+def _strip_md(text: str) -> str:
+    text = re.sub(r"`([^`]+)`", r"\1", text or "")
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"\*([^*]+)\*", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = text.replace("\u2192", "->").replace("\u00b7", "-")
+    return re.sub(r"\s+", " ", text).strip(" -")
+
+
+def _split_csv(value: str) -> list[str]:
+    return [_strip_md(part) for part in str(value or "").split(",") if _strip_md(part)]
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    seen = set()
+    out = []
+    for item in items:
+        clean = _strip_md(item)
+        key = clean.lower()
+        if clean and key not in seen:
+            seen.add(key)
+            out.append(clean)
+    return out
+
+
+def _section_items(text: str, names: tuple[str, ...]) -> list[str]:
+    pattern = "|".join(re.escape(name) for name in names)
+    match = re.search(rf"(?im)^\s*#{1,3}\s+(?:\d+\s*/\s*)?(?:{pattern})\b[^\n]*$", text or "")
+    if not match:
+        return []
+    tail = text[match.end():]
+    end = re.search(r"(?m)^\s*#{1,3}\s+", tail)
+    if end:
+        tail = tail[:end.start()]
+    items = []
+    for line in tail.splitlines():
+        clean = _strip_md(re.sub(r"^\s*[-*]\s*", "", line))
+        if clean and not clean.startswith("---"):
+            items.append(clean)
+    return _dedupe(items)
+
+
+def _section(text: str, start: str, end: str | None = None) -> str:
+    start_match = re.search(start, text, flags=re.I | re.M)
+    if not start_match:
+        return ""
+    tail = text[start_match.end():]
+    if end:
+        end_match = re.search(end, tail, flags=re.I | re.M)
+        if end_match:
+            tail = tail[:end_match.start()]
+    return tail.strip()
+
+
+def _field(block: str, name: str) -> str:
+    match = re.search(rf"(?im)^\s*[-*]?\s*\*\*{re.escape(name)}:\*\*\s*(.+)$", block or "")
+    return _strip_md(match.group(1)) if match else ""
+
+
+def _heading_blocks(section: str) -> list[tuple[str, str]]:
+    matches = list(re.finditer(r"(?m)^###\s+(.+?)\s*$", section or ""))
+    blocks = []
+    for idx, match in enumerate(matches):
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(section)
+        blocks.append((_strip_md(match.group(1)), section[match.end():end].strip()))
+    return blocks
+
+
+def _title_from_heading(heading: str) -> str:
+    heading = re.sub(r"^\d+\.\s*", "", heading or "").strip()
+    return _strip_md(re.sub(r"\s*\([^)]*\)\s*$", "", heading))
+
+
+def _first_url(value: str) -> str:
+    match = re.search(r"https?://[^\s|)]+", value or "")
+    return match.group(0) if match else ""
+
+
+def _project_from_block(heading: str, block: str):
+    from models.schema import P
+
+    title = _title_from_heading(heading)
+    stack = _split_csv(_field(block, "Tech Stack") or _field(block, "Tech"))
+    live = _first_url(_field(block, "Live"))
+    video = _first_url(_field(block, "Video"))
+
+    parts = []
+    for key in ("Description", "Summary", "Highlights"):
+        value = _field(block, key)
+        if value:
+            parts.append(f"{key}: {value}")
+
+    modal = _section(block, r"(?m)^\s*[-*]?\s*\*\*Modal Details:\*\*", None)
+    if not modal:
+        modal = _section(block, r"(?m)^\s*\*\*Project Modal Details:\*\*", None)
+    if modal:
+        cleaned = "\n".join(_strip_md(line) for line in modal.splitlines() if _strip_md(line))
+        if cleaned:
+            parts.append(cleaned)
+
+    if live:
+        parts.append(f"Live: {live}")
+    if video:
+        parts.append(f"Video: {video}")
+
+    return P(
+        title=title,
+        stack=stack,
+        repo=live or video or "",
+        impact="\n".join(parts).strip(),
+        s=stack,
+    )
+
+
+def _parse_portfolio_markdown(txt: str):
+    from models.schema import S, E, P
+
+    if not re.search(r"(?i)portfolio content|selected work|technical expertise", txt or ""):
+        return None
+
+    hero = _section(txt, r"(?m)^##\s+Hero Section", r"(?m)^---\s*$")
+    name = _field(hero, "Name") or "Candidate"
+    tagline = _field(hero, "Tagline")
+
+    exp_section = _section(txt, r"(?m)^##\s+01\s*/\s*Experience", r"(?m)^##\s+02\s*/")
+    exp = []
+    if exp_section:
+        period_line = ""
+        period_match = re.search(r"(?m)^\*\*(.+?)\*\*\s*$", exp_section)
+        if period_match:
+            period_line = _strip_md(period_match.group(1))
+        role_match = re.search(r"(?m)^###\s+(.+?)\s*$", exp_section)
+        role = _strip_md(role_match.group(1)) if role_match else "Full-Stack Engineer"
+        company = "Freelance"
+        if "|" in period_line:
+            period, rest = [part.strip() for part in period_line.split("|", 1)]
+            company = _strip_md(rest.split("-")[0])
+        else:
+            period = period_line
+        exp_stack = _split_csv(_field(exp_section, "Tech Stack"))
+        detail_lines = [
+            _strip_md(line)
+            for line in exp_section.splitlines()
+            if _strip_md(line)
+            and not line.strip().startswith("#")
+            and not re.match(r"^\*\*.*\*\*$", line.strip())
+        ]
+        exp.append(E(role=role, co=company or "Freelance", period=period, d="\n".join(detail_lines), s=exp_stack))
+
+    selected = _section(txt, r"(?m)^##\s+02\s*/\s+Selected Work", r"(?m)^##\s+03\s*/")
+    more = _section(txt, r"(?m)^##\s+03\s*/\s+More from GitHub", r"(?m)^##\s+04\s*/")
+    projects: list[P] = []
+    for section_text in (selected, more):
+        for heading, block in _heading_blocks(section_text):
+            project = _project_from_block(heading, block)
+            if project.title:
+                projects.append(project)
+
+    expertise = _section(txt, r"(?m)^##\s+04\s*/\s+Technical Expertise", r"(?m)^##\s+05\s*/")
+    skill_names = []
+    for line in expertise.splitlines():
+        match = re.match(r"\s*[-*]\s*\*\*([^:]+):\*\*\s*(.+)$", line)
+        if match:
+            skill_names.extend(_split_csv(match.group(2)))
+    for project in projects:
+        skill_names.extend(project.stack)
+    for item in exp:
+        skill_names.extend(item.s)
+
+    skills = [S(n=skill, cat="portfolio") for skill in _dedupe(skill_names)]
+    services = _section(txt, r"(?m)^##\s+06\s*/\s+Services", r"(?m)^##\s+07\s*/")
+    contact = _section(txt, r"(?m)^##\s+07\s*/\s+Contact", None)
+    summary_parts = [tagline]
+    if services:
+        summary_parts.append("Services: " + " ".join(_strip_md(line) for line in services.splitlines() if _strip_md(line)))
+    if contact:
+        email = re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", contact)
+        if email:
+            summary_parts.append(f"Contact: {email.group(0)}")
+
+    return C(
+        n=name,
+        s="\n".join(part for part in summary_parts if part),
+        skills=skills,
+        exp=exp,
+        projects=projects,
+        certifications=_section_items(txt, ("certifications", "credentials", "certificates")),
+        education=_section_items(txt, ("education", "academic background")),
+        achievements=_section_items(txt, ("achievements", "awards", "honors")),
+    )
+
+
 def _parse_local(txt: str) -> C:
     from models.schema import S, E, P
+
+    portfolio = _parse_portfolio_markdown(txt)
+    if portfolio is not None:
+        return portfolio
 
     lines = txt.strip().splitlines()
     fields: dict[str, str] = {}
@@ -234,18 +463,29 @@ def _parse_local(txt: str) -> C:
         skill_names.update(p.stack)
     skills = [S(n=sn, cat="general") for sn in skill_names if sn]
 
-    return C(n=name, s=summary, skills=skills, exp=exps, projects=projects)
+    certifications = _split_csv(fields.get("certifications", "") or fields.get("certs", ""))
+    education = _split_csv(fields.get("education", ""))
+    achievements = _split_csv(fields.get("achievements", "") or fields.get("awards", ""))
+
+    return C(
+        n=name,
+        s=summary,
+        skills=skills,
+        exp=exps,
+        projects=projects,
+        certifications=certifications,
+        education=education,
+        achievements=achievements,
+    )
 
 
 def run(raw: str = "", pdf: str | None = None) -> C:
-    from db.client import get_setting
-    from llm import call_llm
+    from llm import call_llm, resolve_config
 
     txt = (raw + " " + _pdf(pdf)).strip() if pdf else raw
-    p = get_setting("llm_provider", "ollama")
-    k = get_setting("anthropic_key") or get_setting("groq_api_key") or get_setting("nvidia_api_key")
+    p, k, model = resolve_config("ingestor")
 
-    if p in ("anthropic", "groq", "nvidia") and not k:
+    if p != "ollama" and not k:
         print(f"[ingestor] provider='{p}' but no API key set — using local parser. "
               "Open Settings and add your API key for AI-powered extraction.", file=sys.stderr)
         return _parse_local(txt)
@@ -254,18 +494,19 @@ def run(raw: str = "", pdf: str | None = None) -> C:
         result = call_llm(
             "You are a professional identity extractor. "
             "Parse the supplied resume or profile text and return every skill, "
-            "work experience, and project you can identify. "
+            "work experience, project, certification, education item, and achievement you can identify. "
             "Use concise, factual descriptions.",
             txt,
             C,
             step="ingestor",
         )
         print(f"[ingestor] LLM extraction OK via '{p}' — "
-              f"{len(result.skills)} skills, {len(result.exp)} roles, {len(result.projects)} projects",
+              f"{len(result.skills)} skills, {len(result.exp)} roles, {len(result.projects)} projects, "
+              f"{len(result.certifications)} certifications",
               file=sys.stderr)
         return result
     except Exception as exc:
-        if p in ("anthropic", "groq", "nvidia"):
+        if p != "ollama":
             print(f"[ingestor] LLM call failed ({p}): {exc}", file=sys.stderr)
             raise RuntimeError(f"{p} extraction failed: {exc}") from exc
         print(f"[ingestor] LLM call failed ({p}): {exc} — falling back to local parser", file=sys.stderr)

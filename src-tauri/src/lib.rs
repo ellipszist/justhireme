@@ -1,7 +1,14 @@
-use std::sync::Mutex;
-use tauri::{Emitter, Manager, State};
-use tauri_plugin_shell::ShellExt;
+use std::{
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
 
 struct SidecarPort(Mutex<Option<u16>>);
 struct SidecarChild(Mutex<Option<CommandChild>>);
@@ -15,7 +22,7 @@ fn get_sidecar_port(state: State<SidecarPort>) -> Result<u16, String> {
         .ok_or_else(|| "Sidecar port not yet discovered".into())
 }
 
-fn bundled_python_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+fn bundled_python_path(app: &AppHandle) -> Option<PathBuf> {
     let runtime_dir = app
         .path()
         .resource_dir()
@@ -35,9 +42,65 @@ fn bundled_python_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
         .find(|path| path.exists())
 }
 
+fn local_venv_python_path(backend_dir: &Path) -> Option<PathBuf> {
+    let candidates = if cfg!(windows) {
+        vec![".venv/Scripts/python.exe", ".venv/Scripts/python"]
+    } else {
+        vec![
+            ".venv/bin/python3",
+            ".venv/bin/python",
+            ".venv/bin/python.exe",
+        ]
+    };
+
+    candidates
+        .into_iter()
+        .map(|candidate| backend_dir.join(candidate))
+        .find(|path| path.exists())
+}
+
+fn kill_process_tree(pid: u32) {
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .output();
+    }
+}
+
+fn shutdown_sidecar(app: &AppHandle) {
+    let child = app
+        .state::<SidecarChild>()
+        .0
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+
+    if let Some(child) = child {
+        let pid = child.pid();
+        eprintln!("[tauri] Stopping sidecar process tree: {pid}");
+        kill_process_tree(pid);
+        let _ = child.kill();
+    }
+
+    if let Ok(mut port) = app.state::<SidecarPort>().0.lock() {
+        *port = None;
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .manage(SidecarPort(Mutex::new(None)))
@@ -46,21 +109,29 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            let backend_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            let backend_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
                 .map(|p| p.join("backend"))
-                .unwrap_or_else(|| {
-                    std::env::current_dir().unwrap_or_default().join("backend")
-                });
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("backend"));
 
             let bundled = bundled_python_path(&handle);
+            let local_venv = local_venv_python_path(&backend_dir);
+
             if let Some(ref py) = bundled {
                 eprintln!("[tauri] Using bundled runtime: {}", py.display());
+            } else if let Some(ref py) = local_venv {
+                eprintln!("[tauri] Using backend virtualenv: {}", py.display());
             } else {
-                eprintln!("[tauri] No bundled runtime found — falling back to `uv`");
+                eprintln!("[tauri] No bundled or virtualenv runtime found - falling back to `uv`");
             }
 
             let sidecar_cmd = if let Some(py) = bundled {
+                handle
+                    .shell()
+                    .command(py.to_string_lossy().to_string())
+                    .args(["main.py"])
+                    .current_dir(&backend_dir)
+            } else if let Some(py) = local_venv {
                 handle
                     .shell()
                     .command(py.to_string_lossy().to_string())
@@ -74,11 +145,11 @@ pub fn run() {
                     .current_dir(&backend_dir)
             };
 
-            let (mut rx, child) = sidecar_cmd
-                .spawn()
-                .expect("Failed to spawn Python sidecar");
+            let (mut rx, child) = sidecar_cmd.spawn().expect("Failed to spawn Python sidecar");
 
-            // Store child handle so it persists for app lifetime and is killed on drop
+            let sidecar_pid = child.pid();
+            eprintln!("[tauri] Sidecar PID: {sidecar_pid}");
+
             if let Ok(mut guard) = handle.state::<SidecarChild>().0.lock() {
                 *guard = Some(child);
             }
@@ -116,6 +187,21 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error building tauri application");
+
+    app.run(|app_handle, event| match event {
+        RunEvent::WindowEvent { label, event, .. } => {
+            eprintln!("[tauri] Window event on {label}: {event:?}");
+        }
+        RunEvent::ExitRequested { code, .. } => {
+            eprintln!("[tauri] Exit requested: {code:?}");
+            shutdown_sidecar(app_handle);
+        }
+        RunEvent::Exit => {
+            eprintln!("[tauri] App exit");
+            shutdown_sidecar(app_handle);
+        }
+        _ => {}
+    });
 }

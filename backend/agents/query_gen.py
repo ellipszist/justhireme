@@ -42,24 +42,22 @@ def _detect_experience_level(profile: dict) -> str:
     Infer the candidate's seniority level from their profile.
     Returns one of: "fresher", "junior", "mid", "senior"
     """
-    exp_entries = profile.get("exp", [])
-    # Count total months of experience from period strings (rough heuristic)
-    # If no experience at all → fresher
-    if not exp_entries:
-        return "fresher"
+    try:
+        from agents.scoring_engine import infer_experience_level
 
-    # Count entries that are internships or very short stints vs real roles
-    real_roles = [e for e in exp_entries if e.get("role") and
-                  not any(kw in (e.get("role") or "").lower()
-                          for kw in ["intern", "trainee", "student", "assistant"])]
+        return infer_experience_level(profile)
+    except Exception:
+        return "junior" if profile.get("projects") else "fresher"
 
-    if not real_roles:
-        return "fresher"  # Only internships
 
-    if len(real_roles) == 1:
-        return "junior"   # One real role → junior
-
-    return "mid"          # 2+ real roles → mid
+def _seniority_hint(level: str) -> str:
+    hints = {
+        "fresher": '"intern" OR "new grad" OR "entry level" OR "junior"',
+        "junior": '"junior" OR "entry level" OR "software engineer" OR "developer"',
+        "mid": '"software engineer" OR "backend engineer" OR "frontend engineer" OR "full stack"',
+        "senior": '"senior" OR "staff" OR "lead" OR "software engineer"',
+    }
+    return hints.get(level, '"software engineer" OR "developer"')
 
 
 def generate(profile: dict, urls: list[str]) -> list[str]:
@@ -80,13 +78,7 @@ def generate(profile: dict, urls: list[str]) -> list[str]:
     skills           = [s["n"] for s in profile.get("skills", []) if s.get("n")]
     experience_level = _detect_experience_level(profile)
 
-    # Seniority keyword hints for the LLM to inject into queries
-    seniority_hint = {
-        "fresher": '"fresher" OR "entry level" OR "junior" OR "0-1 year" OR "graduate"',
-        "junior":  '"junior" OR "entry level" OR "associate" OR "1-3 years"',
-        "mid":     '"mid" OR "intermediate" OR "3-5 years"',
-        "senior":  '"senior" OR "lead" OR "5+ years"',
-    }[experience_level]
+    seniority_hint = _seniority_hint(experience_level)
 
     # Collect unique stack tokens from projects
     stack_tokens: list[str] = []
@@ -109,15 +101,15 @@ Rules:
 - Each query must start with   site:<domain>
 - Use 2–4 specific technical terms the candidate actually knows.
 - Prefer role-specific terms over generic ones ("LangChain Engineer" beats "Software Engineer").
-- CRITICAL: Always include the seniority keywords provided — this ensures only
-  appropriate-level roles surface. A fresher applying for senior roles is wasted effort.
+- Use the detected candidate seniority as a preference, not a hard global filter.
+- Do not exclude other levels unless the profile is clearly unsuitable for that level.
 - Use OR between alternatives: site:jobs.lever.co "FastAPI" ("junior" OR "entry level")
 - Never add quotation marks around the whole query, only around individual terms.
 - Return only the list of queries — no extra commentary."""
 
     user = f"""CANDIDATE PROFILE
 Target role / summary : {target_role}
-Experience level      : {experience_level.upper()} — MUST include these seniority keywords in every query: {seniority_hint}
+Detected seniority    : {experience_level.upper()} - preferred seniority query terms: {seniority_hint}
 Top skills            : {', '.join(skills[:15])}
 Project tech stack    : {', '.join(stack_tokens)}
 Recent role titles    : {', '.join(recent_roles) if recent_roles else 'none (fresher/student)'}
@@ -125,7 +117,7 @@ Recent role titles    : {', '.join(recent_roles) if recent_roles else 'none (fre
 JOB BOARD DOMAINS (one query each):
 {chr(10).join(f'- {d}' for d in site_domains)}
 
-Generate the queries now. Remember: EVERY query must include the seniority keywords."""
+Generate the queries now."""
 
     try:
         result = call_llm(system, user, _Plan, step="query_gen")
@@ -135,7 +127,7 @@ Generate the queries now. Remember: EVERY query must include the seniority keywo
         print(f"[query_gen] LLM failed ({exc}), falling back to default queries", file=sys.stderr)
         # Fallback: build simple queries from top skills
         top = " OR ".join(f'"{s}"' for s in skills[:3]) if skills else f'"{target_role}"'
-        smart = [f"site:{d} {top}" for d in site_domains]
+        smart = [f"site:{d} ({top}) ({seniority_hint})" for d in site_domains]
 
     import sys
     print(f"[query_gen] Generated {len(smart)} queries for {len(site_domains)} domains", file=sys.stderr)

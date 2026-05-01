@@ -7,12 +7,50 @@ import lancedb
 _b = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BoomBoom")
 _g, _v = os.path.join(_b, "graph"), os.path.join(_b, "vector")
 sql = os.path.join(_b, "crm.db")
-os.makedirs(_b, exist_ok=True)
-os.makedirs(_v, exist_ok=True)
+
+
+class _NullVectorStore:
+    """No-op vector store so profile CRUD never fails because embeddings are unavailable."""
+
+    def list_tables(self):
+        return []
+
+    def create_table(self, *_args, **_kwargs):
+        return None
+
+    def open_table(self, *_args, **_kwargs):
+        return self
+
+    def add(self, *_args, **_kwargs):
+        return None
+
+
+def _ensure_dir(path: str) -> str:
+    try:
+        os.makedirs(path, exist_ok=True)
+        return path
+    except Exception as exc:
+        alt = f"{path}_store"
+        try:
+            os.makedirs(alt, exist_ok=True)
+            print(f"[db] storage path unavailable ({path}: {exc}); using {alt}", flush=True)
+            return alt
+        except Exception as alt_exc:
+            print(f"[db] storage path unavailable ({path}: {exc}; fallback: {alt_exc})", flush=True)
+            return path
+
+
+_b = _ensure_dir(_b)
+_g, _v = os.path.join(_b, "graph"), os.path.join(_b, "vector")
+_v = _ensure_dir(_v)
 
 db   = kuzu.Database(_g)
 conn = kuzu.Connection(db)
-vec: lancedb.LanceDBConnection = lancedb.connect(_v)
+try:
+    vec: lancedb.LanceDBConnection | _NullVectorStore = lancedb.connect(_v)
+except Exception as exc:
+    print(f"[db] vector store disabled: {exc}", flush=True)
+    vec = _NullVectorStore()
 
 def _init():
     for s in [
@@ -20,9 +58,15 @@ def _init():
         "CREATE NODE TABLE IF NOT EXISTS Skill(id STRING, n STRING, cat STRING, PRIMARY KEY(id))",
         "CREATE NODE TABLE IF NOT EXISTS Project(id STRING, title STRING, stack STRING, repo STRING, impact STRING, PRIMARY KEY(id))",
         "CREATE NODE TABLE IF NOT EXISTS Experience(id STRING, role STRING, co STRING, period STRING, d STRING, PRIMARY KEY(id))",
+        "CREATE NODE TABLE IF NOT EXISTS Certification(id STRING, title STRING, PRIMARY KEY(id))",
+        "CREATE NODE TABLE IF NOT EXISTS Education(id STRING, title STRING, PRIMARY KEY(id))",
+        "CREATE NODE TABLE IF NOT EXISTS Achievement(id STRING, title STRING, PRIMARY KEY(id))",
         "CREATE NODE TABLE IF NOT EXISTS JobLead(job_id STRING, title STRING, co STRING, url STRING, platform STRING, PRIMARY KEY(job_id))",
         "CREATE REL TABLE IF NOT EXISTS WORKED_AS(FROM Candidate TO Experience)",
         "CREATE REL TABLE IF NOT EXISTS BUILT(FROM Candidate TO Project)",
+        "CREATE REL TABLE IF NOT EXISTS HAS_CERTIFICATION(FROM Candidate TO Certification)",
+        "CREATE REL TABLE IF NOT EXISTS HAS_EDUCATION(FROM Candidate TO Education)",
+        "CREATE REL TABLE IF NOT EXISTS HAS_ACHIEVEMENT(FROM Candidate TO Achievement)",
         "CREATE REL TABLE IF NOT EXISTS EXP_UTILIZES(FROM Experience TO Skill)",
         "CREATE REL TABLE IF NOT EXISTS PROJ_UTILIZES(FROM Project TO Skill)",
         "CREATE REL TABLE IF NOT EXISTS REQUIRES(FROM JobLead TO Skill)",
@@ -66,6 +110,29 @@ def _init_sql():
         ("selected_projects", "TEXT DEFAULT ''"),
         ("description",  "TEXT DEFAULT ''"),
         ("gaps",         "TEXT DEFAULT ''"),
+        ("kind",         "TEXT DEFAULT 'job'"),
+        ("budget",       "TEXT DEFAULT ''"),
+        ("signal_score", "INTEGER DEFAULT 0"),
+        ("signal_reason", "TEXT DEFAULT ''"),
+        ("signal_tags", "TEXT DEFAULT ''"),
+        ("outreach_reply", "TEXT DEFAULT ''"),
+        ("outreach_dm", "TEXT DEFAULT ''"),
+        ("source_meta", "TEXT DEFAULT ''"),
+        ("feedback", "TEXT DEFAULT ''"),
+        ("feedback_note", "TEXT DEFAULT ''"),
+        ("followup_due_at", "TEXT DEFAULT ''"),
+        ("last_contacted_at", "TEXT DEFAULT ''"),
+        ("outreach_email", "TEXT DEFAULT ''"),
+        ("proposal_draft", "TEXT DEFAULT ''"),
+        ("fit_bullets", "TEXT DEFAULT ''"),
+        ("followup_sequence", "TEXT DEFAULT ''"),
+        ("proof_snippet", "TEXT DEFAULT ''"),
+        ("tech_stack", "TEXT DEFAULT ''"),
+        ("location", "TEXT DEFAULT ''"),
+        ("urgency", "TEXT DEFAULT ''"),
+        ("base_signal_score", "INTEGER DEFAULT 0"),
+        ("learning_delta", "INTEGER DEFAULT 0"),
+        ("learning_reason", "TEXT DEFAULT ''"),
     ]:
         try:
             c.execute(f"ALTER TABLE leads ADD COLUMN {col} {definition}")
@@ -77,6 +144,26 @@ def _init_sql():
 _init_sql()
 
 
+_LEAD_SELECT_COLUMNS = (
+    "job_id,title,company,url,platform,status,score,reason,match_points,asset_path,"
+    "description,gaps,cover_letter_path,selected_projects,kind,budget,signal_score,"
+    "signal_reason,signal_tags,outreach_reply,outreach_dm,source_meta,feedback,"
+    "feedback_note,followup_due_at,last_contacted_at,outreach_email,proposal_draft,"
+    "fit_bullets,followup_sequence,proof_snippet,tech_stack,location,urgency,"
+    "base_signal_score,learning_delta,learning_reason"
+)
+
+
+def record_event(job_id: str | None, action: str):
+    c = _sq.connect(sql)
+    c.execute(
+        "INSERT INTO events(job_id,action) VALUES(?,?)",
+        ((job_id or "__system__")[:160], str(action or "")[:1000]),
+    )
+    c.commit()
+    c.close()
+
+
 def url_exists(jid: str) -> bool:
     c = _sq.connect(sql)
     r = c.execute("SELECT 1 FROM leads WHERE job_id=?", (jid,)).fetchone()
@@ -84,28 +171,131 @@ def url_exists(jid: str) -> bool:
     return r is not None
 
 
-def save_lead(jid: str, t: str, co: str, u: str, plat: str, desc: str = ""):
+def save_lead(
+    jid: str,
+    t: str,
+    co: str,
+    u: str,
+    plat: str,
+    desc: str = "",
+    kind: str = "job",
+    budget: str = "",
+    signal_score: int = 0,
+    signal_reason: str = "",
+    signal_tags: list | None = None,
+    outreach_reply: str = "",
+    outreach_dm: str = "",
+    outreach_email: str = "",
+    proposal_draft: str = "",
+    fit_bullets: list | str | None = None,
+    followup_sequence: list | str | None = None,
+    proof_snippet: str = "",
+    tech_stack: list | str | None = None,
+    location: str = "",
+    urgency: str = "",
+    base_signal_score: int | None = None,
+    learning_delta: int | None = None,
+    learning_reason: str = "",
+    source_meta: dict | None = None,
+):
+    lead = {
+        "job_id": jid,
+        "title": t,
+        "company": co,
+        "url": u,
+        "platform": plat,
+        "description": desc,
+        "kind": kind or "job",
+        "budget": budget or "",
+        "signal_score": int(signal_score or 0),
+        "signal_reason": signal_reason or "",
+        "signal_tags": signal_tags or [],
+        "outreach_reply": outreach_reply or "",
+        "outreach_dm": outreach_dm or "",
+        "outreach_email": outreach_email or "",
+        "proposal_draft": proposal_draft or "",
+        "fit_bullets": fit_bullets or [],
+        "followup_sequence": followup_sequence or [],
+        "proof_snippet": proof_snippet or "",
+        "tech_stack": tech_stack or [],
+        "location": location or "",
+        "urgency": urgency or "",
+        "source_meta": source_meta or {},
+    }
+    if base_signal_score is None and learning_delta is None and not learning_reason:
+        lead = rank_lead_by_feedback(lead)
+    else:
+        lead["base_signal_score"] = int(base_signal_score if base_signal_score is not None else signal_score or 0)
+        lead["learning_delta"] = int(learning_delta or 0)
+        lead["learning_reason"] = learning_reason or ""
+
     c = _sq.connect(sql)
     c.execute(
-        "INSERT OR IGNORE INTO leads(job_id,title,company,url,platform,description) VALUES(?,?,?,?,?,?)",
-        (jid, t, co, u, plat, desc),
+        """
+        INSERT OR IGNORE INTO leads(
+            job_id,title,company,url,platform,description,kind,budget,
+            signal_score,signal_reason,signal_tags,outreach_reply,outreach_dm,
+            outreach_email,proposal_draft,fit_bullets,followup_sequence,
+            proof_snippet,tech_stack,location,urgency,base_signal_score,
+            learning_delta,learning_reason,source_meta
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            jid, t, co, u, plat, desc, lead.get("kind") or "job", lead.get("budget") or "",
+            int(lead.get("signal_score") or 0), str(lead.get("signal_reason") or "")[:700],
+            _json_dumps_list(lead.get("signal_tags")),
+            lead.get("outreach_reply") or "", lead.get("outreach_dm") or "",
+            lead.get("outreach_email") or "", lead.get("proposal_draft") or "",
+            _json_dumps_list(lead.get("fit_bullets")),
+            _json_dumps_list(lead.get("followup_sequence")),
+            lead.get("proof_snippet") or "",
+            _json_dumps_list(lead.get("tech_stack")),
+            lead.get("location") or "", lead.get("urgency") or "",
+            int(lead.get("base_signal_score") or lead.get("signal_score") or 0),
+            int(lead.get("learning_delta") or 0),
+            str(lead.get("learning_reason") or "")[:700],
+            json.dumps(lead.get("source_meta") or {}, ensure_ascii=False),
+        ),
     )
     c.commit()
     c.close()
 
 
-def update_lead_score(jid: str, s: int, r: str, match_points: list | None = None, gaps: list | None = None):
-    status = "tailoring" if s >= 76 else "discarded"
+def update_lead_score(
+    jid: str,
+    s: int,
+    r: str,
+    match_points: list | None = None,
+    gaps: list | None = None,
+    preserve_status: bool = False,
+):
+    c = _sq.connect(sql)
+    row = c.execute("SELECT kind,status FROM leads WHERE job_id=?", (jid,)).fetchone()
+    kind = row[0] if row else "job"
+    current_status = row[1] if row and row[1] else "discovered"
+
+    if preserve_status:
+        status = current_status
+    elif kind == "freelance":
+        status = "matched" if s >= 76 else "discarded"
+    else:
+        status = "tailoring" if s >= 76 else "discarded"
+
     mp  = _json_dumps_list(match_points)
     gps = _json_dumps_list(gaps)
-    c = _sq.connect(sql)
-    c.execute(
-        "UPDATE leads SET status=?, score=?, reason=?, match_points=?, gaps=? WHERE job_id=?",
-        (status, s, r[:500], mp, gps, jid),
-    )
+    if preserve_status:
+        c.execute(
+            "UPDATE leads SET score=?, reason=?, match_points=?, gaps=? WHERE job_id=?",
+            (s, r[:500], mp, gps, jid),
+        )
+    else:
+        c.execute(
+            "UPDATE leads SET status=?, score=?, reason=?, match_points=?, gaps=? WHERE job_id=?",
+            (status, s, r[:500], mp, gps, jid),
+        )
     c.execute(
         "INSERT INTO events(job_id,action) VALUES(?,?)",
-        (jid, f"score={s} status={status}"),
+        (jid, f"score={s} status={'preserved:' if preserve_status else ''}{status}"),
     )
     c.commit()
     c.close()
@@ -154,24 +344,71 @@ def mark_applied(jid: str):
 def get_all_leads() -> list:
     c = _sq.connect(sql)
     rows = c.execute(
-        "SELECT job_id,title,company,url,platform,status,score,reason,match_points,asset_path,description,gaps,cover_letter_path,selected_projects FROM leads ORDER BY created_at DESC"
+        f"SELECT {_LEAD_SELECT_COLUMNS} FROM leads ORDER BY created_at DESC"
     ).fetchall()
     c.close()
-    return [
-        {
-            "job_id": r[0], "title": r[1], "company": r[2], "url": r[3],
-            "platform": r[4], "status": r[5], "score": r[6] or 0,
-            "reason": r[7] or "",
-            "match_points": _json_list(r[8] or "[]"),
-            "asset": r[9] or "",
-            "description": r[10] or "",
-            "gaps": _json_list(r[11] or "[]"),
-            "resume_asset": r[9] or "",
-            "cover_letter_asset": r[12] or "",
-            "selected_projects": _json_list(r[13] or "[]"),
-        }
-        for r in rows
-    ]
+    return [_lead_row_dict(r) for r in rows]
+
+
+def _lead_row_dict(r) -> dict:
+    return {
+        "job_id": r[0], "title": r[1], "company": r[2], "url": r[3],
+        "platform": r[4], "status": r[5], "score": r[6] or 0,
+        "reason": r[7] or "",
+        "match_points": _json_list(r[8] or "[]"),
+        "asset": r[9] or "",
+        "description": r[10] or "",
+        "gaps": _json_list(r[11] or "[]"),
+        "resume_asset": r[9] or "",
+        "cover_letter_asset": r[12] or "",
+        "selected_projects": _json_list(r[13] or "[]"),
+        "kind": r[14] or "job",
+        "budget": r[15] or "",
+        "signal_score": r[16] or 0,
+        "signal_reason": r[17] or "",
+        "signal_tags": _json_list(r[18] or "[]"),
+        "outreach_reply": r[19] or "",
+        "outreach_dm": r[20] or "",
+        "source_meta": _json_dict(r[21] or "{}"),
+        "feedback": r[22] or "",
+        "feedback_note": r[23] or "",
+        "followup_due_at": r[24] or "",
+        "last_contacted_at": r[25] or "",
+        "outreach_email": r[26] or "",
+        "proposal_draft": r[27] or "",
+        "fit_bullets": _json_list(r[28] or "[]"),
+        "followup_sequence": _json_list(r[29] or "[]"),
+        "proof_snippet": r[30] or "",
+        "tech_stack": _json_list(r[31] or "[]"),
+        "location": r[32] or "",
+        "urgency": r[33] or "",
+        "base_signal_score": r[34] or 0,
+        "learning_delta": r[35] or 0,
+        "learning_reason": r[36] or "",
+    }
+
+
+def get_all_freelance_leads() -> list:
+    c = _sq.connect(sql)
+    rows = c.execute(
+        f"SELECT {_LEAD_SELECT_COLUMNS} FROM leads WHERE kind='freelance' ORDER BY created_at DESC"
+    ).fetchall()
+    c.close()
+    return [_lead_row_dict(r) for r in rows]
+
+
+def get_job_leads_for_evaluation() -> list:
+    c = _sq.connect(sql)
+    rows = c.execute(
+        f"""
+        SELECT {_LEAD_SELECT_COLUMNS}
+        FROM leads
+        WHERE COALESCE(NULLIF(kind, ''), 'job')='job'
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+    c.close()
+    return [_lead_row_dict(r) for r in rows]
 
 
 def _json_list(s: str) -> list:
@@ -188,7 +425,265 @@ def _json_list(s: str) -> list:
 
 
 def _json_dumps_list(items: list | None) -> str:
-    return json.dumps([str(x).strip() for x in (items or []) if str(x).strip()], ensure_ascii=False)
+    if items is None:
+        values = []
+    elif isinstance(items, str):
+        raw = items.strip()
+        if not raw:
+            values = []
+        elif raw.startswith("["):
+            return raw
+        else:
+            values = [p.strip() for p in raw.split(",") if p.strip()]
+    else:
+        values = [str(x).strip() for x in items if str(x).strip()]
+    return json.dumps(values, ensure_ascii=False)
+
+
+def _json_dict(s: str) -> dict:
+    if isinstance(s, dict):
+        return s
+    try:
+        v = json.loads(str(s or "{}"))
+        return v if isinstance(v, dict) else {}
+    except Exception:
+        return {}
+
+
+def _cleanup_text(lead: dict) -> str:
+    import html
+    import re
+
+    parts = [
+        lead.get("title", ""),
+        lead.get("company", ""),
+        lead.get("platform", ""),
+        lead.get("url", ""),
+        lead.get("description", ""),
+        lead.get("reason", ""),
+        lead.get("signal_reason", ""),
+    ]
+    text = html.unescape("\n".join(str(p or "") for p in parts))
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
+    text = re.sub(r"</p\s*>", "\n", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    return "\n".join(line.strip() for line in text.splitlines() if line.strip())
+
+
+def _looks_like_cleanup_hn_job(text: str) -> bool:
+    clean = _cleanup_text({"description": text})
+    if len(clean) < 80:
+        return False
+    first_line = clean.splitlines()[0].lower()
+    lower = clean.lower()
+    role_terms = (
+        "engineer", "developer", "software", "backend", "front-end", "frontend",
+        "full-stack", "full stack", "devops", "sre", "data", "analyst",
+        "designer", "product", "security", "machine learning", "ml", "ai",
+        "research", "infrastructure", "platform", "mobile", "ios", "android",
+        "qa", "support", "solutions", "sales", "marketing", "operations",
+        "founding",
+    )
+    hiring_terms = (
+        "remote", "onsite", "on-site", "hybrid", "visa", "salary", "apply",
+        "full-time", "part-time", "contract", "intern", "hiring", "equity",
+        "location", "relocation",
+    )
+    has_role = any(term in lower for term in role_terms)
+    has_hiring_signal = any(term in lower for term in hiring_terms)
+    explicit_hiring = any(
+        phrase in lower
+        for phrase in ("we are hiring", "we're hiring", "is hiring", "are hiring", "hiring for")
+    )
+    return (first_line.count("|") >= 2 and has_role and has_hiring_signal) or (has_role and has_hiring_signal and explicit_hiring)
+
+
+def lead_cleanup_reasons(lead: dict) -> list[str]:
+    text = _cleanup_text(lead)
+    lower = text.lower()
+    title = str(lead.get("title") or "").strip()
+    title_lower = title.lower()
+    platform = str(lead.get("platform") or "").lower()
+    url = str(lead.get("url") or "").lower()
+    reasons: list[str] = []
+
+    if not title:
+        reasons.append("missing title")
+    if not str(lead.get("url") or "").strip():
+        reasons.append("missing source url")
+
+    if title_lower.startswith(("ask hn:", "show hn:", "tell hn:", "launch hn:")) and "who is hiring" not in title_lower:
+        reasons.append("HN story/commentary title, not a job")
+
+    is_hn = platform in {"hn", "hackernews", "hn_hiring"} or "news.ycombinator.com/item?id=" in url
+    if is_hn and not _looks_like_cleanup_hn_job(text):
+        reasons.append("HN item does not match a job-posting pattern")
+
+    discussion_terms = (
+        "maybe ", "i think", "why ", "what ", "how ", "should ", "deprecate",
+        "tutorial", "blog post", "newsletter", "podcast", "comment thread",
+        "this thread", "discussion", "upvote", "downvote", "karma",
+    )
+    hiring_terms = (
+        "apply", "hiring", "full-time", "part-time", "contract", "salary",
+        "equity", "remote", "onsite", "hybrid", "visa", "recruiter",
+    )
+    if any(term in lower for term in discussion_terms) and not any(term in lower for term in hiring_terms):
+        reasons.append("discussion/tutorial content without hiring signal")
+
+    return sorted(set(reasons))
+
+
+def cleanup_bad_leads(limit: int = 1000, dry_run: bool = False) -> dict:
+    limit = max(1, min(int(limit or 1000), 5000))
+    c = _sq.connect(sql)
+    rows = c.execute(
+        f"""
+        SELECT {_LEAD_SELECT_COLUMNS}
+        FROM leads
+        WHERE status NOT IN ('approved','applied','interviewing','accepted','completed')
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    touched: list[dict] = []
+    for row in rows:
+        lead = _lead_row_dict(row)
+        reasons = lead_cleanup_reasons(lead)
+        if not reasons:
+            continue
+
+        note = "DB cleanup: " + "; ".join(reasons)
+        touched.append({
+            "job_id": lead["job_id"],
+            "title": lead.get("title", ""),
+            "company": lead.get("company", ""),
+            "platform": lead.get("platform", ""),
+            "reasons": reasons,
+        })
+        if dry_run:
+            continue
+        c.execute(
+            """
+            UPDATE leads
+            SET status='discarded', feedback='incorrect_category', feedback_note=?
+            WHERE job_id=?
+            """,
+            (note[:1000], lead["job_id"]),
+        )
+        c.execute(
+            "INSERT INTO events(job_id,action) VALUES(?,?)",
+            (lead["job_id"], note[:1000]),
+        )
+
+    c.commit()
+    c.close()
+    return {"scanned": len(rows), "discarded": 0 if dry_run else len(touched), "candidates": len(touched), "dry_run": dry_run, "items": touched}
+
+
+def get_feedback_training_examples(limit: int = 300) -> list[dict]:
+    c = _sq.connect(sql)
+    rows = c.execute(
+        """
+        SELECT feedback,platform,company,kind,signal_tags,tech_stack,source_meta,
+               location,urgency,budget,title,description
+        FROM leads
+        WHERE feedback != ''
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (max(1, min(int(limit or 300), 1000)),),
+    ).fetchall()
+    c.close()
+    return [
+        {
+            "feedback": r[0] or "",
+            "platform": r[1] or "",
+            "company": r[2] or "",
+            "kind": r[3] or "job",
+            "signal_tags": _json_list(r[4] or "[]"),
+            "tech_stack": _json_list(r[5] or "[]"),
+            "source_meta": _json_dict(r[6] or "{}"),
+            "location": r[7] or "",
+            "urgency": r[8] or "",
+            "budget": r[9] or "",
+            "title": r[10] or "",
+            "description": r[11] or "",
+        }
+        for r in rows
+    ]
+
+
+def rank_lead_by_feedback(lead: dict) -> dict:
+    try:
+        from agents.feedback_ranker import apply_feedback_learning
+        return apply_feedback_learning(lead, get_feedback_training_examples())
+    except Exception:
+        out = dict(lead)
+        out.setdefault("base_signal_score", int(out.get("signal_score") or 0))
+        out.setdefault("learning_delta", 0)
+        out.setdefault("learning_reason", "")
+        return out
+
+
+def _without_learning_suffix(reason: str) -> str:
+    import re
+    return re.sub(r"(?:;\s*)?feedback learning [+-]\d+", "", reason or "").strip(" ;")
+
+
+def recompute_learning_scores(limit: int = 500) -> int:
+    try:
+        from agents.feedback_ranker import apply_feedback_learning
+    except Exception:
+        return 0
+
+    examples = get_feedback_training_examples()
+    if not examples:
+        return 0
+
+    c = _sq.connect(sql)
+    rows = c.execute(
+        f"""
+        SELECT {_LEAD_SELECT_COLUMNS}
+        FROM leads
+        WHERE feedback = '' AND status != 'discarded'
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (max(1, min(int(limit or 500), 1000)),),
+    ).fetchall()
+
+    updated = 0
+    for row in rows:
+        lead = _lead_row_dict(row)
+        base = int(lead.get("base_signal_score") or lead.get("signal_score") or 0)
+        lead["signal_score"] = base
+        lead["signal_reason"] = _without_learning_suffix(lead.get("signal_reason", ""))
+        ranked = apply_feedback_learning(lead, examples)
+        c.execute(
+            """
+            UPDATE leads
+            SET signal_score=?, signal_reason=?, source_meta=?, base_signal_score=?,
+                learning_delta=?, learning_reason=?
+            WHERE job_id=?
+            """,
+            (
+                int(ranked.get("signal_score") or 0),
+                str(ranked.get("signal_reason") or "")[:700],
+                json.dumps(ranked.get("source_meta") or {}, ensure_ascii=False),
+                int(ranked.get("base_signal_score") or base),
+                int(ranked.get("learning_delta") or 0),
+                str(ranked.get("learning_reason") or "")[:700],
+                lead["job_id"],
+            ),
+        )
+        updated += 1
+    c.commit()
+    c.close()
+    return updated
 
 
 def _read_pdf_text(path: str) -> str:
@@ -245,7 +740,7 @@ def _contact_from_text(text: str) -> dict:
 def get_lead_for_fire(jid: str) -> tuple:
     c = _sq.connect(sql)
     row = c.execute(
-        "SELECT job_id,title,company,url,platform,status,score,reason,match_points,asset_path,description,gaps,cover_letter_path,selected_projects FROM leads WHERE job_id=?",
+        "SELECT job_id,title,company,url,platform,status,score,reason,match_points,asset_path,description,gaps,cover_letter_path,selected_projects,kind,budget FROM leads WHERE job_id=?",
         (jid,)
     ).fetchone()
     c.close()
@@ -289,6 +784,8 @@ def get_lead_for_fire(jid: str) -> tuple:
         "cover_letter_asset": cover_path,
         "cover_letter_path": cover_path,
         "selected_projects": _json_list(row[13] or "[]"),
+        "kind": row[14] or "job",
+        "budget": row[15] or "",
         "profile": profile,
         "name": name,
         "candidate_name": name,
@@ -329,7 +826,7 @@ def get_setting(k: str, default: str = "") -> str:
 def get_lead_by_id(jid: str) -> dict:
     c = _sq.connect(sql)
     row = c.execute(
-        "SELECT job_id,title,company,url,platform,status,score,reason,match_points,asset_path,description,gaps,cover_letter_path,selected_projects FROM leads WHERE job_id=?",
+        f"SELECT {_LEAD_SELECT_COLUMNS} FROM leads WHERE job_id=?",
         (jid,)
     ).fetchone()
     evs = c.execute(
@@ -339,19 +836,9 @@ def get_lead_by_id(jid: str) -> dict:
     c.close()
     if not row:
         return {}
-    return {
-        "job_id": row[0], "title": row[1], "company": row[2], "url": row[3],
-        "platform": row[4], "status": row[5], "score": row[6] or 0,
-        "reason": row[7] or "",
-        "match_points": _json_list(row[8] or "[]"),
-        "asset": row[9] or "",
-        "description": row[10] or "",
-        "gaps": _json_list(row[11] or "[]"),
-        "resume_asset": row[9] or "",
-        "cover_letter_asset": row[12] or "",
-        "selected_projects": _json_list(row[13] or "[]"),
-        "events": [{"action": e[0], "ts": e[1]} for e in evs],
-    }
+    lead = _lead_row_dict(row)
+    lead["events"] = [{"action": e[0], "ts": e[1]} for e in evs]
+    return lead
 
 
 def delete_lead(jid: str):
@@ -366,6 +853,7 @@ def update_lead_status(jid: str, status: str):
     valid = {
         "discovered", "evaluating", "tailoring", "approved",
         "applied", "interviewing", "rejected", "accepted", "discarded",
+        "matched", "bidding", "proposal_sent", "awarded", "completed",
     }
     if status not in valid:
         raise ValueError(f"Invalid status: {status}")
@@ -377,6 +865,93 @@ def update_lead_status(jid: str, status: str):
     )
     c.commit()
     c.close()
+
+
+def save_lead_feedback(jid: str, feedback: str, note: str = "") -> dict:
+    valid = {
+        "good", "trash", "too_generic", "not_ai",
+        "not_freelance", "already_contacted",
+        "relevant", "not_relevant", "duplicate",
+        "low_quality", "incorrect_category",
+    }
+    if feedback not in valid:
+        raise ValueError(f"Invalid feedback: {feedback}")
+
+    c = _sq.connect(sql)
+    row = c.execute("SELECT kind,status FROM leads WHERE job_id=?", (jid,)).fetchone()
+    if not row:
+        c.close()
+        return {}
+
+    kind = row[0] or "job"
+    status = row[1] or "discovered"
+    new_status = status
+    now = ""
+    due = ""
+    if feedback in {
+        "trash", "too_generic", "not_ai", "not_freelance",
+        "not_relevant", "duplicate", "low_quality", "incorrect_category",
+    }:
+        new_status = "discarded"
+    elif feedback == "already_contacted":
+        from datetime import datetime, timedelta
+
+        now = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+        due = (datetime.utcnow() + timedelta(days=5)).replace(microsecond=0).isoformat() + "Z"
+        new_status = "proposal_sent" if kind == "freelance" else "applied"
+
+    c.execute(
+        "UPDATE leads SET feedback=?, feedback_note=?, status=?, last_contacted_at=COALESCE(NULLIF(?, ''), last_contacted_at), followup_due_at=COALESCE(NULLIF(?, ''), followup_due_at) WHERE job_id=?",
+        (feedback, note or "", new_status, now, due, jid),
+    )
+    c.execute(
+        "INSERT INTO events(job_id,action) VALUES(?,?)",
+        (jid, f"feedback={feedback}"),
+    )
+    c.commit()
+    c.close()
+    recompute_learning_scores()
+    return get_lead_by_id(jid)
+
+
+def update_lead_followup(jid: str, days: int = 5) -> dict:
+    from datetime import datetime, timedelta
+
+    days = max(1, min(int(days or 5), 60))
+    due = (datetime.utcnow() + timedelta(days=days)).replace(microsecond=0).isoformat() + "Z"
+    now = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    c = _sq.connect(sql)
+    row = c.execute("SELECT 1 FROM leads WHERE job_id=?", (jid,)).fetchone()
+    if not row:
+        c.close()
+        return {}
+    c.execute(
+        "UPDATE leads SET followup_due_at=?, last_contacted_at=COALESCE(NULLIF(last_contacted_at, ''), ?) WHERE job_id=?",
+        (due, now, jid),
+    )
+    c.execute("INSERT INTO events(job_id,action) VALUES(?,?)", (jid, f"followup_due={due}"))
+    c.commit()
+    c.close()
+    return get_lead_by_id(jid)
+
+
+def get_due_followups(limit: int = 25) -> list:
+    from datetime import datetime
+
+    now = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    c = _sq.connect(sql)
+    rows = c.execute(
+        """
+        SELECT {columns}
+        FROM leads
+        WHERE followup_due_at != '' AND followup_due_at <= ? AND status != 'discarded'
+        ORDER BY followup_due_at ASC
+        LIMIT ?
+        """.format(columns=_LEAD_SELECT_COLUMNS),
+        (now, max(1, min(int(limit or 25), 100))),
+    ).fetchall()
+    c.close()
+    return [_lead_row_dict(r) for r in rows]
 
 
 def get_events(limit: int = 100, job_id: str | None = None) -> list:
@@ -398,10 +973,26 @@ def get_events(limit: int = 100, job_id: str | None = None) -> list:
 def get_discovered_leads() -> list:
     c = _sq.connect(sql)
     rows = c.execute(
-        "SELECT job_id,title,company,url,platform,description FROM leads WHERE status='discovered'"
+        "SELECT job_id,title,company,url,platform,description FROM leads WHERE status='discovered' AND COALESCE(NULLIF(kind, ''), 'job')='job'"
     ).fetchall()
     c.close()
     return [{"job_id": r[0], "title": r[1], "company": r[2], "url": r[3], "platform": r[4], "description": r[5] or ""} for r in rows]
+
+
+def get_discovered_freelance_leads() -> list:
+    c = _sq.connect(sql)
+    rows = c.execute(
+        "SELECT job_id,title,company,url,platform,description,budget FROM leads WHERE status='discovered' AND kind='freelance'"
+    ).fetchall()
+    c.close()
+    return [
+        {
+            "job_id": r[0], "title": r[1], "company": r[2],
+            "url": r[3], "platform": r[4],
+            "description": r[5] or "", "budget": r[6] or "",
+        }
+        for r in rows
+    ]
 
 
 def _h(t: str) -> str:
@@ -409,13 +1000,106 @@ def _h(t: str) -> str:
     return hashlib.md5(t.encode()).hexdigest()[:12]
 
 
-def get_profile() -> dict:
+_PROFILE_SNAPSHOT_KEY = "profile_snapshot_json"
+
+
+def _stack_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    return [part.strip() for part in str(value or "").split(",") if part.strip()]
+
+
+def _profile_has_data(profile: dict | None) -> bool:
+    if not isinstance(profile, dict):
+        return False
+    return bool(
+        str(profile.get("n") or "").strip()
+        or str(profile.get("s") or "").strip()
+        or profile.get("skills")
+        or profile.get("projects")
+        or profile.get("exp")
+        or profile.get("certifications")
+        or profile.get("education")
+        or profile.get("achievements")
+    )
+
+
+def _empty_profile() -> dict:
+    return {
+        "n": "",
+        "s": "",
+        "skills": [],
+        "projects": [],
+        "exp": [],
+        "certifications": [],
+        "education": [],
+        "achievements": [],
+    }
+
+
+def _normal_profile(profile: dict | None) -> dict:
+    profile = profile if isinstance(profile, dict) else {}
+    return {
+        "n": str(profile.get("n") or ""),
+        "s": str(profile.get("s") or ""),
+        "skills": list(profile.get("skills") or []),
+        "projects": list(profile.get("projects") or []),
+        "exp": list(profile.get("exp") or []),
+        "certifications": list(profile.get("certifications") or profile.get("certs") or []),
+        "education": list(profile.get("education") or []),
+        "achievements": list(profile.get("achievements") or profile.get("awards") or []),
+    }
+
+
+def _load_profile_snapshot() -> dict:
+    try:
+        c = _sq.connect(sql)
+        row = c.execute("SELECT val FROM settings WHERE key=?", (_PROFILE_SNAPSHOT_KEY,)).fetchone()
+        c.close()
+        if not row:
+            return {}
+        profile = _normal_profile(json.loads(row[0] or "{}"))
+        return profile if _profile_has_data(profile) else {}
+    except Exception:
+        return {}
+
+
+def _save_profile_snapshot(profile: dict):
+    profile = _normal_profile(profile)
+    if not _profile_has_data(profile):
+        return
+    try:
+        c = _sq.connect(sql)
+        c.execute(
+            "INSERT OR REPLACE INTO settings(key,val) VALUES(?,?)",
+            (_PROFILE_SNAPSHOT_KEY, json.dumps(profile, ensure_ascii=False)),
+        )
+        c.commit()
+        c.close()
+    except Exception:
+        pass
+
+
+def _read_profile_from_graph() -> dict:
     from kuzu import Connection
     c = Connection(db)
 
     # 1. Candidate
     r = c.execute("MATCH (n:Candidate) RETURN n.id, n.n, n.s")
-    cand = r.get_next() if r.has_next() else ["", "", ""]
+    candidates = []
+    while r.has_next():
+        candidates.append(r.get_next())
+    if candidates:
+        candidates.sort(
+            key=lambda row: (
+                0 if str(row[1] or "").strip().lower() in {"", "unknown", "candidate"} else 1,
+                len(str(row[1] or "")) + len(str(row[2] or "")),
+            ),
+            reverse=True,
+        )
+        cand = candidates[0]
+    else:
+        cand = ["", "", ""]
 
     # 2. Skills
     r = c.execute("MATCH (n:Skill) RETURN n.id, n.n, n.cat")
@@ -429,7 +1113,7 @@ def get_profile() -> dict:
     projects = []
     while r.has_next():
         row = r.get_next()
-        projects.append({"id": row[0], "title": row[1], "stack": row[2].split(",") if row[2] else [], "repo": row[3], "impact": row[4]})
+        projects.append({"id": row[0], "title": row[1], "stack": _stack_list(row[2]), "repo": row[3], "impact": row[4]})
 
     # 4. Experience
     r = c.execute("MATCH (n:Experience) RETURN n.id, n.role, n.co, n.period, n.d")
@@ -438,19 +1122,60 @@ def get_profile() -> dict:
         row = r.get_next()
         exp.append({"id": row[0], "role": row[1], "co": row[2], "period": row[3], "d": row[4]})
 
+    def _read_text_nodes(label: str) -> list[str]:
+        try:
+            res = c.execute(f"MATCH (n:{label}) RETURN n.title")
+        except Exception:
+            return []
+        items: list[str] = []
+        while res.has_next():
+            row = res.get_next()
+            text = str(row[0] or "").strip()
+            if text:
+                items.append(text)
+        return items
+
     return {
         "n": cand[1],
         "s": cand[2],
         "skills": skills,
         "projects": projects,
-        "exp": exp
+        "exp": exp,
+        "certifications": _read_text_nodes("Certification"),
+        "education": _read_text_nodes("Education"),
+        "achievements": _read_text_nodes("Achievement"),
     }
+
+
+def get_profile() -> dict:
+    snapshot = _load_profile_snapshot()
+    try:
+        profile = _normal_profile(_read_profile_from_graph())
+    except Exception as exc:
+        if snapshot:
+            return snapshot
+        print(f"[db] profile read failed: {exc}", flush=True)
+        return _empty_profile()
+
+    if _profile_has_data(profile):
+        _save_profile_snapshot(profile)
+        return profile
+    return snapshot or profile
+
+
+def refresh_profile_snapshot():
+    try:
+        _save_profile_snapshot(_read_profile_from_graph())
+    except Exception:
+        pass
 
 
 # ── CRUD: Skills ──────────────────────────────────────────────────
 
 def add_skill(n: str, cat: str) -> dict:
     from kuzu import Connection
+    n = str(n or "").strip()
+    cat = str(cat or "general").strip() or "general"
     sid = _h(n)
     c = Connection(db)
     try:
@@ -469,31 +1194,40 @@ def add_skill(n: str, cat: str) -> dict:
         _add_skill_vec(sid, n, cat)
     except Exception:
         pass
+    refresh_profile_snapshot()
     return {"id": sid, "n": n, "cat": cat}
 
 
 def update_skill(sid: str, n: str, cat: str) -> dict:
     from kuzu import Connection
+    n = str(n or "").strip()
+    cat = str(cat or "general").strip() or "general"
     c = Connection(db)
     c.execute("MATCH (s:Skill) WHERE s.id = $id SET s.n = $n, s.cat = $cat", {"id": sid, "n": n, "cat": cat})
+    try:
+        _add_skill_vec(sid, n, cat)
+    except Exception:
+        pass
+    refresh_profile_snapshot()
     return {"id": sid, "n": n, "cat": cat}
 
 
 def delete_skill(sid: str):
     from kuzu import Connection
+    _delete_vec_rows("skills", [sid])
     c = Connection(db)
-    try:
-        c.execute("MATCH (s:Skill)-[r]-() WHERE s.id = $id DELETE r", {"id": sid})
-    except Exception:
-        pass
-    c2 = Connection(db)
-    c2.execute("MATCH (s:Skill) WHERE s.id = $id DELETE s", {"id": sid})
+    c.execute("MATCH (s:Skill) WHERE s.id = $id DETACH DELETE s", {"id": sid})
+    refresh_profile_snapshot()
 
 
 # ── CRUD: Experience ──────────────────────────────────────────────
 
 def add_experience(role: str, co: str, period: str, d: str) -> dict:
     from kuzu import Connection
+    role = str(role or "").strip()
+    co = str(co or "").strip()
+    period = str(period or "").strip()
+    d = str(d or "").strip()
     eid = _h(role + co)
     c = Connection(db)
     try:
@@ -520,34 +1254,41 @@ def add_experience(role: str, co: str, period: str, d: str) -> dict:
             )
     except Exception:
         pass
+    refresh_profile_snapshot()
     return {"id": eid, "role": role, "co": co, "period": period, "d": d}
 
 
 def update_experience(eid: str, role: str, co: str, period: str, d: str) -> dict:
     from kuzu import Connection
+    role = str(role or "").strip()
+    co = str(co or "").strip()
+    period = str(period or "").strip()
+    d = str(d or "").strip()
     c = Connection(db)
     c.execute(
         "MATCH (e:Experience) WHERE e.id = $id SET e.role = $role, e.co = $co, e.period = $period, e.d = $d",
         {"id": eid, "role": role, "co": co, "period": period, "d": d}
     )
+    refresh_profile_snapshot()
     return {"id": eid, "role": role, "co": co, "period": period, "d": d}
 
 
 def delete_experience(eid: str):
     from kuzu import Connection
+    refresh_profile_snapshot()
     c = Connection(db)
-    try:
-        c.execute("MATCH (e:Experience)-[r]-() WHERE e.id = $id DELETE r", {"id": eid})
-    except Exception:
-        pass
-    c2 = Connection(db)
-    c2.execute("MATCH (e:Experience) WHERE e.id = $id DELETE e", {"id": eid})
+    c.execute("MATCH (e:Experience) WHERE e.id = $id DETACH DELETE e", {"id": eid})
+    refresh_profile_snapshot()
 
 
 # ── CRUD: Projects ────────────────────────────────────────────────
 
 def add_project(title: str, stack: str, repo: str, impact: str) -> dict:
     from kuzu import Connection
+    title = str(title or "").strip()
+    stack = str(stack or "").strip()
+    repo = str(repo or "").strip()
+    impact = str(impact or "").strip()
     pid = _h(title)
     c = Connection(db)
     try:
@@ -579,28 +1320,35 @@ def add_project(title: str, stack: str, repo: str, impact: str) -> dict:
         _add_project_vec(pid, title, stack, impact)
     except Exception:
         pass
+    refresh_profile_snapshot()
     return {"id": pid, "title": title, "stack": stack.split(",") if stack else [], "repo": repo, "impact": impact}
 
 
 def update_project(pid: str, title: str, stack: str, repo: str, impact: str) -> dict:
     from kuzu import Connection
+    title = str(title or "").strip()
+    stack = str(stack or "").strip()
+    repo = str(repo or "").strip()
+    impact = str(impact or "").strip()
     c = Connection(db)
     c.execute(
         "MATCH (p:Project) WHERE p.id = $id SET p.title = $title, p.stack = $stack, p.repo = $repo, p.impact = $impact",
         {"id": pid, "title": title, "stack": stack, "repo": repo, "impact": impact}
     )
+    try:
+        _add_project_vec(pid, title, stack, impact)
+    except Exception:
+        pass
+    refresh_profile_snapshot()
     return {"id": pid, "title": title, "stack": stack.split(",") if stack else [], "repo": repo, "impact": impact}
 
 
 def delete_project(pid: str):
     from kuzu import Connection
+    _delete_vec_rows("projects", [pid])
     c = Connection(db)
-    try:
-        c.execute("MATCH (p:Project)-[r]-() WHERE p.id = $id DELETE r", {"id": pid})
-    except Exception:
-        pass
-    c2 = Connection(db)
-    c2.execute("MATCH (p:Project) WHERE p.id = $id DELETE p", {"id": pid})
+    c.execute("MATCH (p:Project) WHERE p.id = $id DETACH DELETE p", {"id": pid})
+    refresh_profile_snapshot()
 
 
 # ── CRUD: Candidate ──────────────────────────────────────────────
@@ -608,6 +1356,9 @@ def delete_project(pid: str):
 def update_candidate(name: str, summary: str) -> dict:
     from kuzu import Connection
     import hashlib
+    name = str(name or "").strip()
+    summary = str(summary or "").strip()
+    refresh_profile_snapshot()
     c = Connection(db)
     r = c.execute("MATCH (n:Candidate) RETURN n.id LIMIT 1")
     if r.has_next():
@@ -627,10 +1378,24 @@ def update_candidate(name: str, summary: str) -> dict:
             )
         except Exception:
             pass
+    refresh_profile_snapshot()
     return {"n": name, "s": summary}
 
 
 # ── Vector helpers (reuse ingestor patterns) ──────────────────────
+
+def _delete_vec_rows(table_name: str, ids: list[str]):
+    ids = [str(item or "").strip() for item in ids if str(item or "").strip()]
+    if not ids:
+        return
+    try:
+        if table_name not in vec.list_tables():
+            return
+        quoted = ["'" + item.replace("'", "''") + "'" for item in ids]
+        vec.open_table(table_name).delete("id IN (" + ", ".join(quoted) + ")")
+    except Exception:
+        pass
+
 
 def _add_skill_vec(sid: str, n: str, cat: str):
     try:
@@ -639,6 +1404,7 @@ def _add_skill_vec(sid: str, n: str, cat: str):
         if vecs:
             rows = [{"id": sid, "n": n, "cat": cat, "vector": vecs[0]}]
             if "skills" in vec.list_tables():
+                _delete_vec_rows("skills", [sid])
                 vec.open_table("skills").add(rows)
             else:
                 vec.create_table("skills", data=rows)
@@ -654,6 +1420,7 @@ def _add_project_vec(pid: str, title: str, stack: str, impact: str):
         if vecs:
             rows = [{"id": pid, "title": title, "stack": stack, "impact": impact, "vector": vecs[0]}]
             if "projects" in vec.list_tables():
+                _delete_vec_rows("projects", [pid])
                 vec.open_table("projects").add(rows)
             else:
                 vec.create_table("projects", data=rows)

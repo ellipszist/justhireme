@@ -29,3 +29,6 @@ class C(BaseModel):
     skills:   List[S]  = Field(default_factory=list)
     exp:      List[E]  = Field(default_factory=list)
     projects: List[P]  = Field(default_factory=list)
+    certifications: List[str] = Field(default_factory=list)
+    education:      List[str] = Field(default_factory=list)
+    achievements:   List[str] = Field(default_factory=list)
