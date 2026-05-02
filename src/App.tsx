@@ -9,15 +9,47 @@ import "./index.css";
 
 // Types
 type ConnSt = "disconnected" | "connecting" | "connected";
-type View = "dashboard" | "inbox" | "pipeline" | "graph" | "activity" | "profile" | "ingestion";
+type View = "apply" | "dashboard" | "inbox" | "pipeline" | "graph" | "activity" | "profile" | "ingestion";
 type PipelineTab = "all" | "hot" | "found" | "evaluated" | "generated" | "applied" | "discarded";
 type LeadSort = "recommended" | "newest" | "signal" | "match" | "company";
 type SeniorityFilter = "all" | "beginner" | "fresher" | "junior" | "mid" | "senior" | "unknown";
+
+interface KeywordCoverage {
+  jd_terms?: string[];
+  covered_terms?: string[];
+  missing_terms?: string[];
+  incorporated_terms?: string[];
+  coverage_pct?: number;
+}
+
+interface ContactLookup {
+  status?: string;
+  domain?: string;
+  message?: string;
+  primary_contact?: {
+    name?: string;
+    first_name?: string;
+    title?: string;
+    email?: string;
+    linkedin_url?: string;
+    confidence?: number;
+    personalized_email?: string;
+  };
+  contacts?: {
+    name?: string;
+    title?: string;
+    email?: string;
+    linkedin_url?: string;
+    confidence?: number;
+  }[];
+}
 
 interface Lead {
   job_id: string; title: string; company: string;
   url: string; platform: string; status: string; asset: string;
   resume_asset?: string; cover_letter_asset?: string; selected_projects?: string[];
+  keyword_coverage?: KeywordCoverage;
+  contact_lookup?: ContactLookup;
   score: number; reason: string; match_points: string[]; gaps?: string[];
   description?: string; kind?: string; budget?: string;
   signal_score?: number; signal_reason?: string; signal_tags?: string[];
@@ -42,6 +74,14 @@ interface LogLine {
 // Helpers
 const getMark = (company: string) => company ? company.charAt(0).toUpperCase() : "?";
 const PAGE_SIZE = 80;
+const ONBOARDING_KEY = "justhireme:onboarding:v1";
+const DEMO_JOB_DRAFT = `https://jobs.example.com/applied-ai-engineer-demo
+
+Applied AI Engineer
+Company: NimbusWorks
+Location: Remote
+
+Build production AI workflows for hiring teams using Python, FastAPI, React, PostgreSQL, background jobs, prompt evaluation, and ATS-friendly document generation. The role needs someone comfortable with LLM integrations, CI/CD, observability, and shipping user-facing automation from messy product requirements.`;
 
 const leadSignal = (lead: Lead) => Math.max(lead.signal_score || 0, lead.score || 0);
 
@@ -476,6 +516,7 @@ function useGraphStats(port: number | null) {
 ══════════════════════════════════════ */
 
 const NAV = [
+  { id: "apply",     label: "Apply",         icon: "spark",  tone: "green"  },
   { id: "dashboard", label: "Dashboard",     icon: "home",   tone: "blue"   },
   { id: "inbox",     label: "Lead Inbox",    icon: "plus",   tone: "orange" },
   { id: "pipeline",  label: "Job Pipeline",  icon: "layers", tone: "purple" },
@@ -579,6 +620,7 @@ function Sidebar({ view, setView, leadCounts, online, port, beat, onSettings }: 
 
 function Topbar({ view }: { view: View }) {
   const titles: Record<View, string> = {
+    apply:     "Apply to This Job",
     dashboard: "Command Center",
     inbox:     "Lead Inbox",
     pipeline:  "Job Pipeline",
@@ -929,6 +971,582 @@ function LeadInboxView({ port, onCreated }: { port: number | null; onCreated: (l
         </div>
       </div>
     </div>
+  );
+}
+
+
+function ApplyJobView({ port, leads, openDrawer, initialInput }: { port: number | null; leads: Lead[]; openDrawer: (l: Lead) => void; initialInput?: string }) {
+  const [input, setInput] = useState("");
+  const initialApplied = useRef(false);
+  const [lead, setLead] = useState<Lead | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [resumeBlobUrl, setResumeBlobUrl] = useState<string | null>(null);
+  const [coverBlobUrl, setCoverBlobUrl] = useState<string | null>(null);
+  const [resumeLoadErr, setResumeLoadErr] = useState<string | null>(null);
+  const [coverLoadErr, setCoverLoadErr] = useState<string | null>(null);
+  const [fireBusy, setFireBusy] = useState(false);
+  const [fireMsg, setFireMsg] = useState<string | null>(null);
+
+  const liveLead = lead ? (leads.find(l => l.job_id === lead.job_id) || lead) : null;
+  const resumeReady = Boolean(liveLead?.resume_asset || liveLead?.asset);
+  const coverReady = Boolean(liveLead?.cover_letter_asset);
+  const generating = Boolean(liveLead && (!resumeReady || !coverReady) && (busy || liveLead.status === "tailoring" || liveLead.status === "approved"));
+  const resumeDocUrl = liveLead && resumeReady ? `http://127.0.0.1:${port}/api/v1/leads/${liveLead.job_id}/pdf?kind=resume` : null;
+  const coverDocUrl = liveLead && coverReady ? `http://127.0.0.1:${port}/api/v1/leads/${liveLead.job_id}/pdf?kind=cover_letter` : null;
+  const coverage = (liveLead?.keyword_coverage || liveLead?.source_meta?.keyword_coverage || {}) as KeywordCoverage;
+  const contactLookup = (liveLead?.contact_lookup || liveLead?.source_meta?.contact_lookup || {}) as ContactLookup;
+  const primaryContact = contactLookup.primary_contact;
+  const missingTerms: string[] = Array.isArray(coverage.missing_terms) ? coverage.missing_terms : [];
+  const incorporatedTerms: string[] = Array.isArray(coverage.incorporated_terms) ? coverage.incorporated_terms : [];
+  const coveragePct = typeof coverage.coverage_pct === "number" ? coverage.coverage_pct : null;
+
+  useEffect(() => {
+    if (initialInput && !initialApplied.current) {
+      initialApplied.current = true;
+      setInput(initialInput);
+    }
+  }, [initialInput]);
+
+  useEffect(() => {
+    if (!lead?.job_id || !port || (resumeReady && coverReady)) return;
+    let alive = true;
+    const timer = setInterval(async () => {
+      try {
+        const r = await fetch(`http://127.0.0.1:${port}/api/v1/leads/${lead.job_id}`);
+        if (!r.ok) return;
+        const updated = await r.json();
+        if (alive) setLead(updated);
+      } catch { /* keep waiting */ }
+    }, 1800);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [lead?.job_id, port, resumeReady, coverReady]);
+
+  useEffect(() => {
+    if (!resumeDocUrl) { setResumeBlobUrl(null); setResumeLoadErr(null); return; }
+    let revoke: string | null = null;
+    let alive = true;
+    setResumeLoadErr(null);
+    setResumeBlobUrl(null);
+    fetch(resumeDocUrl)
+      .then(r => {
+        if (!r.ok) throw new Error("Resume PDF not ready");
+        return r.blob();
+      })
+      .then(blob => {
+        if (!alive) return;
+        revoke = URL.createObjectURL(blob);
+        setResumeBlobUrl(revoke);
+      })
+      .catch(e => alive && setResumeLoadErr(e instanceof Error ? e.message : "Resume failed to load"));
+    return () => {
+      alive = false;
+      if (revoke) URL.revokeObjectURL(revoke);
+    };
+  }, [resumeDocUrl]);
+
+  useEffect(() => {
+    if (!coverDocUrl) { setCoverBlobUrl(null); setCoverLoadErr(null); return; }
+    let revoke: string | null = null;
+    let alive = true;
+    setCoverLoadErr(null);
+    setCoverBlobUrl(null);
+    fetch(coverDocUrl)
+      .then(r => {
+        if (!r.ok) throw new Error("Cover letter PDF not ready");
+        return r.blob();
+      })
+      .then(blob => {
+        if (!alive) return;
+        revoke = URL.createObjectURL(blob);
+        setCoverBlobUrl(revoke);
+      })
+      .catch(e => alive && setCoverLoadErr(e instanceof Error ? e.message : "Cover letter failed to load"));
+    return () => {
+      alive = false;
+      if (revoke) URL.revokeObjectURL(revoke);
+    };
+  }, [coverDocUrl]);
+
+  useEffect(() => {
+    if (busy && resumeReady && coverReady) setBusy(false);
+  }, [busy, resumeReady, coverReady]);
+
+  const submit = async () => {
+    if (!port || busy || !input.trim()) return;
+    setBusy(true);
+    setErr(null);
+    setFireMsg(null);
+    setResumeBlobUrl(null);
+    setCoverBlobUrl(null);
+    try {
+      const trimmed = input.trim();
+      const url = trimmed.match(/https?:\/\/\S+/)?.[0] || "";
+      const r = await fetch(`http://127.0.0.1:${port}/api/v1/leads/manual`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "job", url, text: trimmed }),
+      });
+      if (!r.ok) {
+        const detail = await r.json().then(d => d.detail).catch(() => "");
+        throw new Error(detail || `Server returned ${r.status}`);
+      }
+      const created = await r.json();
+      setLead(created);
+      const gen = await fetch(`http://127.0.0.1:${port}/api/v1/leads/${created.job_id}/generate`, { method: "POST" });
+      if (!gen.ok) throw new Error(`Generation returned ${gen.status}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Application package failed");
+      setBusy(false);
+    }
+  };
+
+  const fire = async () => {
+    if (!port || !liveLead || !resumeReady || !coverReady || fireBusy) return;
+    setFireBusy(true);
+    setFireMsg(null);
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/api/v1/fire/${liveLead.job_id}`, { method: "POST" });
+      if (!r.ok) {
+        const detail = await r.json().then(d => d.detail).catch(() => "");
+        throw new Error(detail || `Server returned ${r.status}`);
+      }
+      setFireMsg("Application automation started.");
+    } catch (e) {
+      setFireMsg(e instanceof Error ? e.message : "Could not start application automation");
+    } finally {
+      setFireBusy(false);
+    }
+  };
+
+  const copyText = (value: string) => navigator.clipboard?.writeText(value);
+  const stepTone = (done: boolean, active: boolean) => done ? "green" : active ? "purple" : "blue";
+  const stepPill = (label: string, done: boolean, active: boolean) => {
+    const tone = stepTone(done, active);
+    return (
+      <div className="pill mono" style={{ background: `var(--${tone}-soft)`, color: `var(--${tone}-ink)`, border: `1px solid var(--${tone})`, fontSize: 10 }}>
+        {done ? "Done" : active ? "Working" : "Waiting"} - {label}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ height: "100%", overflow: "auto", padding: 24 }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto", display: "grid", gridTemplateColumns: liveLead ? "420px minmax(0, 1fr)" : "minmax(0, 880px)", gap: 18, alignItems: "start", justifyContent: "center" }}>
+        <section className="card" style={{ padding: 22, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <div className="eyebrow">Apply to this job</div>
+            <h2 style={{ fontSize: 24, fontWeight: 700, marginTop: 5, marginBottom: 6 }}>Paste a job URL.</h2>
+            <div style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.55 }}>Analyse fit, generate the resume and cover letter, then copy outreach from one page.</div>
+          </div>
+          <textarea
+            className="field-input"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="Paste job URL or full job description"
+            rows={liveLead ? 8 : 12}
+            style={{ fontSize: 14, lineHeight: 1.55, resize: "vertical" }}
+          />
+          <button className="btn btn-accent" onClick={submit} disabled={!port || busy || !input.trim()} style={{ justifyContent: "center", padding: "12px 16px", fontSize: 14 }}>
+            <Icon name="spark" size={15} color="#fff" /> {busy ? "Analysing and generating..." : "Analyse & Generate"}
+          </button>
+          {err && <div style={{ color: "var(--bad)", background: "var(--bad-soft)", border: "1px solid var(--bad)", borderRadius: 8, padding: "9px 11px", fontSize: 12 }}>{err}</div>}
+          {liveLead && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {stepPill("Job captured", true, false)}
+              {stepPill("Resume generated", resumeReady, generating && !resumeReady)}
+              {stepPill("Cover letter generated", coverReady, generating && resumeReady && !coverReady)}
+              <button className="btn" onClick={() => openDrawer(liveLead)} style={{ justifyContent: "center" }}>Open full details</button>
+            </div>
+          )}
+        </section>
+
+        {liveLead && (
+          <section style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+            <div className="card" style={{ padding: 18, display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="eyebrow">Application Package</div>
+                <h3 style={{ fontSize: 18, fontWeight: 700, marginTop: 5 }}>{roleFromLead(liveLead)}</h3>
+                <div style={{ fontSize: 13, color: "var(--ink-2)", marginTop: 3 }}>{liveLead.company || "Unknown company"}</div>
+              </div>
+              <div className="row gap-2" style={{ flexWrap: "wrap" }}>
+                {coveragePct !== null && <span className="pill mono" style={{ background: "var(--blue-soft)", color: "var(--blue-ink)", border: "1px solid var(--blue)" }}>{coveragePct}% coverage</span>}
+                <span className="pill mono" style={{ background: resumeReady && coverReady ? "var(--green-soft)" : "var(--purple-soft)", color: resumeReady && coverReady ? "var(--green-ink)" : "var(--purple-ink)", border: `1px solid ${resumeReady && coverReady ? "var(--green)" : "var(--purple)"}` }}>
+                  {resumeReady && coverReady ? "Ready" : "Generating"}
+                </span>
+              </div>
+            </div>
+
+            {(missingTerms.length > 0 || incorporatedTerms.length > 0) && (
+              <div className="card" style={{ padding: 16, borderColor: "var(--blue)", background: "var(--blue-soft)" }}>
+                <div className="row" style={{ justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
+                  <span className="eyebrow" style={{ color: "var(--blue-ink)" }}>Coverage</span>
+                  {coveragePct !== null && <span className="mono" style={{ fontSize: 11, fontWeight: 800, color: "var(--blue-ink)" }}>{coveragePct}% JD keywords</span>}
+                </div>
+                <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
+                  {missingTerms.length
+                    ? <>You're missing these terms from the JD: <b>{missingTerms.slice(0, 8).join(", ")}</b>. We've incorporated supported matches where applicable.</>
+                    : <>Strong keyword coverage. Supported JD terms were incorporated where they fit.</>
+                  }
+                </div>
+                {incorporatedTerms.length > 0 && (
+                  <div className="row gap-2" style={{ flexWrap: "wrap", marginTop: 10 }}>
+                    {incorporatedTerms.slice(0, 10).map(term => (
+                      <span key={term} className="pill" style={{ background: "var(--paper)", color: "var(--blue-ink)", border: "1px solid var(--blue)" }}>{term}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="card" style={{ padding: 16, borderColor: primaryContact ? "var(--green)" : "var(--line)", background: primaryContact ? "var(--green-soft)" : "var(--paper)" }}>
+              <div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="eyebrow" style={{ color: primaryContact ? "var(--green-ink)" : "var(--ink-3)" }}>Who to contact</div>
+                  {primaryContact ? (
+                    <>
+                      <h3 style={{ fontSize: 17, fontWeight: 800, marginTop: 5 }}>{primaryContact.name || "Company contact"}</h3>
+                      <div style={{ fontSize: 12.5, color: "var(--ink-2)", marginTop: 3 }}>{primaryContact.title || "Hiring contact"}{contactLookup.domain ? ` at ${contactLookup.domain}` : ""}</div>
+                    </>
+                  ) : (
+                    <>
+                      <h3 style={{ fontSize: 17, fontWeight: 800, marginTop: 5 }}>Contact lookup</h3>
+                      <div style={{ fontSize: 12.5, color: "var(--ink-2)", marginTop: 3 }}>
+                        {contactLookup.message || (resumeReady && coverReady ? "Add a Hunter.io API key in Settings to find recruiter and founder emails." : "Contact lookup runs after the package is generated.")}
+                      </div>
+                    </>
+                  )}
+                </div>
+                {contactLookup.status && (
+                  <span className="pill mono" style={{ background: primaryContact ? "var(--paper)" : "var(--paper-3)", color: primaryContact ? "var(--green-ink)" : "var(--ink-3)", border: `1px solid ${primaryContact ? "var(--green)" : "var(--line)"}` }}>
+                    {contactLookup.status.replace(/_/g, " ")}
+                  </span>
+                )}
+              </div>
+              {primaryContact && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginTop: 12 }}>
+                  <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
+                    <div className="eyebrow">Direct line</div>
+                    <div className="col gap-2" style={{ marginTop: 8, fontSize: 12.5, color: "var(--ink-2)" }}>
+                      {primaryContact.email && (
+                        <button className="btn btn-ghost" style={{ justifyContent: "space-between" }} onClick={() => copyText(primaryContact.email || "")}>
+                          <span className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{primaryContact.email}</span>
+                          <span>Copy</span>
+                        </button>
+                      )}
+                      {primaryContact.linkedin_url && (
+                        <button className="btn btn-ghost" style={{ justifyContent: "space-between" }} onClick={() => copyText(primaryContact.linkedin_url || "")}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>LinkedIn profile</span>
+                          <span>Copy</span>
+                        </button>
+                      )}
+                      {typeof primaryContact.confidence === "number" && primaryContact.confidence > 0 && (
+                        <div className="mono" style={{ color: "var(--green-ink)", fontSize: 11 }}>{primaryContact.confidence}% Hunter confidence</div>
+                      )}
+                    </div>
+                  </div>
+                  {primaryContact.personalized_email && (
+                    <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
+                      <div className="row" style={{ justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                        <span className="eyebrow">Cold email</span>
+                        <button className="btn btn-ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => copyText(primaryContact.personalized_email || "")}>Copy</button>
+                      </div>
+                      <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{primaryContact.personalized_email}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
+              {[
+                { label: "Resume", ready: resumeReady, blob: resumeBlobUrl, error: resumeLoadErr, url: resumeDocUrl },
+                { label: "Cover Letter", ready: coverReady, blob: coverBlobUrl, error: coverLoadErr, url: coverDocUrl },
+              ].map(doc => (
+                <div key={doc.label} className="card" style={{ minHeight: 600, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                  <div className="row" style={{ padding: 11, borderBottom: "1px solid var(--line)", background: "var(--paper-3)", justifyContent: "space-between", gap: 10 }}>
+                    <div className="row gap-2">
+                      <span style={{ fontSize: 13, fontWeight: 800 }}>{doc.label}</span>
+                      <span className="dot" style={{ color: doc.ready ? "var(--ok)" : "var(--ink-4)" }} />
+                    </div>
+                    <button className="btn btn-ghost" disabled={!doc.url} onClick={() => doc.url && openUrl(doc.url)} style={{ fontSize: 11, padding: "4px 9px" }}>
+                      <Icon name="download" size={12} /> Download PDF
+                    </button>
+                  </div>
+                  <div style={{ flex: 1, minHeight: 0 }}>
+                    {doc.ready && doc.blob && (
+                      <iframe key={doc.blob} src={doc.blob} title={doc.label} width="100%" style={{ height: "100%", minHeight: 548, border: "none", display: "block" }} />
+                    )}
+                    {doc.ready && !doc.blob && !doc.error && (
+                      <div style={{ minHeight: 548, display: "grid", placeItems: "center", color: "var(--ink-3)", fontSize: 12 }}>Loading PDF...</div>
+                    )}
+                    {doc.error && (
+                      <div style={{ minHeight: 548, display: "grid", placeItems: "center", color: "var(--bad)", fontSize: 12 }}>{doc.error}</div>
+                    )}
+                    {!doc.ready && (
+                      <div style={{ minHeight: 548, display: "grid", placeItems: "center", color: "var(--ink-3)", fontSize: 12, textAlign: "center", padding: 24 }}>
+                        {generating ? `Generating ${doc.label.toLowerCase()}...` : `${doc.label} will appear here.`}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {(liveLead.outreach_reply || liveLead.outreach_dm || liveLead.outreach_email || (liveLead.fit_bullets?.length ?? 0) > 0) && (
+              <div className="card" style={{ padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                {[
+                  ["3-line pitch", liveLead.outreach_reply],
+                  ["Cold email", liveLead.outreach_email],
+                  ["LinkedIn note", liveLead.outreach_dm],
+                  ["Fit bullets", (liveLead.fit_bullets || []).join("\n")],
+                ].filter(([, value]) => Boolean(value)).map(([label, value]) => (
+                  <div key={label} style={{ background: "var(--paper-3)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px" }}>
+                    <div className="row" style={{ justifyContent: "space-between", gap: 8, marginBottom: 7 }}>
+                      <span className="eyebrow">{label}</span>
+                      <button className="btn btn-ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => copyText(String(value))}>Copy</button>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="card" style={{ padding: 16, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{fireMsg || "Ready package can be sent to the application form."}</div>
+              <button className="btn btn-accent" onClick={fire} disabled={!resumeReady || !coverReady || fireBusy} style={{ minWidth: 170, justifyContent: "center" }}>
+                <Icon name="fire" size={14} color="#fff" /> {fireBusy ? "Starting..." : "Fire Application"}
+              </button>
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+function OnboardingWizard({ port, onFinish, onOpenSettings }: { port: number; onFinish: (draft: string) => void; onOpenSettings: () => void }) {
+  const [step, setStep] = useState(0);
+  const [file, setFile] = useState<File | null>(null);
+  const [rawResume, setRawResume] = useState("");
+  const [role, setRole] = useState("Applied AI Engineer");
+  const [market, setMarket] = useState("remote");
+  const [provider, setProvider] = useState("ollama");
+  const [apiKey, setApiKey] = useState("");
+  const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
+  const [demoDraft, setDemoDraft] = useState(DEMO_JOB_DRAFT);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const steps = ["Resume", "Preferences", "Demo Job"];
+  const keyField: Record<string, string> = {
+    openai: "openai_api_key",
+    anthropic: "anthropic_key",
+    groq: "groq_api_key",
+    deepseek: "deepseek_api_key",
+    nvidia: "nvidia_api_key",
+  };
+
+  const saveResume = async () => {
+    if (!file && !rawResume.trim()) {
+      setErr("Upload a resume file or paste resume text.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const fd = new FormData();
+    if (file) fd.append("file", file);
+    else fd.append("raw", rawResume.trim());
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/api/v1/ingest`, { method: "POST", body: fd });
+      if (!r.ok) throw new Error(`Resume import returned ${r.status}`);
+      setStep(1);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Resume import failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const savePreferences = async () => {
+    setBusy(true);
+    setErr(null);
+    const payload: Record<string, any> = {
+      job_market_focus: market,
+      llm_provider: provider,
+      onboarding_target_role: role,
+      free_sources_enabled: true,
+    };
+    if (provider === "ollama") payload.ollama_url = ollamaUrl;
+    const field = keyField[provider];
+    if (field && apiKey.trim()) payload[field] = apiKey.trim();
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/api/v1/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error(`Preferences returned ${r.status}`);
+      setStep(2);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Preferences failed to save");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const progress = (
+    <div className="row gap-2" style={{ flexWrap: "wrap" }}>
+      {steps.map((label, idx) => (
+        <button
+          key={label}
+          className="btn btn-ghost"
+          onClick={() => idx <= step && setStep(idx)}
+          style={{
+            borderColor: idx === step ? "var(--accent)" : idx < step ? "var(--green)" : "var(--line)",
+            background: idx === step ? "var(--accent-soft)" : idx < step ? "var(--green-soft)" : "var(--paper-3)",
+            color: idx === step ? "var(--ink)" : idx < step ? "var(--green-ink)" : "var(--ink-3)",
+            fontSize: 12,
+            minHeight: 34,
+          }}
+        >
+          {idx < step ? <Icon name="check" size={13} /> : <span className="mono">{idx + 1}</span>} {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(244,239,230,0.94)", display: "grid", placeItems: "center", padding: 22 }}
+    >
+      <motion.section
+        initial={{ y: 16, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 10, opacity: 0 }}
+        className="card"
+        style={{ width: "min(960px, 100%)", maxHeight: "min(760px, 94vh)", overflow: "auto", padding: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 22 }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <div>
+            <div className="eyebrow">First Run</div>
+            <h2 style={{ fontSize: 30, fontWeight: 800, marginTop: 6 }}>Get to your first package</h2>
+            <p style={{ color: "var(--ink-2)", fontSize: 13.5, lineHeight: 1.55, marginTop: 8 }}>
+              Import your resume, set the basics, then open the one-shot Apply page with a demo job ready.
+            </p>
+          </div>
+          {progress}
+          <div style={{ background: "var(--paper-3)", border: "1px solid var(--line)", borderRadius: 8, padding: 14, color: "var(--ink-2)", fontSize: 13, lineHeight: 1.55 }}>
+            <b style={{ color: "var(--ink)" }}>{steps[step]}</b>
+            <div style={{ marginTop: 4 }}>
+              {step === 0 && "Your profile graph starts with resume data."}
+              {step === 1 && "These defaults shape scoring, generation, and source selection."}
+              {step === 2 && "The demo opens directly in Apply with all generated outputs on one page."}
+            </div>
+          </div>
+          <button className="btn btn-ghost" onClick={() => onFinish(DEMO_JOB_DRAFT)} style={{ alignSelf: "flex-start" }}>
+            Skip setup
+          </button>
+        </div>
+
+        <div style={{ minWidth: 0 }}>
+          {err && <div style={{ color: "var(--bad)", background: "var(--bad-soft)", border: "1px solid var(--bad)", borderRadius: 8, padding: "9px 11px", fontSize: 12, marginBottom: 12 }}>{err}</div>}
+
+          {step === 0 && (
+            <div className="col gap-4">
+              <label className="card" style={{ padding: 18, cursor: "pointer", borderStyle: "dashed", background: "var(--paper)" }}>
+                <input type="file" accept=".pdf,.doc,.docx,.txt,.md" style={{ display: "none" }} onChange={e => setFile(e.target.files?.[0] || null)} />
+                <div className="row gap-3">
+                  <Icon name="upload" size={20} />
+                  <div>
+                    <div style={{ fontWeight: 800 }}>{file ? file.name : "Upload resume"}</div>
+                    <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>PDF, DOCX, TXT, or Markdown</div>
+                  </div>
+                </div>
+              </label>
+              <textarea
+                className="field-input"
+                value={rawResume}
+                onChange={e => setRawResume(e.target.value)}
+                placeholder="Or paste resume text"
+                rows={8}
+                style={{ lineHeight: 1.55, resize: "vertical" }}
+              />
+              <button className="btn btn-accent" onClick={saveResume} disabled={busy} style={{ justifyContent: "center", padding: "12px 16px" }}>
+                <Icon name="arrow-right" size={14} color="#fff" /> {busy ? "Importing..." : "Continue"}
+              </button>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="col gap-4">
+              <div>
+                <label className="eyebrow">Target role</label>
+                <input className="field-input" value={role} onChange={e => setRole(e.target.value)} style={{ marginTop: 7 }} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label className="eyebrow">Market</label>
+                  <select className="field-input" value={market} onChange={e => setMarket(e.target.value)} style={{ marginTop: 7 }}>
+                    <option value="remote">Remote first</option>
+                    <option value="india">India</option>
+                    <option value="us">United States</option>
+                    <option value="global">Global</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="eyebrow">LLM Provider</label>
+                  <select className="field-input" value={provider} onChange={e => setProvider(e.target.value)} style={{ marginTop: 7 }}>
+                    <option value="ollama">Ollama</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="groq">Groq</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="nvidia">NVIDIA</option>
+                  </select>
+                </div>
+              </div>
+              {provider === "ollama" ? (
+                <div>
+                  <label className="eyebrow">Ollama URL</label>
+                  <input className="field-input" value={ollamaUrl} onChange={e => setOllamaUrl(e.target.value)} style={{ marginTop: 7 }} />
+                </div>
+              ) : (
+                <div>
+                  <label className="eyebrow">API key</label>
+                  <input className="field-input" type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Optional for now" style={{ marginTop: 7 }} />
+                </div>
+              )}
+              <div className="row gap-2" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+                <button className="btn" onClick={onOpenSettings}><Icon name="settings" size={13} /> Advanced settings</button>
+                <button className="btn btn-accent" onClick={savePreferences} disabled={busy || !role.trim()} style={{ minWidth: 170, justifyContent: "center" }}>
+                  <Icon name="arrow-right" size={14} color="#fff" /> {busy ? "Saving..." : "Continue"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="col gap-4">
+              <div>
+                <label className="eyebrow">Demo job URL</label>
+                <textarea className="field-input" value={demoDraft} onChange={e => setDemoDraft(e.target.value)} rows={12} style={{ marginTop: 7, lineHeight: 1.55, resize: "vertical" }} />
+              </div>
+              <button className="btn btn-accent" onClick={() => onFinish(demoDraft)} style={{ justifyContent: "center", padding: "12px 16px" }}>
+                <Icon name="spark" size={14} color="#fff" /> Try it on a job
+              </button>
+            </div>
+          )}
+        </div>
+      </motion.section>
+    </motion.div>
   );
 }
 
@@ -2191,6 +2809,12 @@ function ApprovalDrawer({ j, port, onClose, onFired }: {
     ? `http://127.0.0.1:${port}/api/v1/leads/${j.job_id}/pdf?kind=${activeDoc === "resume" ? "resume" : "cover_letter"}`
     : null;
   const selectedProjects = j.selected_projects || [];
+  const coverage = (j.keyword_coverage || j.source_meta?.keyword_coverage || {}) as KeywordCoverage;
+  const missingTerms: string[] = Array.isArray(coverage.missing_terms) ? coverage.missing_terms : [];
+  const incorporatedTerms: string[] = Array.isArray(coverage.incorporated_terms) ? coverage.incorporated_terms : [];
+  const coveredTerms: string[] = Array.isArray(coverage.covered_terms) ? coverage.covered_terms : [];
+  const coveragePct = typeof coverage.coverage_pct === "number" ? coverage.coverage_pct : null;
+  const hasCoverage = missingTerms.length > 0 || incorporatedTerms.length > 0 || coveredTerms.length > 0;
   const canFire = resumeReady && coverReady && !firing;
   const display = leadDisplayHeading(j);
   const originalTitle = cleanLeadText(j.title);
@@ -2406,6 +3030,28 @@ function ApprovalDrawer({ j, port, onClose, onFired }: {
                 {selectedProjects.map((p, i) => (
                   <span key={i} className="pill" style={{ background: "var(--green-soft)", color: "var(--green-ink)", border: "1px solid var(--green)" }}>{p}</span>
                 ))}
+              </div>
+            )}
+            {hasCoverage && (
+              <div style={{ background: "var(--blue-soft)", border: "1px solid var(--blue)", borderRadius: 10, padding: "10px 12px" }}>
+                <div className="row" style={{ justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 7 }}>
+                  <span className="eyebrow" style={{ color: "var(--blue-ink)" }}>Coverage</span>
+                  {coveragePct !== null && <span className="mono" style={{ fontSize: 11, fontWeight: 800, color: "var(--blue-ink)" }}>{coveragePct}% JD keywords</span>}
+                </div>
+                <div style={{ fontSize: 12.3, color: "var(--ink-2)", lineHeight: 1.5 }}>
+                  {missingTerms.length > 0
+                    ? <>You're missing these terms from the JD: <b>{missingTerms.slice(0, 6).join(", ")}</b>. We've incorporated the supported matches where applicable.</>
+                    : <>Strong keyword coverage. We've incorporated supported JD terms where they fit the profile.</>
+                  }
+                </div>
+                {incorporatedTerms.length > 0 && (
+                  <div className="row gap-2" style={{ flexWrap: "wrap", marginTop: 8 }}>
+                    <span className="eyebrow" style={{ marginRight: 2 }}>In resume</span>
+                    {incorporatedTerms.slice(0, 8).map((term, i) => (
+                      <span key={i} className="pill" style={{ background: "var(--paper)", color: "var(--blue-ink)", border: "1px solid var(--blue)" }}>{term}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {generateErr && <div style={{ color: "var(--bad)", fontSize: 12, padding: "8px 10px", background: "var(--bad-soft)", border: "1px solid var(--bad)", borderRadius: 8 }}>{generateErr}</div>}
@@ -2682,11 +3328,13 @@ export default function App() {
   const { leads, setLeads, loading: leadsLoading, error: leadsError } = useLeads(port, wsAddLog);
   const dueFollowups = useDueFollowups(port);
   const stats  = useGraphStats(port);
-  const [view, setView]           = useState<View>("dashboard");
+  const [view, setView]           = useState<View>("apply");
   const [sel, setSel]             = useState<Lead | null>(null);
   // Always pass the live version of the selected lead so the drawer reflects real-time updates
   const liveSel = sel ? (leads.find(l => l.job_id === sel.job_id) ?? sel) : null;
   const [showSettings, setShowSettings] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem(ONBOARDING_KEY) !== "done");
+  const [applyDraft, setApplyDraft] = useState("");
   const [scanning, setScanning]   = useState(false);
   const [reevaluating, setReevaluating] = useState(false);
   const [cleaning, setCleaning] = useState(false);
@@ -2798,6 +3446,7 @@ export default function App() {
       <div className="app-main">
         <Topbar view={view} />
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
+          {view === "apply"     && <ApplyJobView port={port} leads={leads} openDrawer={setSel} initialInput={applyDraft} />}
           {view === "dashboard" && <DashboardView leads={leads} dueFollowups={dueFollowups} logs={logs} setView={setView} openDrawer={setSel} scanning={scanning} reevaluating={reevaluating} cleaning={cleaning} onScan={onScan} onStopScan={onStopScan} onReevaluate={onReevaluateJobs} onStopReevaluate={onStopReevaluate} onCleanup={onCleanupLeads} scanErr={scanErr} />}
           {view === "inbox"     && <LeadInboxView port={port} onCreated={setSel} />}
           {view === "pipeline"  && <PipelineView leads={leads} openDrawer={setSel} deleteLead={deleteLead} port={port} scanning={scanning} reevaluating={reevaluating} cleaning={cleaning} onReevaluate={onReevaluateJobs} onStopReevaluate={onStopReevaluate} onCleanup={onCleanupLeads} loading={leadsLoading || !port} error={leadsError} />}
@@ -2814,6 +3463,19 @@ export default function App() {
         )}
         {showSettings && port && (
           <SettingsModal key="settings" port={port} onClose={() => setShowSettings(false)} />
+        )}
+        {showOnboarding && port && (
+          <OnboardingWizard
+            key="onboarding"
+            port={port}
+            onOpenSettings={() => setShowSettings(true)}
+            onFinish={(draft) => {
+              localStorage.setItem(ONBOARDING_KEY, "done");
+              setApplyDraft(draft);
+              setView("apply");
+              setShowOnboarding(false);
+            }}
+          />
         )}
       </AnimatePresence>
     </div>

@@ -315,16 +315,43 @@ def save_asset_path(jid: str, path: str):
     c.close()
 
 
-def save_asset_package(jid: str, resume_path: str, cover_letter_path: str = "", selected_projects: list | None = None):
+def save_asset_package(
+    jid: str,
+    resume_path: str,
+    cover_letter_path: str = "",
+    selected_projects: list | None = None,
+    keyword_coverage: dict | None = None,
+):
     projects = json.dumps(selected_projects or [])
     c = _sq.connect(sql)
+    meta_row = c.execute("SELECT source_meta FROM leads WHERE job_id=?", (jid,)).fetchone()
+    source_meta = _json_dict(meta_row[0] if meta_row else "{}")
+    if keyword_coverage:
+        source_meta["keyword_coverage"] = keyword_coverage
     c.execute(
-        "UPDATE leads SET status='approved', asset_path=?, cover_letter_path=?, selected_projects=? WHERE job_id=?",
-        (resume_path, cover_letter_path, projects, jid),
+        "UPDATE leads SET status='approved', asset_path=?, cover_letter_path=?, selected_projects=?, source_meta=? WHERE job_id=?",
+        (resume_path, cover_letter_path, projects, json.dumps(source_meta, ensure_ascii=False), jid),
     )
     c.execute(
         "INSERT INTO events(job_id,action) VALUES(?,?)",
         (jid, f"assets=resume:{resume_path} cover:{cover_letter_path}"),
+    )
+    c.commit()
+    c.close()
+
+
+def save_contact_lookup(jid: str, contact_lookup: dict | None):
+    c = _sq.connect(sql)
+    row = c.execute("SELECT source_meta FROM leads WHERE job_id=?", (jid,)).fetchone()
+    source_meta = _json_dict(row[0] if row else "{}")
+    source_meta["contact_lookup"] = contact_lookup or {"status": "empty", "contacts": []}
+    c.execute(
+        "UPDATE leads SET source_meta=? WHERE job_id=?",
+        (json.dumps(source_meta, ensure_ascii=False), jid),
+    )
+    c.execute(
+        "INSERT INTO events(job_id,action) VALUES(?,?)",
+        (jid, f"contact_lookup={source_meta['contact_lookup'].get('status', 'unknown')}"),
     )
     c.commit()
     c.close()
@@ -351,6 +378,7 @@ def get_all_leads() -> list:
 
 
 def _lead_row_dict(r) -> dict:
+    source_meta = _json_dict(r[21] or "{}")
     return {
         "job_id": r[0], "title": r[1], "company": r[2], "url": r[3],
         "platform": r[4], "status": r[5], "score": r[6] or 0,
@@ -369,7 +397,9 @@ def _lead_row_dict(r) -> dict:
         "signal_tags": _json_list(r[18] or "[]"),
         "outreach_reply": r[19] or "",
         "outreach_dm": r[20] or "",
-        "source_meta": _json_dict(r[21] or "{}"),
+        "source_meta": source_meta,
+        "keyword_coverage": source_meta.get("keyword_coverage") or {},
+        "contact_lookup": source_meta.get("contact_lookup") or {},
         "feedback": r[22] or "",
         "feedback_note": r[23] or "",
         "followup_due_at": r[24] or "",

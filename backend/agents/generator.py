@@ -352,8 +352,15 @@ def _fallback_package(profile: dict, lead: dict, template: str = "") -> _DocPack
     achv_lines = "\n".join(f"- {a}" for a in achievements[:4]) if achievements else ""
     # Education
     edu_lines = "\n".join(f"- {e}" for e in education[:3]) if education else ""
+    all_skills = [s.get("n", "") for s in skills_raw if s.get("n")]
+
+    summary = profile.get("s") or (
+        f"Software engineer targeting {title} roles with hands-on experience in "
+        f"{', '.join(all_skills[:5]) if all_skills else 'software engineering'}."
+    )
 
     resume = f"# {name}\n\n"
+    resume += f"## SUMMARY\n{summary}\n\n"
     resume += f"## SKILLS\n{skills_block}\n\n"
     resume += f"## PROJECTS\n{chr(10).join(project_lines)}\n"
     if exp_lines:
@@ -365,7 +372,6 @@ def _fallback_package(profile: dict, lead: dict, template: str = "") -> _DocPack
     if edu_lines:
         resume += f"\n## EDUCATION\n{edu_lines}\n"
 
-    all_skills = [s.get("n", "") for s in skills_raw if s.get("n")]
     cover = f"""Dear {company} team,
 
 I am writing to apply for the {title} position at {company}. My background in {", ".join(all_skills[:5]) if all_skills else "software engineering"} aligns directly with the requirements outlined in your posting.
@@ -406,12 +412,106 @@ def _extract_jd_keywords(jd: str, profile: dict) -> str:
     return ", ".join(dict.fromkeys(found))  # dedupe, preserve order
 
 
+def _compact_value(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple, set)):
+        return ", ".join(str(v).strip() for v in value if str(v).strip())
+    return str(value).strip()
+
+
+def _profile_keyword_terms(profile: dict) -> set[str]:
+    """Return canonical taxonomy terms evidenced somewhere in the profile graph."""
+    from agents.scoring_engine import TECH_TAXONOMY
+
+    chunks: list[str] = [
+        str(profile.get("n", "")),
+        str(profile.get("s", "")),
+    ]
+    for skill in profile.get("skills", []):
+        chunks.append(str(skill.get("n", "")))
+        chunks.append(str(skill.get("cat", "") or skill.get("category", "")))
+    for project in profile.get("projects", []):
+        chunks.extend([
+            str(project.get("title", "")),
+            str(project.get("impact", "")),
+            _compact_value(project.get("stack", "")),
+        ])
+    for exp in profile.get("exp", []):
+        chunks.extend([
+            str(exp.get("role", "")),
+            str(exp.get("co", "")),
+            str(exp.get("d", "")),
+        ])
+    for key in ("certifications", "certs", "education", "achievements"):
+        chunks.extend(str(item) for item in profile.get(key, []) or [])
+
+    profile_text = "\n".join(chunks).lower()
+    return {
+        canonical
+        for canonical, aliases in TECH_TAXONOMY.items()
+        if any(re.search(rf"(?<![a-z0-9+#]){re.escape(alias.lower())}(?![a-z0-9+#])", profile_text) for alias in aliases)
+    }
+
+
+def _job_keyword_terms(jd: str) -> list[str]:
+    """Return JD keyword requirements in stable display order."""
+    from agents.scoring_engine import TECH_TAXONOMY
+
+    jd_lower = (jd or "").lower()
+    found: list[str] = []
+    for canonical, aliases in TECH_TAXONOMY.items():
+        if any(re.search(rf"(?<![a-z0-9+#]){re.escape(alias.lower())}(?![a-z0-9+#])", jd_lower) for alias in aliases):
+            found.append(canonical)
+
+    extra_terms = {
+        "Kafka": ("kafka",),
+        "Distributed Systems": ("distributed systems", "distributed system"),
+        "Event-Driven Architecture": ("event-driven", "event driven"),
+        "Microservices": ("microservices", "microservice"),
+        "System Design": ("system design",),
+    }
+    for canonical, aliases in extra_terms.items():
+        if any(re.search(rf"(?<![a-z0-9+#]){re.escape(alias)}(?![a-z0-9+#])", jd_lower) for alias in aliases):
+            found.append(canonical)
+
+    return list(dict.fromkeys(found))
+
+
+def _keyword_coverage(profile: dict, lead: dict, resume_markdown: str = "") -> dict:
+    jd = "\n".join([
+        str(lead.get("title", "")),
+        str(lead.get("company", "")),
+        str(lead.get("description", "")),
+        str(lead.get("reason", "")),
+        "\n".join(str(x) for x in lead.get("match_points", []) or []),
+        "\n".join(str(x) for x in lead.get("gaps", []) or []),
+    ])
+    jd_terms = _job_keyword_terms(jd)
+    profile_terms = _profile_keyword_terms(profile)
+    covered = [term for term in jd_terms if term in profile_terms]
+    missing = [term for term in jd_terms if term not in profile_terms]
+    resume_lower = (resume_markdown or "").lower()
+    incorporated = [
+        term for term in covered
+        if re.search(rf"(?<![a-z0-9+#]){re.escape(term.lower())}(?![a-z0-9+#])", resume_lower)
+    ]
+    return {
+        "jd_terms": jd_terms[:24],
+        "covered_terms": covered[:18],
+        "missing_terms": missing[:12],
+        "incorporated_terms": incorporated[:18],
+        "coverage_pct": round((len(covered) / len(jd_terms)) * 100) if jd_terms else 100,
+    }
+
+
 def _draft_package(profile: dict, proof: str, j: dict, template: str = "") -> _DocPackage:
     from llm import call_llm
     import json
 
     recommended = _rank_projects(profile, j, limit=4)
     jd_keywords = _extract_jd_keywords(j.get("description", ""), profile)
+    coverage = _keyword_coverage(profile, j)
     template_instruction = (
         "Use the provided resume template as the resume structure. Preserve section order and heading style where practical. "
         "Do not force the cover letter into the resume template."
@@ -430,6 +530,9 @@ def _draft_package(profile: dict, proof: str, j: dict, template: str = "") -> _D
         "# Candidate Name\n"
         "Linkedin: linkedin.com/in/handle Email: email@example.com\n"
         "Github: github.com/handle Mobile: +91-XXXXXXXXXX\n\n"
+
+        "## SUMMARY\n"
+        "One compact 2-line professional summary tailored to the exact role and JD keywords.\n\n"
 
         "## SKILLS\n"
         "**Languages:** Python, C++, JavaScript, TypeScript, SQL, Bash\n"
@@ -489,9 +592,11 @@ def _draft_package(profile: dict, proof: str, j: dict, template: str = "") -> _D
         "- Every hard skill mentioned in the JD that the candidate possesses MUST appear at least once.\n"
         "- Place critical keywords in: Skills section AND at least one Project/Experience bullet.\n"
         "- NO graphics, tables, columns, icons. Plain Markdown only.\n"
+        "- Keep standard ATS headings: SUMMARY, SKILLS, PROJECTS, EXPERIENCE, CERTIFICATES, ACHIEVEMENTS, EDUCATION.\n"
         "- NO headers/footers, NO 'References available upon request'.\n\n"
 
-        "PAGE BUDGET: The resume MUST fit ONE page. Target 420-550 words. Be dense but not padded.\n\n"
+        "PAGE BUDGET: The resume MUST fit ONE page and use the page well. Target 460-620 words. "
+        "Be dense, specific, and ATS-readable; do not pad with generic filler.\n\n"
 
         "=== COVER LETTER RULES (cover_letter_markdown) ===\n"
         "- Paragraph 1: State the EXACT role title and company name. One sentence on what attracted you "
@@ -528,12 +633,14 @@ def _draft_package(profile: dict, proof: str, j: dict, template: str = "") -> _D
         f"GAPS:\n{json.dumps(j.get('gaps', []) or [], ensure_ascii=False)}\n\n"
         f"EXTRACTED ATS KEYWORDS FROM JD:\n{jd_keywords}\n"
         "(You MUST include every keyword above that the candidate actually possesses.)\n\n"
+        f"ATS KEYWORD COVERAGE:\n{json.dumps(coverage, ensure_ascii=False)}\n"
+        "Use covered_terms in the resume where truthful and relevant. Do not claim missing_terms unless the candidate profile supports them.\n\n"
         f"RECOMMENDED PROJECT SHORTLIST:\n{json.dumps(recommended, ensure_ascii=False)}\n\n"
         f"FULL CANDIDATE PROFILE:\n{json.dumps(_profile_payload(profile), ensure_ascii=False)}\n\n"
         f"PROOF OF WORK SUMMARY:\n{proof}\n\n"
         f"RESUME TEMPLATE INSTRUCTION: {template_instruction}\n"
         "OUTPUT CONTRACT:\n"
-        "- resume_markdown: ONLY the resume. 420-550 words max. Standard ATS headings.\n"
+        "- resume_markdown: ONLY the resume. 460-620 words max. Standard ATS headings with SUMMARY first.\n"
         "- cover_letter_markdown: ONLY the cover letter. 150-220 words.\n"
         "- founder_message: 3 lines, under 280 chars. Specific to THIS company.\n"
         "- linkedin_note: Under 300 chars. Role-specific.\n"
@@ -627,6 +734,220 @@ def _strip_inline(text: str) -> str:
     return text.strip()
 
 
+def _render_resume_template(md_text: str, filename: str) -> str:
+    """Render a one-page, recruiter-friendly resume template from constrained Markdown."""
+    from fpdf import FPDF
+
+    text = _clean(md_text)
+    lines = [line.rstrip() for line in text.splitlines()]
+
+    name = "Candidate"
+    contact_lines: list[str] = []
+    sections: list[tuple[str, list[str]]] = []
+    current_heading = ""
+    current_lines: list[str] = []
+    in_sections = False
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            if in_sections and current_heading:
+                current_lines.append("")
+            continue
+        if line.startswith("# ") and name == "Candidate":
+            name = _strip_inline(line[2:]) or name
+            continue
+        if line.startswith("## "):
+            if current_heading:
+                sections.append((current_heading, current_lines))
+            current_heading = _strip_inline(line[3:]).upper()
+            current_lines = []
+            in_sections = True
+            continue
+        if in_sections:
+            current_lines.append(line)
+        else:
+            contact_lines.append(_strip_inline(line))
+
+    if current_heading:
+        sections.append((current_heading, current_lines))
+
+    def build_pdf(scale: float, spread: float = 1.0) -> tuple[FPDF, bool, float]:
+        pdf = FPDF(format="Letter", unit="mm")
+        margin_x = 11 * scale
+        margin_y = 10 * scale
+        pdf.set_margins(margin_x, margin_y, margin_x)
+        pdf.set_auto_page_break(auto=False)
+        pdf.add_page()
+
+        page_w = pdf.w
+        page_h = pdf.h
+        eff_w = page_w - (2 * margin_x)
+        bottom = page_h - margin_y
+        accent = (31, 78, 121)
+        ink = (28, 31, 35)
+        muted = (92, 98, 108)
+        rule = (183, 194, 207)
+        overflow = False
+
+        def fs(value: float) -> float:
+            return max(6.2, value * scale)
+
+        def lh(value: float) -> float:
+            return max(3.0, value * 0.43 * min(spread, 1.45))
+
+        def ensure(height: float) -> bool:
+            nonlocal overflow
+            if pdf.get_y() + height > bottom:
+                overflow = True
+                return False
+            return True
+
+        def set_font(size: float, style: str = "", color=ink):
+            pdf.set_text_color(*color)
+            pdf.set_font("Helvetica", style=style, size=fs(size))
+
+        def write_block(text_value: str, size: float = 8.0, style: str = "", indent: float = 0, after: float = 0.2):
+            clean = _strip_inline(text_value)
+            if not clean:
+                return
+            set_font(size, style)
+            line_h = lh(fs(size))
+            width = eff_w - indent
+            estimated = max(1, int((pdf.get_string_width(clean) / max(width, 1)) + 0.95)) * line_h + (after * spread)
+            if not ensure(estimated):
+                return
+            pdf.set_x(margin_x + indent)
+            pdf.multi_cell(width, line_h, clean)
+            if after:
+                pdf.ln(after * spread)
+
+        def write_bullet(text_value: str):
+            clean = _strip_inline(text_value)
+            if not clean:
+                return
+            set_font(7.8)
+            line_h = lh(fs(7.8))
+            bullet_indent = 4.0 * scale
+            text_indent = 7.0 * scale
+            width = eff_w - text_indent
+            estimated = max(1, int((pdf.get_string_width(clean) / max(width, 1)) + 0.95)) * line_h + (0.25 * spread)
+            if not ensure(estimated):
+                return
+            y = pdf.get_y()
+            pdf.set_text_color(*accent)
+            pdf.set_font("Helvetica", "B", fs(8.0))
+            pdf.set_xy(margin_x + bullet_indent, y)
+            pdf.cell(2.5 * scale, line_h, "-")
+            set_font(7.8)
+            pdf.set_xy(margin_x + text_indent, y)
+            pdf.multi_cell(width, line_h, clean)
+            pdf.ln(0.25 * spread)
+
+        def split_title_meta(title: str) -> tuple[str, str]:
+            clean = _strip_inline(title)
+            patterns = (
+                r"\s((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[A-Za-z]*'?\s*\d{2,4}(?:\s*[-]\s*(?:Present|Current|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[A-Za-z]*'?\s*\d{2,4}))?)$",
+                r"\s(\d{4}\s*[-]\s*(?:Present|Current|\d{4}))$",
+                r"\s(\d{4})$",
+            )
+            for pattern in patterns:
+                match = re.search(pattern, clean, flags=re.I)
+                if match:
+                    return clean[:match.start()].strip(" -:"), match.group(1).strip()
+            return clean, ""
+
+        def write_entry_title(title: str):
+            left, right = split_title_meta(title)
+            if not ensure(5.2 * scale):
+                return
+            set_font(8.6, "B")
+            y = pdf.get_y()
+            pdf.set_xy(margin_x, y)
+            if right:
+                right_w = min(42 * scale, pdf.get_string_width(right) + 2)
+                pdf.multi_cell(eff_w - right_w - 3, lh(fs(8.6)), left)
+                set_font(7.8, "", muted)
+                pdf.set_xy(page_w - margin_x - right_w, y)
+                pdf.cell(right_w, lh(fs(8.6)), right, align="R")
+                pdf.set_y(max(pdf.get_y(), y + lh(fs(8.6)) + (0.6 * spread)))
+            else:
+                pdf.multi_cell(eff_w, lh(fs(8.6)), left)
+                pdf.ln(0.3 * spread)
+
+        def write_section(heading: str, body: list[str]):
+            if not ensure(7.0 * scale):
+                return
+            pdf.ln(1.0 * scale * spread)
+            set_font(8.4, "B", accent)
+            pdf.set_x(margin_x)
+            pdf.cell(eff_w, lh(fs(8.4)), heading)
+            pdf.ln(lh(fs(8.4)) + (0.35 * spread))
+            pdf.set_draw_color(*rule)
+            pdf.set_line_width(0.25)
+            pdf.line(margin_x, pdf.get_y(), page_w - margin_x, pdf.get_y())
+            pdf.ln(1.1 * scale * spread)
+
+            previous_blank = False
+            for item in body:
+                stripped = item.strip()
+                if not stripped:
+                    if not previous_blank and ensure(1.0 * scale * spread):
+                        pdf.ln(0.6 * scale * spread)
+                    previous_blank = True
+                    continue
+                previous_blank = False
+                if stripped.startswith("### "):
+                    write_entry_title(stripped[4:])
+                elif re.match(r"^[-*+]\s+", stripped):
+                    write_bullet(re.sub(r"^[-*+]\s+", "", stripped))
+                else:
+                    write_block(stripped, size=7.8, after=0.35)
+
+        set_font(19.0, "B", accent)
+        pdf.set_xy(margin_x, margin_y)
+        pdf.cell(eff_w, lh(fs(19.0)), name, align="C")
+        pdf.ln(lh(fs(19.0)) + (0.6 * spread))
+
+        if contact_lines:
+            contact = "  |  ".join(part for part in contact_lines if part)
+            set_font(7.8, "", muted)
+            pdf.set_x(margin_x)
+            pdf.multi_cell(eff_w, lh(fs(7.8)), contact, align="C")
+            pdf.ln(1.2 * scale * spread)
+
+        pdf.set_draw_color(*accent)
+        pdf.set_line_width(0.55)
+        pdf.line(margin_x + 10 * scale, pdf.get_y(), page_w - margin_x - 10 * scale, pdf.get_y())
+        pdf.ln(2.3 * scale * spread)
+
+        for heading, body in sections:
+            write_section(heading, body)
+            if overflow:
+                break
+
+        used_ratio = (pdf.get_y() - margin_y) / max(1.0, bottom - margin_y)
+        return pdf, overflow, used_ratio
+
+    out = os.path.join(_assets, filename)
+    chosen_pdf = None
+    chosen_ratio = 0.0
+    for scale in (1.28, 1.22, 1.16, 1.10, 1.04, 0.98, 0.92, 0.86, 0.80, 0.76):
+        pdf, overflow, used_ratio = build_pdf(scale)
+        chosen_pdf = pdf
+        chosen_ratio = used_ratio
+        if not overflow:
+            break
+    if chosen_ratio < 0.90:
+        spread = min(2.20, 1.0 + (0.90 - chosen_ratio) * 2.2)
+        filled_pdf, overflow, used_ratio = build_pdf(scale, spread=spread)
+        if not overflow:
+            chosen_pdf = filled_pdf
+            chosen_ratio = used_ratio
+    chosen_pdf.output(out)
+    return out
+
+
 def _render(md_text: str, filename: str, kind: str = "resume") -> str:
     """
     Convert Markdown to PDF using direct multi_cell() calls with inline
@@ -638,6 +959,9 @@ def _render(md_text: str, filename: str, kind: str = "resume") -> str:
     """
     import re
     from fpdf import FPDF
+
+    if kind == "resume":
+        return _render_resume_template(md_text, filename)
 
     text = _clean(md_text)
     lines = text.splitlines()
@@ -833,6 +1157,7 @@ def run_package(lead: dict, template: str = "") -> dict:
     try:
         package = _draft_package(profile, proof, lead_with_ctx, template=template)
         package = _normalize_package(package, profile, lead_with_ctx, template=template)
+        keyword_coverage = _keyword_coverage(profile, lead_with_ctx, package.resume_markdown)
     except Exception as exc:
         import sys
         print(f"[generator] LLM draft failed for {lead.get('job_id','?')}: {exc}", file=sys.stderr)
@@ -853,6 +1178,7 @@ def run_package(lead: dict, template: str = "") -> dict:
         "founder_message": (package.founder_message or "").strip(),
         "linkedin_note": (package.linkedin_note or "").strip(),
         "cold_email": (package.cold_email or "").strip(),
+        "keyword_coverage": keyword_coverage,
     }
 
 

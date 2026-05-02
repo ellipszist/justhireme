@@ -14,6 +14,7 @@ interface Cfg {
   ingestor_provider: string;  ingestor_api_key: string;  ingestor_model: string;
   actuator_provider: string;  actuator_api_key: string;  actuator_model: string;
   apify_token: string; apify_actor: string; linkedin_cookie: string; x_bearer_token: string; x_search_queries: string; x_watchlist: string;
+  hunter_api_key: string; proxycurl_api_key: string; contact_lookup_enabled: string;
   x_max_requests_per_scan: string; x_max_results_per_query: string; x_min_signal_score: string; x_hot_lead_threshold: string; x_enable_notifications: string;
   free_sources_enabled: string; free_source_targets: string; company_watchlist: string; free_source_max_requests: string; free_source_min_signal_score: string;
   job_boards: string; job_market_focus: string;
@@ -31,6 +32,7 @@ const EMPTY: Cfg = {
   ingestor_provider: "", ingestor_api_key: "", ingestor_model: "",
   actuator_provider: "", actuator_api_key: "", actuator_model: "",
   apify_token: "", apify_actor: "", linkedin_cookie: "", x_bearer_token: "", x_search_queries: "", x_watchlist: "",
+  hunter_api_key: "", proxycurl_api_key: "", contact_lookup_enabled: "true",
   x_max_requests_per_scan: "5", x_max_results_per_query: "50", x_min_signal_score: "55", x_hot_lead_threshold: "80", x_enable_notifications: "false",
   free_sources_enabled: "false", free_source_targets: "", company_watchlist: "", free_source_max_requests: "20", free_source_min_signal_score: "45",
   job_boards: "", job_market_focus: "global",
@@ -396,6 +398,29 @@ export default function SettingsModal({ port, onClose }: Props) {
                 <input type="password" placeholder="li_at=•••" value={cfg.linkedin_cookie} onChange={set("linkedin_cookie")} className="mono field-input"
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 12 }} />
               </LabelledField>
+              <div style={{ padding: 13, borderRadius: 13, background: "var(--paper-2)", border: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 10 }}>
+                <SectionLabel label="Recruiter Lookup" sub="Hunter.io emails, optional Proxycurl LinkedIn" />
+                <BigToggle
+                  active={cfg.contact_lookup_enabled !== "false"}
+                  onToggle={() => onChange("contact_lookup_enabled", cfg.contact_lookup_enabled === "false" ? "true" : "false")}
+                  icon="user"
+                  label="Who to contact"
+                  badge={cfg.contact_lookup_enabled !== "false" ? "on" : "off"}
+                  sub="Runs after package generation and stores the best contact on the lead"
+                  tone="blue"
+                />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <LabelledField label="Hunter.io API key" hint="domain search">
+                    <input type="password" placeholder="hunter key" value={cfg.hunter_api_key} onChange={set("hunter_api_key")} className="mono field-input"
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 12 }} />
+                  </LabelledField>
+                  <LabelledField label="Proxycurl API key" hint="optional LinkedIn resolve">
+                    <input type="password" placeholder="proxycurl key" value={cfg.proxycurl_api_key} onChange={set("proxycurl_api_key")} className="mono field-input"
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 12 }} />
+                  </LabelledField>
+                </div>
+              </div>
+
               <div style={{ padding: 13, borderRadius: 13, background: "var(--paper-2)", border: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 10 }}>
                 <SectionLabel label="X Signals" sub="recent posts for job leads" />
                 <LabelledField label="X API Bearer Token" hint="Developer Console token">

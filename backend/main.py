@@ -452,6 +452,7 @@ async def _ghost_tick():
                 package["resume"],
                 package["cover_letter"],
                 package.get("selected_projects", []),
+                package.get("keyword_coverage", {}),
             )
             generated.append({
                 **lead,
@@ -459,6 +460,7 @@ async def _ghost_tick():
                 "resume_asset": package["resume"],
                 "cover_letter_asset": package["cover_letter"],
                 "selected_projects": package.get("selected_projects", []),
+                "keyword_coverage": package.get("keyword_coverage", {}),
             })
             await cm.broadcast({"type": "agent", "event": "ghost_gen",
                                 "msg": f"Generated resume and cover letter for {lead.get('title','?')}"})
@@ -1120,7 +1122,8 @@ async def fire(job_id: str, bt: BackgroundTasks):
 
 async def _generate_one(jid: str):
     from agents.generator import run_package as _gen
-    from db.client import get_lead_by_id, save_asset_package, get_setting
+    from agents.contact_lookup import run as _contact_lookup
+    from db.client import get_lead_by_id, save_asset_package, save_contact_lookup, get_setting
     lead = get_lead_by_id(jid)
     if not lead:
         await cm.broadcast({"type": "agent", "event": "gen_error", "msg": f"Lead {jid} not found"})
@@ -1135,6 +1138,7 @@ async def _generate_one(jid: str):
             package["resume"],
             package["cover_letter"],
             package.get("selected_projects", []),
+            package.get("keyword_coverage", {}),
         )
         # Save AI-generated outreach messages alongside the package
         _outreach_fields = {}
@@ -1152,16 +1156,26 @@ async def _generate_one(jid: str):
             c.execute(f"UPDATE leads SET {sets} WHERE job_id=?", vals)
             c.commit()
             c.close()
-        await cm.broadcast({"type": "LEAD_UPDATED", "data": {
+        enriched_lead = {
             **lead,
             "asset": package["resume"],
             "resume_asset": package["resume"],
             "cover_letter_asset": package["cover_letter"],
             "selected_projects": package.get("selected_projects", []),
+            "keyword_coverage": package.get("keyword_coverage", {}),
             "outreach_reply": package.get("founder_message", lead.get("outreach_reply", "")),
             "outreach_dm": package.get("linkedin_note", lead.get("outreach_dm", "")),
             "outreach_email": package.get("cold_email", lead.get("outreach_email", "")),
             "status": "approved",
+        }
+        contact_lookup = await asyncio.to_thread(_contact_lookup, enriched_lead)
+        save_contact_lookup(jid, contact_lookup)
+        enriched_lead["contact_lookup"] = contact_lookup
+        enriched_meta = dict(enriched_lead.get("source_meta") or {})
+        enriched_meta["contact_lookup"] = contact_lookup
+        enriched_lead["source_meta"] = enriched_meta
+        await cm.broadcast({"type": "LEAD_UPDATED", "data": {
+            **enriched_lead,
         }})
         await cm.broadcast({"type": "agent", "event": "gen_done", "msg": f"Resume and cover letter ready: {lead.get('title','?')}"})
     except Exception as exc:
