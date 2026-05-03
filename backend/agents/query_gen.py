@@ -9,6 +9,9 @@ candidate's actual tech stack rather than generic keywords.
 import re
 from pydantic import BaseModel
 from typing import List
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 
 class _Plan(BaseModel):
@@ -143,8 +146,7 @@ Generate the queries now."""
         result = call_llm(system, user, _Plan, step="query_gen")
         smart = [q.strip() for q in result.queries if q.strip()]
     except Exception as exc:
-        import sys
-        print(f"[query_gen] LLM failed ({exc}), falling back to default queries", file=sys.stderr)
+        _log.warning("LLM failed (%s), falling back to default queries", exc)
         # Fallback: build simple queries from top skills
         top = " OR ".join(f'"{s}"' for s in skills[:3]) if skills else f'"{target_role}"'
         smart = [f"site:{d} ({top}) ({seniority_hint})" for d in site_domains]
@@ -152,9 +154,8 @@ Generate the queries now."""
     if focus == "india":
         smart = [_india_clause(q) for q in smart]
 
-    import sys
-    print(f"[query_gen] Generated {len(smart)} queries for {len(site_domains)} domains", file=sys.stderr)
+    _log.info("Generated %s queries for %s domains", len(smart), len(site_domains))
     for q in smart:
-        print(f"[query_gen]   → {q}", file=sys.stderr)
+        _log.debug("  → %s", q)
 
     return passthrough + smart

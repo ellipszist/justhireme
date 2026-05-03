@@ -822,5 +822,101 @@ End-to-end build of a production-grade financial reporting platform.
         )
 
 
+class TestScoringEngineCaps(unittest.TestCase):
+    def _profile(self, work_months: int = 0, embedded: bool = False) -> dict:
+        from agents.scoring_engine import infer_experience_level
+
+        period = "Jan 2021 to Dec 2025" if work_months >= 60 else ""
+        profile = {
+            "n": "Candidate",
+            "s": "Frontend and full-stack web developer.",
+            "skills": [
+                {"n": "React"},
+                {"n": "TypeScript"},
+                {"n": "JavaScript"},
+                {"n": "Node.js"},
+                {"n": "Python"},
+                {"n": "HTML"},
+                {"n": "CSS"},
+            ],
+            "projects": [
+                {
+                    "title": "Frontend Platform",
+                    "stack": ["React", "TypeScript", "Node.js"],
+                    "impact": "Built production UI and API workflows.",
+                }
+            ],
+            "exp": [],
+        }
+        if work_months >= 60:
+            profile["exp"] = [{
+                "role": "Senior Software Engineer",
+                "co": "Acme",
+                "period": period,
+                "s": ["React", "TypeScript", "Node.js"],
+                "d": "Built React, TypeScript, and Node.js applications.",
+            }]
+        if embedded:
+            profile["skills"] = [{"n": "HTML"}, {"n": "CSS"}, {"n": "React"}, {"n": "JavaScript"}]
+            profile["projects"] = [{
+                "title": "Marketing Site",
+                "stack": ["HTML", "CSS", "React", "JavaScript"],
+                "impact": "Built responsive web pages.",
+            }]
+        profile["level"] = infer_experience_level(profile)
+        return profile
+
+    def _score(self, job_text: str, profile: dict):
+        from agents.scoring_engine import build_proof_text, score_job_lead
+
+        self.assertIsInstance(build_proof_text(profile), str)
+        return score_job_lead(job_text, profile)
+
+    def test_senior_role_zero_experience_is_capped(self):
+        result = self._score(
+            "Senior Software Engineer - 5+ years required. React, TypeScript, Node.",
+            self._profile(0),
+        )
+        self.assertLessEqual(result.score, 38, "Senior role + 0 experience must be capped at 38")
+
+    def test_junior_role_strong_match_is_not_penalised(self):
+        result = self._score(
+            "Junior Frontend Developer - React, TypeScript",
+            self._profile(0),
+        )
+        self.assertGreaterEqual(result.score, 45, "Strong stack match for a junior role should not be capped low")
+
+    def test_experienced_candidate_senior_role_can_score_high(self):
+        result = self._score(
+            "Senior Engineer - React, TypeScript, Node, 4+ years",
+            self._profile(60),
+        )
+        self.assertGreaterEqual(
+            result.score,
+            55,
+            "A well-matched experienced candidate should score above mid-band for a senior role",
+        )
+
+    def test_completely_wrong_domain_scores_low(self):
+        result = self._score(
+            "Embedded Systems Engineer - C, RTOS, ARM Cortex, CAN bus, AUTOSAR",
+            self._profile(0, embedded=True),
+        )
+        self.assertLessEqual(result.score, 40, "A domain mismatch should score low regardless of candidate quality")
+
+    def test_score_is_within_valid_range(self):
+        scenarios = [
+            ("Senior Software Engineer - 5+ years required. React, TypeScript, Node.", self._profile(0)),
+            ("Junior Frontend Developer - React, TypeScript", self._profile(0)),
+            ("Senior Engineer - React, TypeScript, Node, 4+ years", self._profile(60)),
+            ("Embedded Systems Engineer - C, RTOS, ARM Cortex, CAN bus, AUTOSAR", self._profile(0, embedded=True)),
+        ]
+        for job_text, profile in scenarios:
+            result = self._score(job_text, profile)
+            self.assertIsInstance(result.score, int)
+            self.assertGreaterEqual(result.score, 0)
+            self.assertLessEqual(result.score, 100)
+
+
 if __name__ == "__main__":
     unittest.main()

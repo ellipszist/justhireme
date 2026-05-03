@@ -4,6 +4,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus, urlparse
 
+import httpx
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
 from agents.lead_intel import (
     budget_from_text,
     clean_text,
@@ -20,7 +23,9 @@ from agents.lead_intel import (
 )
 from agents.scout import _is_recent, _strip_html_text, classify_job_seniority
 from db.client import rank_lead_by_feedback, save_lead, url_exists
+from logger import get_logger
 
+_log = get_logger(__name__)
 
 LAST_ERRORS: list[str] = []
 LAST_USAGE: dict = {}
@@ -113,15 +118,23 @@ def _text_lead(item: dict, default_kind: str = "job") -> dict:
     }
 
 
+@retry(
+    retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException)),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(4),
+    reraise=True,
+)
 async def _json_get(url: str, params: dict | None = None) -> dict | list:
-    import httpx
-
     headers = {
         "User-Agent": "JustHireMe free-source scout",
         "Accept": "application/json",
     }
     async with httpx.AsyncClient(timeout=30, headers=headers, follow_redirects=True) as cx:
         r = await cx.get(url, params=params)
+        if r.status_code == 429:
+            retry_after = int(r.headers.get("Retry-After", 15))
+            await asyncio.sleep(retry_after)
+            r.raise_for_status()
         r.raise_for_status()
         return r.json()
 

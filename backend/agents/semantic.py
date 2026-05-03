@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import hashlib
 from typing import Optional
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 
 def _h(value: str) -> str:

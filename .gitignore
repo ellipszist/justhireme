@@ -56,6 +56,9 @@ src-tauri/resources/python-runtime/*
 !src-tauri/resources/python-runtime/.gitkeep
 src-tauri/resources/bin/chromium/*
 !src-tauri/resources/bin/chromium/.gitkeep
+src-tauri/resources/backend/
+src-tauri/resources/backend-*/
+src-tauri/resources/backend-*
 
 # ─── Local data / DBs ───
 *.db

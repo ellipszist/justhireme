@@ -12,6 +12,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Iterable
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -308,6 +311,7 @@ WRONG_FIELD_TERMS = (
     "cashier", "retail associate", "warehouse", "driver", "delivery",
     "cook", "chef", "mechanic", "civil engineer", "mechanical engineer",
     "electrical engineer", "chemical engineer", "petroleum engineer",
+    "embedded systems engineer", "rtos", "arm cortex", "can bus", "autosar",
     "real estate agent", "insurance agent", "teacher", "tutor", "data entry",
     "marketing analyst", "marketing manager", "marketing specialist",
     "marketing coordinator", "social media manager", "content writer",

@@ -1,10 +1,13 @@
-import os, sys
+import os
 import httpx
 import anthropic
 import instructor
 from openai import OpenAI
 from pydantic import BaseModel
 from db.client import get_setting
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 _TIMEOUT = httpx.Timeout(300.0, connect=10.0)
 
@@ -71,7 +74,7 @@ def _resolve(step: str | None = None) -> tuple[str, str, str]:
         model = _DEFAULT_MODELS.get(p, "llama3")
 
     if step:
-        print(f"[llm] step={step} → provider={p} model={model}", file=sys.stderr)
+        _log.debug("step=%s → provider=%s model=%s", step, p, model)
 
     return p, k, model
 
@@ -104,7 +107,7 @@ def call_llm(s: str, u: str, m: type[BaseModel], step: str | None = None):
 
     if p == "anthropic":
         if not k:
-            print(f"[llm] anthropic — no key (step={step}) — falling back", file=sys.stderr)
+            _log.warning("anthropic — no key (step=%s) — falling back", step)
             return _parse_fallback(u, m)
         c = anthropic.Anthropic(api_key=k, timeout=120.0)
         r = c.messages.parse(
@@ -118,7 +121,7 @@ def call_llm(s: str, u: str, m: type[BaseModel], step: str | None = None):
 
     elif p == "groq":
         if not k:
-            print(f"[llm] groq — no key (step={step}) — falling back", file=sys.stderr)
+            _log.warning("groq — no key (step=%s) — falling back", step)
             return _parse_fallback(u, m)
         c = instructor.from_openai(
             OpenAI(base_url="https://api.groq.com/openai/v1", api_key=k,
@@ -133,7 +136,7 @@ def call_llm(s: str, u: str, m: type[BaseModel], step: str | None = None):
 
     elif p == "nvidia":
         if not k:
-            print(f"[llm] nvidia — no key (step={step}) — falling back", file=sys.stderr)
+            _log.warning("nvidia — no key (step=%s) — falling back", step)
             return _parse_fallback(u, m)
         c = _client_nvidia(k)
         return c.chat.completions.create(
@@ -147,7 +150,7 @@ def call_llm(s: str, u: str, m: type[BaseModel], step: str | None = None):
 
     elif p == "openai":
         if not k:
-            print(f"[llm] openai — no key (step={step})", file=sys.stderr)
+            _log.warning("openai — no key (step=%s)", step)
             return _parse_fallback(u, m)
         c = instructor.from_openai(OpenAI(api_key=k, timeout=_TIMEOUT))
         return c.chat.completions.create(
@@ -158,7 +161,7 @@ def call_llm(s: str, u: str, m: type[BaseModel], step: str | None = None):
 
     elif p == "deepseek":
         if not k:
-            print(f"[llm] deepseek — no key (step={step})", file=sys.stderr)
+            _log.warning("deepseek — no key (step=%s)", step)
             return _parse_fallback(u, m)
         # deepseek-reasoner does not support tool_choice — use JSON mode instead
         mode = instructor.Mode.JSON if "reasoner" in model else instructor.Mode.TOOLS
@@ -174,7 +177,7 @@ def call_llm(s: str, u: str, m: type[BaseModel], step: str | None = None):
 
     else:  # ollama / default
         b = get_setting("ollama_url", "http://localhost:11434/v1")
-        print(f"[llm] ollama at {b} model={model} (step={step})", file=sys.stderr)
+        _log.info("ollama at %s model=%s (step=%s)", b, model, step)
         c = instructor.from_openai(
             OpenAI(base_url=b, api_key="ollama", timeout=_TIMEOUT, max_retries=0)
         )

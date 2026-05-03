@@ -12,12 +12,15 @@ import json
 from typing import List
 
 from pydantic import BaseModel, Field
+from logger import get_logger
 
 from agents.scoring_engine import (
     build_proof_text,
     infer_experience_level,
     score_job_lead,
 )
+
+_log = get_logger(__name__)
 
 
 class _Score(BaseModel):

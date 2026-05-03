@@ -1,5 +1,8 @@
 import re
 from urllib.parse import urlparse
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 
 POSITIVE_LABELS = {

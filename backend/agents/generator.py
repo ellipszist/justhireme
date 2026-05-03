@@ -1,7 +1,11 @@
 import os
 import re
 from pydantic import BaseModel, Field
-from db.client import get_profile
+from db.client import get_profile, sql
+import sqlite3 as _sq
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 _assets = os.path.join(
     os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
@@ -1159,16 +1163,33 @@ def run_package(lead: dict, template: str = "") -> dict:
         package = _normalize_package(package, profile, lead_with_ctx, template=template)
         keyword_coverage = _keyword_coverage(profile, lead_with_ctx, package.resume_markdown)
     except Exception as exc:
-        import sys
-        print(f"[generator] LLM draft failed for {lead.get('job_id','?')}: {exc}", file=sys.stderr)
+        _log.error("LLM draft failed for %s: %s", lead.get("job_id", "?"), exc)
         raise RuntimeError(f"Draft generation failed: {exc}") from exc
 
     try:
-        resume_path = _render(package.resume_markdown, f"{lead['job_id']}_resume.pdf", kind="resume")
-        cover_letter_path = _render(package.cover_letter_markdown, f"{lead['job_id']}_cover_letter.pdf", kind="cover")
+        job_id = lead["job_id"]
+        c = _sq.connect(sql)
+        row = c.execute("SELECT resume_version FROM leads WHERE job_id = ?", (job_id,)).fetchone()
+        current_version = int(row[0] or 0) if row else 0
+        new_version = current_version + 1
+        c.close()
+
+        resume_path = _render(package.resume_markdown, f"{job_id}_v{new_version}.pdf", kind="resume")
+        cover_letter_path = _render(package.cover_letter_markdown, f"{job_id}_cl_v{new_version}.pdf", kind="cover")
+
+        c = _sq.connect(sql)
+        c.execute(
+            """
+            UPDATE leads
+            SET asset_path = ?, cover_letter_path = ?, resume_version = ?
+            WHERE job_id = ?
+            """,
+            (resume_path, cover_letter_path, new_version, job_id),
+        )
+        c.commit()
+        c.close()
     except Exception as exc:
-        import sys
-        print(f"[generator] PDF render failed for {lead.get('job_id','?')}: {exc}", file=sys.stderr)
+        _log.error("PDF render failed for %s: %s", lead.get("job_id", "?"), exc)
         raise RuntimeError(f"PDF render failed: {exc}") from exc
 
     return {

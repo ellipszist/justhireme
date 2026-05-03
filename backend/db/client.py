@@ -3,6 +3,9 @@ import sqlite3 as _sq
 import json
 import kuzu
 import lancedb
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 _b = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BoomBoom")
 _g, _v = os.path.join(_b, "graph"), os.path.join(_b, "vector")
@@ -33,10 +36,10 @@ def _ensure_dir(path: str) -> str:
         alt = f"{path}_store"
         try:
             os.makedirs(alt, exist_ok=True)
-            print(f"[db] storage path unavailable ({path}: {exc}); using {alt}", flush=True)
+            _log.warning("storage path unavailable (%s: %s); using %s", path, exc, alt)
             return alt
         except Exception as alt_exc:
-            print(f"[db] storage path unavailable ({path}: {exc}; fallback: {alt_exc})", flush=True)
+            _log.error("storage path unavailable (%s: %s; fallback: %s)", path, exc, alt_exc)
             return path
 
 
@@ -49,7 +52,7 @@ conn = kuzu.Connection(db)
 try:
     vec: lancedb.LanceDBConnection | _NullVectorStore = lancedb.connect(_v)
 except Exception as exc:
-    print(f"[db] vector store disabled: {exc}", flush=True)
+    _log.warning("vector store disabled: %s", exc)
     vec = _NullVectorStore()
 
 def _init():
@@ -90,6 +93,7 @@ def _init_sql():
             selected_projects TEXT DEFAULT '',
             description TEXT DEFAULT '',
             gaps TEXT DEFAULT '',
+            resume_version INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS events(
@@ -133,11 +137,17 @@ def _init_sql():
         ("base_signal_score", "INTEGER DEFAULT 0"),
         ("learning_delta", "INTEGER DEFAULT 0"),
         ("learning_reason", "TEXT DEFAULT ''"),
+        ("resume_version", "INTEGER DEFAULT 0"),
     ]:
         try:
             c.execute(f"ALTER TABLE leads ADD COLUMN {col} {definition}")
         except Exception:
             pass  # column already exists
+    try:
+        c.execute("ALTER TABLE leads ADD COLUMN resume_version INTEGER DEFAULT 0")
+        c.commit()
+    except Exception:
+        pass  # column already exists
     c.commit()
     c.close()
 
@@ -150,7 +160,7 @@ _LEAD_SELECT_COLUMNS = (
     "signal_reason,signal_tags,outreach_reply,outreach_dm,source_meta,feedback,"
     "feedback_note,followup_due_at,last_contacted_at,outreach_email,proposal_draft,"
     "fit_bullets,followup_sequence,proof_snippet,tech_stack,location,urgency,"
-    "base_signal_score,learning_delta,learning_reason"
+    "base_signal_score,learning_delta,learning_reason,created_at,resume_version"
 )
 
 
@@ -415,6 +425,8 @@ def _lead_row_dict(r) -> dict:
         "base_signal_score": r[34] or 0,
         "learning_delta": r[35] or 0,
         "learning_reason": r[36] or "",
+        "created_at": r[37] or "",
+        "resume_version": r[38] or 0,
     }
 
 
@@ -873,7 +885,10 @@ def get_lead_by_id(jid: str) -> dict:
 
 def delete_lead(jid: str):
     c = _sq.connect(sql)
-    c.execute("DELETE FROM leads WHERE job_id=?", (jid,))
+    cur = c.execute("DELETE FROM leads WHERE job_id=?", (jid,))
+    if getattr(cur, "rowcount", 0) == 0:
+        c.close()
+        raise LookupError(f"lead {jid!r} not found")
     c.execute("DELETE FROM events WHERE job_id=?", (jid,))
     c.commit()
     c.close()
@@ -888,7 +903,10 @@ def update_lead_status(jid: str, status: str):
     if status not in valid:
         raise ValueError(f"Invalid status: {status}")
     c = _sq.connect(sql)
-    c.execute("UPDATE leads SET status=? WHERE job_id=?", (status, jid))
+    cur = c.execute("UPDATE leads SET status=? WHERE job_id=?", (status, jid))
+    if getattr(cur, "rowcount", 0) == 0:
+        c.close()
+        raise LookupError(f"lead {jid!r} not found")
     c.execute(
         "INSERT INTO events(job_id,action) VALUES(?,?)",
         (jid, f"status_changed={status}"),
@@ -1184,7 +1202,7 @@ def get_profile() -> dict:
     except Exception as exc:
         if snapshot:
             return snapshot
-        print(f"[db] profile read failed: {exc}", flush=True)
+        _log.error("profile read failed: %s", exc)
         return _empty_profile()
 
     if _profile_has_data(profile):
@@ -1379,6 +1397,87 @@ def delete_project(pid: str):
     c = Connection(db)
     c.execute("MATCH (p:Project) WHERE p.id = $id DETACH DELETE p", {"id": pid})
     refresh_profile_snapshot()
+
+
+# ── CRUD: Education ───────────────────────────────────────────────
+
+def add_education(title: str) -> dict:
+    from kuzu import Connection
+    title = str(title or "").strip()
+    eid = _h(title)
+    c = Connection(db)
+    try:
+        c.execute("CREATE (:Education {id: $id, title: $title})", {"id": eid, "title": title})
+    except Exception:
+        pass  # already exists
+    c2 = Connection(db)
+    try:
+        r = c2.execute("MATCH (c:Candidate) RETURN c.id LIMIT 1")
+        if r.has_next():
+            cid = r.get_next()[0]
+            c3 = Connection(db)
+            c3.execute(
+                "MATCH (a:Candidate {id: $s}), (b:Education {id: $d}) MERGE (a)-[:HAS_EDUCATION]->(b)",
+                {"s": cid, "d": eid},
+            )
+    except Exception:
+        pass
+    refresh_profile_snapshot()
+    return {"id": eid, "title": title}
+
+
+# ── CRUD: Certification ───────────────────────────────────────────
+
+def add_certification(title: str) -> dict:
+    from kuzu import Connection
+    title = str(title or "").strip()
+    cid_node = _h(title)
+    c = Connection(db)
+    try:
+        c.execute("CREATE (:Certification {id: $id, title: $title})", {"id": cid_node, "title": title})
+    except Exception:
+        pass  # already exists
+    c2 = Connection(db)
+    try:
+        r = c2.execute("MATCH (c:Candidate) RETURN c.id LIMIT 1")
+        if r.has_next():
+            cand_id = r.get_next()[0]
+            c3 = Connection(db)
+            c3.execute(
+                "MATCH (a:Candidate {id: $s}), (b:Certification {id: $d}) MERGE (a)-[:HAS_CERTIFICATION]->(b)",
+                {"s": cand_id, "d": cid_node},
+            )
+    except Exception:
+        pass
+    refresh_profile_snapshot()
+    return {"id": cid_node, "title": title}
+
+
+# ── CRUD: Achievements ─────────────────────────────────────────────
+
+def add_achievement(title: str) -> dict:
+    from kuzu import Connection
+    title = str(title or "").strip()
+    aid = _h(title)
+    c = Connection(db)
+    try:
+        c.execute("CREATE (:Achievement {id: $id, title: $title})", {"id": aid, "title": title})
+    except Exception:
+        pass  # already exists
+    c2 = Connection(db)
+    try:
+        r = c2.execute("MATCH (c:Candidate) RETURN c.id LIMIT 1")
+        if r.has_next():
+            cand_id = r.get_next()[0]
+            c3 = Connection(db)
+            c3.execute(
+                "MATCH (a:Candidate {id: $s}), (b:Achievement {id: $d}) MERGE (a)-[:HAS_ACHIEVEMENT]->(b)",
+                {"s": cand_id, "d": aid},
+            )
+    except Exception:
+        pass
+    refresh_profile_snapshot()
+    return {"id": aid, "title": title}
 
 
 # ── CRUD: Candidate ──────────────────────────────────────────────

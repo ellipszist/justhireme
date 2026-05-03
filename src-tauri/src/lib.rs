@@ -11,6 +11,7 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 struct SidecarPort(Mutex<Option<u16>>);
+struct ApiTokenState(Mutex<Option<String>>);
 struct SidecarChild(Mutex<Option<CommandChild>>);
 
 #[tauri::command]
@@ -20,6 +21,28 @@ fn get_sidecar_port(state: State<SidecarPort>) -> Result<u16, String> {
         .lock()
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Sidecar port not yet discovered".into())
+}
+
+#[tauri::command]
+fn get_api_token(state: State<ApiTokenState>) -> Result<String, String> {
+    state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "API token not yet discovered".into())
+}
+
+#[tauri::command]
+fn notify_high_score_lead(app: tauri::AppHandle, title: String, body: String) {
+    use tauri_plugin_notification::NotificationExt;
+
+    let _ = app
+        .notification()
+        .builder()
+        .title(&title)
+        .body(&body)
+        .show();
 }
 
 fn bundled_python_path(app: &AppHandle) -> Option<PathBuf> {
@@ -96,6 +119,10 @@ fn shutdown_sidecar(app: &AppHandle) {
     if let Ok(mut port) = app.state::<SidecarPort>().0.lock() {
         *port = None;
     }
+
+    if let Ok(mut token) = app.state::<ApiTokenState>().0.lock() {
+        *token = None;
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -103,46 +130,64 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(SidecarPort(Mutex::new(None)))
+        .manage(ApiTokenState(Mutex::new(None)))
         .manage(SidecarChild(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![get_sidecar_port])
+        .invoke_handler(tauri::generate_handler![
+            get_sidecar_port,
+            get_api_token,
+            notify_high_score_lead
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
 
-            let backend_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .map(|p| p.join("backend"))
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("backend"));
+            #[cfg(debug_assertions)]
+            let sidecar_cmd = {
+                let backend_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .parent()
+                    .map(|p| p.join("backend"))
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("backend"));
 
-            let bundled = bundled_python_path(&handle);
-            let local_venv = local_venv_python_path(&backend_dir);
+                let bundled = bundled_python_path(&handle);
+                let local_venv = local_venv_python_path(&backend_dir);
 
-            if let Some(ref py) = bundled {
-                eprintln!("[tauri] Using bundled runtime: {}", py.display());
-            } else if let Some(ref py) = local_venv {
-                eprintln!("[tauri] Using backend virtualenv: {}", py.display());
-            } else {
-                eprintln!("[tauri] No bundled or virtualenv runtime found - falling back to `uv`");
-            }
+                if let Some(ref py) = bundled {
+                    eprintln!("[tauri] Using bundled runtime: {}", py.display());
+                } else if let Some(ref py) = local_venv {
+                    eprintln!("[tauri] Using backend virtualenv: {}", py.display());
+                } else {
+                    eprintln!("[tauri] No bundled or virtualenv runtime found - falling back to `uv`");
+                }
 
-            let sidecar_cmd = if let Some(py) = bundled {
+                if let Some(py) = bundled {
+                    handle
+                        .shell()
+                        .command(py.to_string_lossy().to_string())
+                        .args(["main.py"])
+                        .current_dir(&backend_dir)
+                } else if let Some(py) = local_venv {
+                    handle
+                        .shell()
+                        .command(py.to_string_lossy().to_string())
+                        .args(["main.py"])
+                        .current_dir(&backend_dir)
+                } else {
+                    handle
+                        .shell()
+                        .command("uv")
+                        .args(["run", "python", "main.py"])
+                        .current_dir(&backend_dir)
+                }
+            };
+
+            #[cfg(not(debug_assertions))]
+            let sidecar_cmd = {
+                eprintln!("[tauri] Using bundled backend sidecar");
                 handle
                     .shell()
-                    .command(py.to_string_lossy().to_string())
-                    .args(["main.py"])
-                    .current_dir(&backend_dir)
-            } else if let Some(py) = local_venv {
-                handle
-                    .shell()
-                    .command(py.to_string_lossy().to_string())
-                    .args(["main.py"])
-                    .current_dir(&backend_dir)
-            } else {
-                handle
-                    .shell()
-                    .command("uv")
-                    .args(["run", "python", "main.py"])
-                    .current_dir(&backend_dir)
+                    .sidecar("backend")
+                    .expect("failed to create sidecar command")
             };
 
             let (mut rx, child) = sidecar_cmd.spawn().expect("Failed to spawn Python sidecar");
@@ -168,6 +213,11 @@ pub fn run() {
                                     let _ = app_handle.emit("sidecar-port", port);
                                     eprintln!("[tauri] Sidecar port: {port}");
                                 }
+                            } else if let Some(token) = line.strip_prefix("JHM_TOKEN=") {
+                                if let Ok(mut g) = app_handle.state::<ApiTokenState>().0.lock() {
+                                    *g = Some(token.to_string());
+                                }
+                                let _ = app_handle.emit("sidecar-token", token.to_string());
                             }
                         }
                         CommandEvent::Stderr(b) => {

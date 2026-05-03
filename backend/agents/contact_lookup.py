@@ -5,6 +5,9 @@ import urllib.parse
 import urllib.request
 
 from db.client import get_profile, get_settings
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 
 ATS_HOSTS = {

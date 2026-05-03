@@ -5,8 +5,15 @@ import sys
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from urllib.parse import urlparse
+
+import httpx
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
 from pydantic import BaseModel, Field
 from db.client import url_exists, save_lead
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 _MAX_AGE_DAYS = 7
 
@@ -306,7 +313,7 @@ def _parse(md: str, src: str) -> list:
         if _is_recent(d.get("posted_date", "")):
             results.append(d)
         else:
-            print(f"[scout] Skipping old listing ({d.get('posted_date','')}): {d.get('title','')}", file=sys.stderr)
+            _log.debug("Skipping old listing (%s): %s", d.get("posted_date", ""), d.get("title", ""))
     return results
 
 
@@ -338,14 +345,23 @@ def _parse_wellfound(md: str, src: str) -> list:
     return results
 
 
+@retry(
+    retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException)),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(4),
+    reraise=True,
+)
 async def apify(actor: str, inp: dict, tok: str) -> list:
-    import httpx
     async with httpx.AsyncClient(timeout=60) as cx:
         run = await cx.post(
             f"https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items",
             params={"token": tok},
             json=inp,
         )
+        if run.status_code == 429:
+            retry_after = int(run.headers.get("Retry-After", 15))
+            await asyncio.sleep(retry_after)
+            run.raise_for_status()
         run.raise_for_status()
         return run.json()
 
@@ -528,13 +544,22 @@ def scrape(u: str, headed: bool = False) -> list:
 
 
 
+@retry(
+    retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException)),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(4),
+    reraise=True,
+)
 async def _scrape_rss(u: str) -> list:
-    import httpx
     import xml.etree.ElementTree as ET
 
     platform = _platform_from_url(u, "rss")
     async with httpx.AsyncClient(timeout=30, headers=_http_headers(platform), follow_redirects=True) as cx:
         r = await cx.get(u)
+        if r.status_code == 429:
+            retry_after = int(r.headers.get("Retry-After", 15))
+            await asyncio.sleep(retry_after)
+            r.raise_for_status()
         r.raise_for_status()
         root = ET.fromstring(r.text)
 
@@ -544,7 +569,7 @@ async def _scrape_rss(u: str) -> list:
         link = _xml_text(item, "link", "guid")
         date_str = _xml_text(item, "pubDate", "published", "updated")
         if not _is_recent(date_str):
-            print(f"[scout] RSS: skipping old item ({date_str}): {raw_title}", file=sys.stderr)
+            _log.debug("RSS: skipping old item (%s): %s", date_str, raw_title)
             continue
         company, title = _rss_company_and_role(raw_title, platform)
         desc = _description(
@@ -564,13 +589,21 @@ async def _scrape_rss(u: str) -> list:
     return items
 
 
+@retry(
+    retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException)),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(4),
+    reraise=True,
+)
 async def _scrape_remoteok() -> list:
-    import httpx
-
     headers = _http_headers("remoteok")
     headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     async with httpx.AsyncClient(timeout=30, headers=headers) as cx:
         r = await cx.get("https://remoteok.com/api")
+        if r.status_code == 429:
+            retry_after = int(r.headers.get("Retry-After", 15))
+            await asyncio.sleep(retry_after)
+            r.raise_for_status()
         r.raise_for_status()
         data = r.json()
 
@@ -610,11 +643,19 @@ async def _scrape_remoteok() -> list:
     return results
 
 
+@retry(
+    retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException)),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(4),
+    reraise=True,
+)
 async def _scrape_remotive(u: str) -> list:
-    import httpx
-
     async with httpx.AsyncClient(timeout=30, headers=_http_headers("remotive"), follow_redirects=True) as cx:
         r = await cx.get(u)
+        if r.status_code == 429:
+            retry_after = int(r.headers.get("Retry-After", 15))
+            await asyncio.sleep(retry_after)
+            r.raise_for_status()
         r.raise_for_status()
         data = r.json()
 
@@ -655,11 +696,19 @@ async def _scrape_remotive(u: str) -> list:
     return results
 
 
+@retry(
+    retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException)),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(4),
+    reraise=True,
+)
 async def _scrape_jobicy_api(u: str) -> list:
-    import httpx
-
     async with httpx.AsyncClient(timeout=30, headers=_http_headers("jobicy"), follow_redirects=True) as cx:
         r = await cx.get(u)
+        if r.status_code == 429:
+            retry_after = int(r.headers.get("Retry-After", 15))
+            await asyncio.sleep(retry_after)
+            r.raise_for_status()
         r.raise_for_status()
         data = r.json()
 
@@ -759,10 +808,14 @@ def _looks_like_hn_job_post(text: str) -> bool:
     return first_line.count("|") >= 1 and has_role and has_hiring_signal
 
 
+@retry(
+    retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException)),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(4),
+    reraise=True,
+)
 async def _scrape_hn_hiring() -> list:
     """Fetch the latest HN 'Who is hiring?' thread and extract job posts."""
-    import httpx
-
     search_url = "https://hn.algolia.com/api/v1/search"
     params = {
         "query": "Ask HN: Who is hiring?",
@@ -771,6 +824,10 @@ async def _scrape_hn_hiring() -> list:
     }
     async with httpx.AsyncClient(timeout=30) as cx:
         r = await cx.get(search_url, params=params)
+        if r.status_code == 429:
+            retry_after = int(r.headers.get("Retry-After", 15))
+            await asyncio.sleep(retry_after)
+            r.raise_for_status()
         r.raise_for_status()
         stories = r.json().get("hits", [])
 
@@ -784,6 +841,10 @@ async def _scrape_hn_hiring() -> list:
     items_url = f"https://hn.algolia.com/api/v1/items/{story_id}"
     async with httpx.AsyncClient(timeout=60) as cx:
         r = await cx.get(items_url)
+        if r.status_code == 429:
+            retry_after = int(r.headers.get("Retry-After", 15))
+            await asyncio.sleep(retry_after)
+            r.raise_for_status()
         r.raise_for_status()
         data = r.json()
 
@@ -869,8 +930,7 @@ def run(
                 # Standard Web Scrape
                 processed_leads.extend(scrape(target, headed=headed))
         except Exception as _e:
-            import sys
-            print(f"[scout] Skipping {target}: {_e}", file=sys.stderr)
+            _log.warning("Skipping %s: %s", target, _e)
 
     # Apify fallback
     if apify_token and apify_actor and queries:

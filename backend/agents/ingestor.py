@@ -3,8 +3,10 @@ import hashlib
 import re
 import kuzu
 from db.client import vec
+from logger import get_logger
 from models.schema import C
 
+_log = get_logger(__name__)
 
 _st = None
 
@@ -30,7 +32,7 @@ def _emb(texts: list[str]) -> list:
         t.start()
         t.join(timeout=120)
         if t.is_alive() or exc_holder[0] or result[0] is None:
-            print("[ingestor] SentenceTransformer load timed out or failed — skipping vectors for now", file=sys.stderr)
+            _log.warning("SentenceTransformer load timed out or failed — skipping vectors for now")
             return None
         _st = result[0]
     return _st.encode(texts).tolist()
@@ -158,9 +160,7 @@ def _vectors(p: C):
             if vecs:
                 _put_vec("projects", [{**r, "vector": v} for r, v in zip(p_rows, vecs)])
     except Exception as exc:
-        import traceback
-        traceback.print_exc()
-        print(f"[ingestor] vectors skipped: {exc}")
+        _log.warning("vectors skipped: %s", exc, exc_info=True)
 
 
 def _pdf(path: str) -> str:
@@ -169,10 +169,10 @@ def _pdf(path: str) -> str:
         pages = PdfReader(path).pages
         text = " ".join(pg.extract_text() or "" for pg in pages)
         if not text.strip():
-            print(f"[ingestor] PDF has no extractable text (may be scanned/image-only): {path}", file=sys.stderr)
+            _log.warning("PDF has no extractable text (may be scanned/image-only): %s", path)
         return text
     except Exception as exc:
-        print(f"[ingestor] PDF read error for {path}: {exc}", file=sys.stderr)
+        _log.error("PDF read error for %s: %s", path, exc)
         return ""
 
 
@@ -486,8 +486,11 @@ def run(raw: str = "", pdf: str | None = None) -> C:
     p, k, model = resolve_config("ingestor")
 
     if p != "ollama" and not k:
-        print(f"[ingestor] provider='{p}' but no API key set — using local parser. "
-              "Open Settings and add your API key for AI-powered extraction.", file=sys.stderr)
+        _log.warning(
+            "provider='%s' but no API key set — using local parser. "
+            "Open Settings and add your API key for AI-powered extraction.",
+            p,
+        )
         return _parse_local(txt)
 
     try:
@@ -500,16 +503,20 @@ def run(raw: str = "", pdf: str | None = None) -> C:
             C,
             step="ingestor",
         )
-        print(f"[ingestor] LLM extraction OK via '{p}' — "
-              f"{len(result.skills)} skills, {len(result.exp)} roles, {len(result.projects)} projects, "
-              f"{len(result.certifications)} certifications",
-              file=sys.stderr)
+        _log.info(
+            "LLM extraction OK via '%s' — %s skills, %s roles, %s projects, %s certifications",
+            p,
+            len(result.skills),
+            len(result.exp),
+            len(result.projects),
+            len(result.certifications),
+        )
         return result
     except Exception as exc:
         if p != "ollama":
-            print(f"[ingestor] LLM call failed ({p}): {exc}", file=sys.stderr)
+            _log.error("LLM call failed (%s): %s", p, exc)
             raise RuntimeError(f"{p} extraction failed: {exc}") from exc
-        print(f"[ingestor] LLM call failed ({p}): {exc} — falling back to local parser", file=sys.stderr)
+        _log.warning("LLM call failed (%s): %s — falling back to local parser", p, exc)
         return _parse_local(txt)
 
 
@@ -517,15 +524,15 @@ def ingest(raw: str = "", pdf: str | None = None) -> C:
     pdf_text = _pdf(pdf) if pdf else ""
     txt = (raw + " " + pdf_text).strip() if pdf_text else raw
     if not txt.strip():
-        print("[ingestor] No usable text for extraction — returning empty profile", file=sys.stderr)
+        _log.warning("No usable text for extraction — returning empty profile")
         return C(n="Unknown", s="")
     p = run(txt)
     try:
         _graph(p)
     except Exception as exc:
-        print(f"[ingestor] graph write skipped: {exc}")
+        _log.warning("graph write skipped: %s", exc)
     try:
         _vectors(p)
     except Exception as exc:
-        print(f"[ingestor] vector write skipped: {exc}")
+        _log.warning("vector write skipped: %s", exc)
     return p

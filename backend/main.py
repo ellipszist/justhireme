@@ -1,6 +1,10 @@
 import asyncio
+import csv
+import io
 import json
 import os
+import re
+import secrets
 import shutil
 import socket
 import sys
@@ -10,10 +14,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 
 def _free_port() -> int:
@@ -24,7 +33,22 @@ def _free_port() -> int:
 
 _UP   = time.monotonic()
 _sched = AsyncIOScheduler()
+_API_TOKEN: str = secrets.token_hex(32)
 _LOCAL_ORIGIN_RE = r"^(tauri://localhost|https?://(localhost|127\.0\.0\.1|tauri\.localhost|\[::1\])(?::\d+)?)$"
+_bearer = HTTPBearer(auto_error=False)
+
+
+def _require_token(
+    request: Request,
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+):
+    if request.url.path == "/health":
+        return
+    if creds is None or creds.credentials != _API_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid token",
+        )
 
 
 LeadStatus = Literal[
@@ -506,13 +530,18 @@ async def _ghost_tick():
 async def lifespan(app: FastAPI):
     _sched.add_job(_ghost_tick, "interval", hours=6, id="ghost")
     _sched.start()
-    print("[sidecar] FastAPI live.", file=sys.stderr)
+    _log.info("FastAPI live.")
     yield
     _sched.shutdown(wait=False)
-    print("[sidecar] FastAPI shutdown.", file=sys.stderr)
+    _log.info("FastAPI shutdown.")
 
 
-app = FastAPI(title="JustHireMe", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="JustHireMe",
+    version="0.1.0",
+    lifespan=lifespan,
+    dependencies=[Depends(_require_token)],
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[],
@@ -522,12 +551,13 @@ app.add_middleware(
 )
 
 
-@app.get("/health")
+@app.get("/health", dependencies=[])
 async def health():
     return {
         "status": "alive",
         "uptime_seconds": round(time.monotonic() - _UP, 2),
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "log_level": os.environ.get("JHM_LOG_LEVEL", "INFO"),
     }
 
 
@@ -556,6 +586,67 @@ async def leads(beginner_only: bool = False, seniority: str | None = None):
     return jobs
 
 
+@app.get("/api/v1/leads/export.csv")
+async def export_leads_csv():
+    from db.client import get_all_leads
+
+    rows = get_all_leads()
+    fields = [
+        "job_id", "title", "company", "url", "platform", "status",
+        "score", "signal_score", "seniority_level", "location",
+        "reason", "created_at",
+    ]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(rows)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=jhm_pipeline.csv"},
+    )
+
+
+def _versioned_assets(job_id: str, base_dir: str) -> list[dict]:
+    versions: dict[int, dict] = {}
+    patterns = [
+        ("resume", re.compile(rf"^{re.escape(job_id)}_v(\d+)\.pdf$")),
+        ("cover_letter", re.compile(rf"^{re.escape(job_id)}_cl_v(\d+)\.pdf$")),
+    ]
+    try:
+        names = os.listdir(base_dir)
+    except Exception:
+        return []
+    for name in names:
+        full = os.path.join(base_dir, name)
+        if not os.path.isfile(full):
+            continue
+        for key, pattern in patterns:
+            match = pattern.match(name)
+            if match:
+                version = int(match.group(1))
+                versions.setdefault(version, {"version": version})[key] = full
+    return [versions[v] for v in sorted(versions, reverse=True)]
+
+
+@app.get("/api/v1/leads/{job_id}/versions")
+async def get_lead_versions(job_id: str):
+    from db.client import get_lead_by_id
+
+    lead = get_lead_by_id(job_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    paths = [
+        lead.get("resume_asset") or lead.get("asset") or "",
+        lead.get("cover_letter_asset") or "",
+    ]
+    base_dir = next((os.path.dirname(path) for path in paths if path), None)
+    if not base_dir:
+        base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BoomBoom", "assets")
+    return _versioned_assets(job_id, base_dir)
+
+
 @app.get("/api/v1/leads/{job_id}")
 async def get_lead(job_id: str):
     from db.client import get_lead_by_id
@@ -569,7 +660,10 @@ async def get_lead(job_id: str):
 @app.delete("/api/v1/leads/{job_id}")
 async def delete_lead_endpoint(job_id: str):
     from db.client import delete_lead
-    delete_lead(job_id)
+    try:
+        delete_lead(job_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="lead not found")
     return {"ok": True}
 
 
@@ -580,6 +674,8 @@ async def update_status(job_id: str, body: StatusBody):
         update_lead_status(job_id, body.status)
         await cm.broadcast({"type": "LEAD_UPDATED", "data": {"job_id": job_id, "status": body.status}})
         return {"ok": True}
+    except LookupError:
+        raise HTTPException(status_code=404, detail="lead not found")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -662,15 +758,65 @@ async def generate_for_lead(job_id: str, bt: BackgroundTasks):
     return {"status": "generating", "job_id": job_id}
 
 
+@app.post("/api/v1/leads/{job_id}/pipeline/run")
+async def run_pipeline(job_id: str, bt: BackgroundTasks):
+    from db.client import get_lead_by_id, get_profile, get_settings
+    from graph import PipelineState, eval_graph
+
+    lead = await asyncio.to_thread(get_lead_by_id, job_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="lead not found")
+    profile = await asyncio.to_thread(get_profile)
+    cfg = await asyncio.to_thread(get_settings)
+
+    async def _run():
+        state: PipelineState = {
+            "job_id": job_id,
+            "lead": lead,
+            "profile": profile,
+            "cfg": cfg,
+            "score": 0,
+            "reason": "",
+            "match_points": [],
+            "gaps": [],
+            "asset_path": "",
+            "cover_letter_path": "",
+            "error": None,
+        }
+        result = await asyncio.to_thread(eval_graph.invoke, state)
+        await cm.broadcast({
+            "type": "agent",
+            "kind": "agent",
+            "src": "pipeline",
+            "event": "pipeline_done",
+            "msg": f"Pipeline done for {job_id}: score={result['score']}, error={result['error']}",
+        })
+
+    bt.add_task(_run)
+    return {"status": "started", "job_id": job_id}
+
+
 @app.get("/api/v1/leads/{job_id}/pdf")
-async def get_lead_pdf(job_id: str, kind: str = "resume"):
+async def get_lead_pdf(job_id: str, kind: str = "resume", version: int | None = None):
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
     from db.client import get_lead_by_id
     lead = get_lead_by_id(job_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    if kind in {"cover", "cover_letter", "cover-letter"}:
+    is_cover = kind in {"cover", "cover_letter", "cover-letter"}
+    if version is not None:
+        paths = [
+            lead.get("resume_asset") or lead.get("asset") or "",
+            lead.get("cover_letter_asset") or "",
+        ]
+        base_dir = next((os.path.dirname(path) for path in paths if path), None)
+        if not base_dir:
+            base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BoomBoom", "assets")
+        filename = f"{job_id}_cl_v{version}.pdf" if is_cover else f"{job_id}_v{version}.pdf"
+        path = os.path.join(base_dir, filename)
+        missing = "Cover letter not generated yet" if is_cover else "Resume not generated yet"
+    elif is_cover:
         path = lead.get("cover_letter_asset") or ""
         filename = f"{job_id}_cover_letter.pdf"
         missing = "Cover letter not generated yet"
@@ -882,7 +1028,7 @@ async def _run_scan_task():
     try:
         await _run_scan()
     except Exception as exc:
-        print(f"[scan] failed: {exc}", file=sys.stderr)
+        _log.error("scan failed: %s", exc)
         await cm.broadcast({"type": "agent", "event": "eval_done", "msg": f"Scan failed: {exc}"})
     finally:
         _scan_task = None
@@ -893,7 +1039,7 @@ async def _run_reevaluate_jobs_task():
     try:
         await _run_reevaluate_jobs()
     except Exception as exc:
-        print(f"[reevaluate] failed: {exc}", file=sys.stderr)
+        _log.error("reevaluate failed: %s", exc)
         await cm.broadcast({"type": "agent", "event": "reeval_done", "msg": f"Re-evaluation failed: {exc}"})
     finally:
         _reevaluate_task = None
@@ -1044,6 +1190,68 @@ async def get_cfg():
     return s
 
 
+async def _probe_provider_key(provider: str, key: str) -> dict:
+    import httpx
+
+    started = time.perf_counter()
+    try:
+        timeout = httpx.Timeout(5.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            if provider == "anthropic":
+                r = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": "claude-haiku-4-5-20251001",
+                        "max_tokens": 1,
+                        "messages": [{"role": "user", "content": "ping"}],
+                    },
+                )
+                status = "ok" if r.status_code in {200, 400} else "invalid_key" if r.status_code == 401 else "unreachable"
+            elif provider == "openai":
+                r = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+                status = "ok" if r.status_code == 200 else "invalid_key" if r.status_code == 401 else "unreachable"
+            elif provider == "groq":
+                r = await client.get(
+                    "https://api.groq.com/openai/v1/models",
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+                status = "ok" if r.status_code == 200 else "invalid_key" if r.status_code == 401 else "unreachable"
+            else:
+                status = "unchecked"
+    except Exception:
+        status = "unreachable"
+    return {"status": status, "latency_ms": round((time.perf_counter() - started) * 1000)}
+
+
+@app.get("/api/v1/settings/validate")
+async def validate_settings():
+    from db.client import get_settings
+    from llm import _ENV_NAMES, _KEY_NAMES
+
+    cfg = get_settings()
+    providers = ["anthropic", "openai", "groq", *[p for p in _KEY_NAMES if p not in {"anthropic", "openai", "groq"}]]
+
+    async def one(provider: str):
+        key_name = _KEY_NAMES.get(provider, "")
+        key = str(cfg.get(key_name) or os.environ.get(_ENV_NAMES.get(provider, ""), "") or "").strip()
+        if not key:
+            return provider, {"status": "not_configured", "latency_ms": 0}
+        if provider not in {"anthropic", "openai", "groq"}:
+            return provider, {"status": "unchecked", "latency_ms": 0}
+        return provider, await _probe_provider_key(provider, key)
+
+    pairs = await asyncio.gather(*(one(provider) for provider in providers))
+    return {provider: result for provider, result in pairs}
+
+
 @app.post("/api/v1/settings")
 async def save_cfg(body: SettingsBody):
     from db.client import get_settings, save_settings
@@ -1090,6 +1298,301 @@ async def ingest(
             os.unlink(pdf_path)
 
 
+class GithubIngestBody(StrictBody):
+    username:  str = Field(max_length=100)
+    token:     str = Field(default="", max_length=200)
+    max_repos: int = Field(default=12, ge=1, le=30)
+
+
+class PortfolioIngestBody(StrictBody):
+    url: str = Field(max_length=2000)
+    auto_import: bool = Field(
+        default=False,
+        description="if true, immediately write extracted data to the graph",
+    )
+
+
+class ProfileSkill(BaseModel):
+    name: str = Field(max_length=160)
+    category: str = Field(default="general", max_length=80)
+
+
+class ProfileExperience(BaseModel):
+    role: str = Field(default="", max_length=200)
+    company: str = Field(default="", max_length=200)
+    period: str = Field(default="", max_length=100)
+    description: str = Field(default="", max_length=5000)
+
+
+class ProfileProject(BaseModel):
+    title: str = Field(default="", max_length=200)
+    stack: str = Field(default="", max_length=500)
+    repo: str = Field(default="", max_length=500)
+    impact: str = Field(default="", max_length=1000)
+
+
+class ProfileEntry(BaseModel):
+    title: str = Field(max_length=500)
+
+
+class ProfileIdentity(BaseModel):
+    email: str = Field(default="", max_length=200)
+    phone: str = Field(default="", max_length=50)
+    linkedin_url: str = Field(default="", max_length=500)
+    github_url: str = Field(default="", max_length=500)
+    website_url: str = Field(default="", max_length=500)
+    city: str = Field(default="", max_length=200)
+
+
+class ProfileCandidate(BaseModel):
+    name: str = Field(default="", max_length=160)
+    summary: str = Field(default="", max_length=4000)
+
+
+class ProfileImportBody(BaseModel):
+    """Accepts any subset of fields - all are optional."""
+
+    candidate: ProfileCandidate = Field(default_factory=ProfileCandidate)
+    identity: ProfileIdentity = Field(default_factory=ProfileIdentity)
+    skills: list[ProfileSkill] = Field(default_factory=list)
+    experience: list[ProfileExperience] = Field(default_factory=list)
+    projects: list[ProfileProject] = Field(default_factory=list)
+    education: list[ProfileEntry] = Field(default_factory=list)
+    certifications: list[ProfileEntry] = Field(default_factory=list)
+    achievements: list[ProfileEntry] = Field(default_factory=list)
+
+
+@app.post("/api/v1/ingest/linkedin")
+async def ingest_linkedin(file: UploadFile = File(...)):
+    from agents.linkedin_parser import parse_linkedin_export
+    from db.client import update_candidate, add_skill, add_experience, add_education, add_project, add_certification
+
+    if not (file.filename or "").endswith(".zip"):
+        raise HTTPException(400, "expected a .zip file from LinkedIn data export")
+    raw = await file.read()
+    if len(raw) > 50 * 1024 * 1024:
+        raise HTTPException(413, "file too large")
+    try:
+        parsed = await asyncio.to_thread(parse_linkedin_export, raw)
+    except Exception as exc:
+        _log.error("linkedin parse failed: %s", exc)
+        raise HTTPException(422, f"could not parse linkedin export: {exc}")
+
+    errors = []
+    try:
+        c = parsed["candidate"]
+        if c["n"]:
+            await asyncio.to_thread(update_candidate, c["n"], c["s"])
+    except Exception as e:
+        errors.append(f"candidate: {e}")
+
+    for skill in parsed["skills"]:
+        try:
+            await asyncio.to_thread(add_skill, skill["n"], skill["cat"])
+        except Exception:
+            pass
+
+    for exp in parsed["experience"]:
+        try:
+            await asyncio.to_thread(add_experience, exp["role"], exp["co"], exp["period"], exp["d"])
+        except Exception as e:
+            errors.append(f"exp {exp.get('role')}: {e}")
+
+    for edu in parsed["education"]:
+        try:
+            await asyncio.to_thread(add_education, edu["title"])
+        except Exception as e:
+            errors.append(f"edu: {e}")
+
+    for proj in parsed["projects"]:
+        try:
+            await asyncio.to_thread(add_project, proj["title"], proj["stack"], proj["repo"], proj["impact"])
+        except Exception as e:
+            errors.append(f"proj {proj.get('title')}: {e}")
+
+    for cert in parsed["certifications"]:
+        try:
+            await asyncio.to_thread(add_certification, cert["title"])
+        except Exception as e:
+            errors.append(f"cert: {e}")
+
+    return {
+        "status":   "ok" if not errors else "partial",
+        "stats":    parsed["stats"],
+        "location": parsed["location"],
+        "errors":   errors,
+    }
+
+
+@app.post("/api/v1/ingest/github")
+async def ingest_github_endpoint(body: GithubIngestBody):
+    from agents.github_ingestor import ingest_github
+    from db.client import add_skill, add_project, save_settings
+
+    result = await ingest_github(
+        body.username,
+        token=body.token or None,
+        max_repos=body.max_repos,
+    )
+    if "error" in result:
+        raise HTTPException(404, result["error"])
+
+    errors = list(result.get("errors", []))
+
+    for skill in result["skills"]:
+        try:
+            await asyncio.to_thread(add_skill, skill["n"], skill["cat"])
+        except Exception:
+            pass
+
+    for proj in result["projects"]:
+        try:
+            await asyncio.to_thread(add_project, proj["title"], proj["stack"], proj["repo"], proj["impact"])
+        except Exception as e:
+            errors.append(f"proj {proj.get('title')}: {e}")
+
+    gu = result.get("github_user", {})
+    settings_update: dict = {}
+    if gu.get("login"):
+        settings_update["github_username"] = gu["login"]
+    if gu.get("blog"):
+        settings_update["website_url"] = gu["blog"]
+    if settings_update:
+        await asyncio.to_thread(save_settings, settings_update)
+
+    return {
+        "status":      "ok" if not errors else "partial",
+        "github_user": result["github_user"],
+        "stats":       result["stats"],
+        "errors":      errors,
+    }
+
+
+@app.post("/api/v1/ingest/profile")
+async def import_profile_json(body: ProfileImportBody):
+    errors = []
+    from db.client import (
+        update_candidate, add_skill, add_experience,
+        add_education, add_certification, add_achievement,
+        add_project, save_settings,
+    )
+
+    stats = {k: 0 for k in [
+        "skills", "experience", "projects", "education",
+        "certifications", "achievements",
+    ]}
+
+    c = body.candidate
+    if c.name or c.summary:
+        try:
+            await asyncio.to_thread(update_candidate, c.name, c.summary)
+        except Exception as e:
+            errors.append(f"candidate: {e}")
+
+    id_ = body.identity
+    identity_map = {
+        "email": id_.email,
+        "phone": id_.phone,
+        "linkedin_url": id_.linkedin_url,
+        "github_url": id_.github_url,
+        "website_url": id_.website_url,
+        "city": id_.city,
+    }
+    for key, val in identity_map.items():
+        if val:
+            try:
+                await asyncio.to_thread(save_settings, {key: val})
+            except Exception as e:
+                errors.append(f"identity.{key}: {e}")
+
+    for s in body.skills:
+        try:
+            await asyncio.to_thread(add_skill, s.name, s.category)
+            stats["skills"] += 1
+        except Exception:
+            pass
+
+    for ex in body.experience:
+        try:
+            await asyncio.to_thread(
+                add_experience, ex.role, ex.company, ex.period, ex.description,
+            )
+            stats["experience"] += 1
+        except Exception as e:
+            errors.append(f"exp {ex.role}: {e}")
+
+    for p in body.projects:
+        try:
+            await asyncio.to_thread(add_project, p.title, p.stack, p.repo, p.impact)
+            stats["projects"] += 1
+        except Exception as e:
+            errors.append(f"proj {p.title}: {e}")
+
+    for e in body.education:
+        try:
+            await asyncio.to_thread(add_education, e.title)
+            stats["education"] += 1
+        except Exception as exc:
+            errors.append(f"edu: {exc}")
+
+    for cert in body.certifications:
+        try:
+            await asyncio.to_thread(add_certification, cert.title)
+            stats["certifications"] += 1
+        except Exception as exc:
+            errors.append(f"cert: {exc}")
+
+    for ach in body.achievements:
+        try:
+            await asyncio.to_thread(add_achievement, ach.title)
+            stats["achievements"] += 1
+        except Exception as exc:
+            errors.append(f"achievement: {exc}")
+
+    return {
+        "status": "ok" if not errors else "partial",
+        "stats": stats,
+        "errors": errors,
+    }
+
+
+@app.get("/api/v1/ingest/profile/template")
+async def get_profile_template():
+    from pathlib import Path
+    template_path = Path(__file__).parent / "data" / "profile_schema_example.json"
+    with open(template_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@app.post("/api/v1/ingest/portfolio")
+async def ingest_portfolio_endpoint(body: PortfolioIngestBody):
+    if not body.url.startswith(("http://", "https://")):
+        raise HTTPException(400, "url must start with http:// or https://")
+    from agents.portfolio_ingestor import ingest_portfolio_url
+    result = await ingest_portfolio_url(body.url)
+    if result.get("error") and not result.get("screenshot_b64"):
+        raise HTTPException(422, result["error"])
+
+    if body.auto_import and result.get("candidate") is not None:
+        import_body = ProfileImportBody(
+            candidate=ProfileCandidate(**(result["candidate"] or {})),
+            skills=[
+                ProfileSkill(name=s["name"], category=s.get("category", "general"))
+                for s in result.get("skills", [])
+            ],
+            projects=[ProfileProject(**p) for p in result.get("projects", [])],
+            achievements=[
+                ProfileEntry(title=a["title"])
+                for a in result.get("achievements", [])
+            ],
+        )
+        import_result = await import_profile_json(import_body)
+        result["import_stats"] = import_result["stats"]
+        result["import_errors"] = import_result["errors"]
+
+    return result
+
+
 def _asset_ready(path: str) -> bool:
     return bool(path) and os.path.isfile(path)
 
@@ -1118,6 +1621,92 @@ async def fire(job_id: str, bt: BackgroundTasks):
         raise HTTPException(status_code=status, detail=detail)
     bt.add_task(_actuate, job_id)
     return {"status": "firing", "job_id": job_id}
+
+
+class FormReadBody(StrictBody):
+    url: str = Field(default="", max_length=2000)
+
+
+@app.post("/api/v1/leads/{job_id}/form/read")
+async def read_lead_form(job_id: str, body: FormReadBody):
+    from db.client import get_lead_by_id, get_profile, get_settings
+    from agents.actuator import read_form
+
+    lead = get_lead_by_id(job_id)
+    if not lead:
+        raise HTTPException(404, "lead not found")
+
+    url = (body.url or lead.get("url") or "").strip()
+    if not url:
+        raise HTTPException(400, "no url available for this lead")
+
+    profile = get_profile()
+    candidate = profile.get("candidate") or {}
+
+    cfg = get_settings()
+    identity = {
+        "name":            cfg.get("full_name", "") or candidate.get("n", ""),
+        "email":           cfg.get("email", ""),
+        "phone":           cfg.get("phone", ""),
+        "linkedin_url":    cfg.get("linkedin_url", ""),
+        "github":          cfg.get("github_url", ""),
+        "website":         cfg.get("website_url", ""),
+        "city":            cfg.get("city", ""),
+        "current_company": cfg.get("current_company", ""),
+    }
+
+    cover_letter = lead.get("cover_letter_asset", "")
+    if cover_letter and os.path.isfile(cover_letter):
+        try:
+            md_path = cover_letter.replace(".pdf", ".md")
+            if os.path.isfile(md_path):
+                with open(md_path, encoding="utf-8") as f:
+                    cover_letter = f.read()
+            else:
+                cover_letter = ""
+        except Exception:
+            cover_letter = ""
+
+    result = await read_form(url, identity, cover_letter=cover_letter)
+    return result
+
+
+@app.get("/api/v1/identity")
+async def get_identity():
+    from db.client import get_settings
+    cfg = get_settings()
+    return {
+        "full_name":       cfg.get("full_name", ""),
+        "email":           cfg.get("email", ""),
+        "phone":           cfg.get("phone", ""),
+        "linkedin_url":    cfg.get("linkedin_url", ""),
+        "github_url":      cfg.get("github_url", ""),
+        "website_url":     cfg.get("website_url", ""),
+        "city":            cfg.get("city", ""),
+        "current_company": cfg.get("current_company", ""),
+    }
+
+
+@app.post("/api/v1/selectors/refresh")
+async def refresh_selectors():
+    from agents.selectors import get_selectors
+    from db.client import save_settings
+
+    save_settings({"selectors_fetched_at": "0"})
+    data = await asyncio.to_thread(get_selectors)
+    return {"version": data.get("version"), "platforms": list(data.get("platforms", {}).keys())}
+
+
+@app.post("/api/v1/leads/{job_id}/apply/preview")
+async def preview_apply(job_id: str):
+    from agents.actuator import run as _act
+    from db.client import get_lead_for_fire
+
+    lead, asset = await asyncio.to_thread(get_lead_for_fire, job_id)
+    status_code, detail = _fire_blocker(lead, asset)
+    if detail:
+        raise HTTPException(status_code=status_code, detail=detail)
+    return await asyncio.to_thread(_act, lead, asset, True)
 
 
 async def _generate_one(jid: str):
@@ -1233,7 +1822,7 @@ async def ws_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as exc:
-        print(f"[ws] {exc}", file=sys.stderr)
+        _log.warning("ws: %s", exc)
     finally:
         cm.remove(ws)
 
@@ -1241,5 +1830,7 @@ async def ws_endpoint(ws: WebSocket):
 if __name__ == "__main__":
     import uvicorn
     port = _free_port()
-    print(f"PORT:{port}", flush=True)
+    sys.stdout.write(f"JHM_TOKEN={_API_TOKEN}\n")
+    sys.stdout.write(f"PORT:{port}\n")
+    sys.stdout.flush()
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
