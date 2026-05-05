@@ -1,6 +1,7 @@
 import os
 import sqlite3 as _sq
 import json
+from datetime import UTC, datetime, timedelta
 import kuzu
 import lancedb
 from logger import get_logger
@@ -10,6 +11,13 @@ _log = get_logger(__name__)
 _b = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BoomBoom")
 _g, _v = os.path.join(_b, "graph"), os.path.join(_b, "vector")
 sql = os.path.join(_b, "crm.db")
+
+
+def _utc_timestamp(offset: timedelta | None = None) -> str:
+    value = datetime.now(UTC)
+    if offset is not None:
+        value += offset
+    return value.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 class _NullVectorStore:
@@ -942,10 +950,8 @@ def save_lead_feedback(jid: str, feedback: str, note: str = "") -> dict:
     }:
         new_status = "discarded"
     elif feedback == "already_contacted":
-        from datetime import datetime, timedelta
-
-        now = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-        due = (datetime.utcnow() + timedelta(days=5)).replace(microsecond=0).isoformat() + "Z"
+        now = _utc_timestamp()
+        due = _utc_timestamp(timedelta(days=5))
         new_status = "proposal_sent" if kind == "freelance" else "applied"
 
     c.execute(
@@ -963,11 +969,9 @@ def save_lead_feedback(jid: str, feedback: str, note: str = "") -> dict:
 
 
 def update_lead_followup(jid: str, days: int = 5) -> dict:
-    from datetime import datetime, timedelta
-
     days = max(1, min(int(days or 5), 60))
-    due = (datetime.utcnow() + timedelta(days=days)).replace(microsecond=0).isoformat() + "Z"
-    now = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    due = _utc_timestamp(timedelta(days=days))
+    now = _utc_timestamp()
     c = _sq.connect(sql)
     row = c.execute("SELECT 1 FROM leads WHERE job_id=?", (jid,)).fetchone()
     if not row:
@@ -984,9 +988,7 @@ def update_lead_followup(jid: str, days: int = 5) -> dict:
 
 
 def get_due_followups(limit: int = 25) -> list:
-    from datetime import datetime
-
-    now = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    now = _utc_timestamp()
     c = _sq.connect(sql)
     rows = c.execute(
         """
