@@ -57,6 +57,33 @@ const story = [
   },
 ];
 
+const intelligence = [
+  {
+    title: "Scrape",
+    copy: "Adapters normalize jobs from ATS boards, feeds, communities, and configured sources.",
+    icon: "globe",
+    tone: "blue",
+  },
+  {
+    title: "Embed",
+    copy: "Job descriptions and profile evidence become searchable semantic vectors.",
+    icon: "pulse",
+    tone: "purple",
+  },
+  {
+    title: "Connect",
+    copy: "SQLite, LanceDB, and graph context work together locally.",
+    icon: "graph",
+    tone: "green",
+  },
+  {
+    title: "Rank",
+    copy: "Rules, quality gates, semantic match, and profile signals produce explainable fit.",
+    icon: "filter",
+    tone: "yellow",
+  },
+];
+
 const principles = [
   "Local-first data",
   "Explainable scoring",
@@ -192,6 +219,27 @@ function WorkflowAsset() {
           </div>
           {index < steps.length - 1 && <span className="flow-arrow" />}
         </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+function IntelligenceMap() {
+  return (
+    <div className="intel-map" aria-label="JustHireMe intelligence system">
+      <div className="intel-center">
+        <Icon name="logo" />
+        <strong>Local match engine</strong>
+        <span>Profile graph + embeddings + CRM</span>
+      </div>
+      {intelligence.map((item, index) => (
+        <article className={`intel-node intel-node-${index + 1} tone-${item.tone}`} key={item.title}>
+          <span className="feature-icon"><Icon name={item.icon} /></span>
+          <div>
+            <h3>{item.title}</h3>
+            <p>{item.copy}</p>
+          </div>
+        </article>
       ))}
     </div>
   );
@@ -375,6 +423,19 @@ function App() {
                 <h3>{feature.title}</h3>
                 <p>{feature.copy}</p>
               </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="section band paper-2">
+          <div className="section-head">
+            <span className="eyebrow">Intelligence layer</span>
+            <h2>Advanced matching, explained without the black box.</h2>
+          </div>
+          <IntelligenceMap />
+          <div className="tech-strip">
+            {["Scrapers", "JD embeddings", "Profile embeddings", "LanceDB", "SQLite CRM", "Kuzu graph", "Quality gates", "Semantic ranker"].map((item) => (
+              <span key={item}>{item}</span>
             ))}
           </div>
         </section>
