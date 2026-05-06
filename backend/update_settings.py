@@ -2,7 +2,7 @@ import sqlite3
 import os
 
 # Get path to database
-b = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BoomBoom")
+b = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe")
 db_path = os.path.join(b, "crm.db")
 
 # Top AI companies job boards

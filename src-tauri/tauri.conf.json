@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["msi", "nsis"],
     "externalBin": [
       "resources/backend/backend"
     ],
@@ -36,7 +36,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": [
+      "resources/backend/_internal/**/*",
+      "resources/bin/**/*"
+    ],
     "windows": {
+      "nsis": {
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser"
+      },
       "wix": {
         "language": "en-US"
       }

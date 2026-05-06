@@ -68,6 +68,7 @@ src-tauri/resources/backend-*
 *.db-wal
 *.sqlite
 *.sqlite3
+JustHireMe/
 BoomBoom/
 scratch/
 

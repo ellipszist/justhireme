@@ -1,11 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
+import site
 from pathlib import Path
 
 block_cipher = None
 backend_root = Path("backend").resolve()
 if not (backend_root / "main.py").exists():
     backend_root = Path(".").resolve()
+venv_site_packages = backend_root / ".venv" / "Lib" / "site-packages"
+site.getusersitepackages = lambda: str(venv_site_packages)
 
 hidden = [
     "uvicorn.logging", "uvicorn.loops", "uvicorn.loops.auto",
@@ -17,10 +20,8 @@ hidden = [
     "kuzu", "lancedb",
     "anthropic", "openai", "instructor",
     "langgraph", "langgraph.graph",
-    "sentence_transformers",
-    "playwright", "playwright.sync_api", "playwright.async_api",
     "apscheduler", "apscheduler.schedulers.asyncio",
-    "fpdf2", "fpdf",
+    "fpdf",
     "pypdf", "markdown",
     "tenacity",
     "agents.ingestor", "agents.evaluator", "agents.generator",
@@ -42,7 +43,14 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "PIL", "cv2", "torch.distributed"],
+    excludes=[
+        "tkinter", "matplotlib", "PIL", "cv2",
+        "pytest", "tensorboard",
+        "playwright",
+        "sentence_transformers", "transformers",
+        "torch", "torch.distributed",
+        "sklearn", "scipy",
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -63,7 +71,7 @@ exe = EXE(
 )
 
 coll = COLLECT(
-    exe, a.pure, a.scripts, a.binaries, a.zipfiles, a.datas,
+    exe, a.binaries, a.zipfiles, a.datas,
     strip=False,
     upx=False,
     upx_exclude=[],

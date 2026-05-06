@@ -19,10 +19,10 @@ export function useWS() {
     ]);
   }, []);
 
-  const connect = useCallback((p: number) => {
+  const connect = useCallback((p: number, token: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     setConn("connecting");
-    const ws = new WebSocket(`ws://127.0.0.1:${p}/ws`);
+    const ws = new WebSocket(`ws://127.0.0.1:${p}/ws?token=${encodeURIComponent(token)}`);
     wsRef.current = ws;
     ws.onopen    = () => { setConn("connected"); addLog("WebSocket connected", "system", "ws"); };
     ws.onmessage = (e) => {
@@ -55,17 +55,32 @@ export function useWS() {
         }
       } catch { /* ignore */ }
     };
-    ws.onclose = () => { setConn("disconnected"); wsRef.current = null; setTimeout(() => connect(p), 3000); };
+    ws.onclose = () => { setConn("disconnected"); wsRef.current = null; setTimeout(() => connect(p, token), 3000); };
     ws.onerror = () => ws.close();
   }, [addLog]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     (async () => {
-      try { const token = await invoke<string>("get_api_token"); setApiToken(token); } catch { /* not ready */ }
-      try { const p = await invoke<number>("get_sidecar_port"); setPort(p); connect(p); } catch { /* not ready */ }
-      unlisten = await listen<number>("sidecar-port", ev => { setPort(ev.payload); connect(ev.payload); });
-      const unlistenToken = await listen<string>("sidecar-token", ev => setApiToken(ev.payload));
+      let token: string | null = null;
+      let currentPort: number | null = null;
+      try { token = await invoke<string>("get_api_token"); setApiToken(token); } catch { /* not ready */ }
+      try {
+        const p = await invoke<number>("get_sidecar_port");
+        currentPort = p;
+        setPort(p);
+        if (token) connect(p, token);
+      } catch { /* not ready */ }
+      unlisten = await listen<number>("sidecar-port", ev => {
+        currentPort = ev.payload;
+        setPort(ev.payload);
+        if (token) connect(ev.payload, token);
+      });
+      const unlistenToken = await listen<string>("sidecar-token", ev => {
+        token = ev.payload;
+        setApiToken(ev.payload);
+        if (currentPort) connect(currentPort, ev.payload);
+      });
       const prevUnlisten = unlisten;
       unlisten = () => { prevUnlisten?.(); unlistenToken(); };
     })();

@@ -137,6 +137,16 @@ class TestAuthGate(unittest.TestCase):
         resp = get("/api/v1/leads")
         self.assertNotEqual(resp.status_code, 401)
 
+    def test_websocket_valid_token_connects(self):
+        with CLIENT.websocket_connect("/ws?token=test-token-abc123") as ws:
+            msg = ws.receive_json()
+        self.assertEqual(msg["type"], "heartbeat")
+
+    def test_websocket_missing_token_closes_without_server_error(self):
+        with self.assertRaises(Exception):
+            with CLIENT.websocket_connect("/ws"):
+                pass
+
 
 class TestHealthEndpoint(unittest.TestCase):
     def test_health_status_code(self):

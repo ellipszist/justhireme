@@ -9,7 +9,7 @@ _log = get_logger(__name__)
 
 _assets = os.path.join(
     os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-    "BoomBoom", "assets",
+    "JustHireMe", "assets",
 )
 os.makedirs(_assets, exist_ok=True)
 

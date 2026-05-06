@@ -14,10 +14,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect, status
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.security import HTTPBearer
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from logger import get_logger
@@ -38,17 +38,16 @@ _LOCAL_ORIGIN_RE = r"^(tauri://localhost|https?://(localhost|127\.0\.0\.1|tauri\
 _bearer = HTTPBearer(auto_error=False)
 
 
-def _require_token(
-    request: Request,
-    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
-):
-    if request.url.path == "/health":
-        return
-    if creds is None or creds.credentials != _API_TOKEN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid token",
-        )
+async def _require_ws_token(ws: WebSocket) -> bool:
+    """Auth guard for WebSocket routes; token via query param or header."""
+    token = ws.query_params.get("token", "")
+    if token == _API_TOKEN:
+        return True
+    auth = ws.headers.get("authorization", "")
+    if auth.startswith("Bearer ") and auth[7:] == _API_TOKEN:
+        return True
+    await ws.close(code=4401, reason="invalid token")
+    return False
 
 
 LeadStatus = Literal[
@@ -540,7 +539,6 @@ app = FastAPI(
     title="JustHireMe",
     version="0.1.0",
     lifespan=lifespan,
-    dependencies=[Depends(_require_token)],
 )
 app.add_middleware(
     CORSMiddleware,
@@ -549,6 +547,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def require_http_token(request: Request, call_next):
+    if request.url.path != "/health":
+        creds = await _bearer(request)
+        if creds is None or creds.credentials != _API_TOKEN:
+            return JSONResponse(
+                {"detail": "invalid token"},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+    return await call_next(request)
 
 
 @app.get("/health", dependencies=[])
@@ -643,7 +653,7 @@ async def get_lead_versions(job_id: str):
     ]
     base_dir = next((os.path.dirname(path) for path in paths if path), None)
     if not base_dir:
-        base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BoomBoom", "assets")
+        base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe", "assets")
     return _versioned_assets(job_id, base_dir)
 
 
@@ -812,7 +822,7 @@ async def get_lead_pdf(job_id: str, kind: str = "resume", version: int | None = 
         ]
         base_dir = next((os.path.dirname(path) for path in paths if path), None)
         if not base_dir:
-            base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BoomBoom", "assets")
+            base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe", "assets")
         filename = f"{job_id}_cl_v{version}.pdf" if is_cover else f"{job_id}_v{version}.pdf"
         path = os.path.join(base_dir, filename)
         missing = "Cover letter not generated yet" if is_cover else "Resume not generated yet"
@@ -1802,6 +1812,8 @@ async def _actuate(jid: str):
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    if not await _require_ws_token(ws):
+        return
     await ws.accept()
     await cm.add(ws)
     beat = 0

@@ -1,7 +1,7 @@
 import sqlite3
 import os
 
-b = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BoomBoom")
+b = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe")
 db_path = os.path.join(b, "crm.db")
 
 conn = sqlite3.connect(db_path)

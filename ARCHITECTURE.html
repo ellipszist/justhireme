@@ -291,9 +291,9 @@
     <div class="layer">
       <span class="lbl">Layer 8 · Storage (backend/db/client.py)</span>
       <div class="layer-row" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="node c"><h4>Kùzu graph</h4><div class="desc"><code>%LOCALAPPDATA%/BoomBoom/graph</code> · 5 node tables, 5 rel tables (see Graph section).</div></div>
-        <div class="node c"><h4>LanceDB vectors</h4><div class="desc"><code>%LOCALAPPDATA%/BoomBoom/vector</code> · tables <b>skills</b>, <b>projects</b>. 384-dim MiniLM-L6.</div></div>
-        <div class="node c"><h4>SQLite CRM</h4><div class="desc"><code>%LOCALAPPDATA%/BoomBoom/crm.db</code> · <code>leads</code>, <code>events</code>, <code>settings</code>.</div></div>
+        <div class="node c"><h4>Kùzu graph</h4><div class="desc"><code>%LOCALAPPDATA%/JustHireMe/graph</code> · 5 node tables, 5 rel tables (see Graph section).</div></div>
+        <div class="node c"><h4>LanceDB vectors</h4><div class="desc"><code>%LOCALAPPDATA%/JustHireMe/vector</code> · tables <b>skills</b>, <b>projects</b>. 384-dim MiniLM-L6.</div></div>
+        <div class="node c"><h4>SQLite CRM</h4><div class="desc"><code>%LOCALAPPDATA%/JustHireMe/crm.db</code> · <code>leads</code>, <code>events</code>, <code>settings</code>.</div></div>
       </div>
     </div>
 
@@ -341,7 +341,7 @@
     <rect x="0" y="580" width="1340" height="180" fill="url(#bg-store)" opacity=".45"/>
     <text x="14" y="62" class="lbl">Tauri / React (host machine)</text>
     <text x="14" y="222" class="lbl">Python sidecar (FastAPI + LangGraph)</text>
-    <text x="14" y="602" class="lbl">Local storage (%LOCALAPPDATA%/BoomBoom)</text>
+    <text x="14" y="602" class="lbl">Local storage (%LOCALAPPDATA%/JustHireMe)</text>
 
     <!-- Nodes -->
     <!-- Frontend row -->
@@ -654,7 +654,7 @@
       <div class="kv" style="margin-top:10px">
         <div class="k">Inputs</div><div class="v">Lead + match_points from evaluator + Cypher proof of work for the lead's skills.</div>
         <div class="k">Drafting</div><div class="v"><code>call_raw()</code> (unstructured) — single Markdown blob with <code>## Resume</code> and <code>## Cover Letter</code>.</div>
-        <div class="k">Render</div><div class="v"><code>markdown</code> → HTML → <code>fpdf.FPDF + HTMLMixin</code>. Output: <code>%LOCALAPPDATA%/BoomBoom/assets/&lt;job_id&gt;.pdf</code>.</div>
+        <div class="k">Render</div><div class="v"><code>markdown</code> → HTML → <code>fpdf.FPDF + HTMLMixin</code>. Output: <code>%LOCALAPPDATA%/JustHireMe/assets/&lt;job_id&gt;.pdf</code>.</div>
         <div class="k">Status</div><div class="v"><code>save_asset_path()</code> sets lead status <b>approved</b>.</div>
       </div>
     </details>
@@ -837,8 +837,8 @@
 <section id="dbs">
   <div class="eyebrow">§ 8 · On disk</div>
   <h2>Local storage layout</h2>
-  <div class="tree"><i># Windows · %LOCALAPPDATA%/BoomBoom</i>
-<b>BoomBoom/</b>
+  <div class="tree"><i># Windows · %LOCALAPPDATA%/JustHireMe</i>
+<b>JustHireMe/</b>
 ├─ <b>graph/</b>            <i># Kùzu embedded property graph</i>
 │   └─ &lt;kuzu db files&gt;
 ├─ <b>vector/</b>           <i># LanceDB</i>
@@ -920,7 +920,7 @@
   <h2>Where to make changes</h2>
   <div class="grid" style="grid-template-columns:repeat(2,1fr)">
     <div class="card"><h3>Add a new agent</h3><p>1) Drop <code>agents/foo.py</code> exposing a <code>run()</code>. 2) Wrap it in a LangGraph node in <code>graph/nodes.py</code>. 3) Expose a <code>POST /api/v1/foo</code> endpoint in <code>main.py</code> (BackgroundTask + <code>cm.broadcast</code> for live feed). 4) Add a button in <code>App.tsx</code> that calls fetch + listens for the event on the WS.</p></div>
-    <div class="card"><h3>Change the graph schema</h3><p>Edit the DDL list in <code>db/client.py · _init()</code>. Existing Kùzu DBs are forward-compatible thanks to <code>IF NOT EXISTS</code> — but new <i>columns</i> on existing node tables need a migration (delete %LOCALAPPDATA%/BoomBoom/graph or write a Cypher migration script).</p></div>
+    <div class="card"><h3>Change the graph schema</h3><p>Edit the DDL list in <code>db/client.py · _init()</code>. Existing Kùzu DBs are forward-compatible thanks to <code>IF NOT EXISTS</code> — but new <i>columns</i> on existing node tables need a migration (delete %LOCALAPPDATA%/JustHireMe/graph or write a Cypher migration script).</p></div>
     <div class="card"><h3>Swap the LLM</h3><p>Settings → <i>LLM provider</i>. Adding a new provider = ~25 lines in <code>llm.py</code> covering <code>call_llm</code> + <code>call_raw</code>. The agents don't care which one you use.</p></div>
     <div class="card"><h3>Tighten / loosen the score gate</h3><p>The <code>≥ 85</code> threshold is hard-coded in two places: <code>db/client.update_lead_score</code> and <code>graph/nodes.evaluator</code>. Pull it into a setting (<code>score_threshold</code>) and read via <code>get_setting</code> if you want it tunable from the UI.</p></div>
     <div class="card"><h3>Add an application platform</h3><p>Extend <code>actuator._DOM_MAP</code> with new selectors (most ATS use <code>name="first_name"</code> etc., already covered). For exotic forms, the vision fallback handles them automatically — but logging the screenshot to disk for review is a one-line add in <code>_fill_vision</code>.</p></div>

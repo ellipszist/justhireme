@@ -8,7 +8,7 @@ from logger import get_logger
 
 _log = get_logger(__name__)
 
-_b = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BoomBoom")
+_b = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe")
 _g, _v = os.path.join(_b, "graph"), os.path.join(_b, "vector")
 sql = os.path.join(_b, "crm.db")
 
