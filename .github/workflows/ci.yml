@@ -10,14 +10,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=moderate
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - uses: astral-sh/setup-uv@v8
+
+      - name: Audit backend dependencies
+        run: cd backend && uv sync --dev && uv run --with pip-audit pip-audit
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Audit Rust dependencies
+        run: |
+          cargo install cargo-audit --locked
+          cd src-tauri
+          cargo audit
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
       - run: npm ci
       - run: npm run typecheck
@@ -27,20 +62,24 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
       - run: cd backend && uv sync --dev
       - run: cd backend && uv run python -m pytest tests/test_regressions.py -v
 
   rust:
     name: Rust check
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Tauri Linux system dependencies
         run: |
           sudo apt-get update

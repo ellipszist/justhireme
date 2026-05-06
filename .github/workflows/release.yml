@@ -11,25 +11,29 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.13"
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-backend:
     name: Build backend sidecar (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
 
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install backend dependencies
         run: cd backend && uv sync --dev
+
+      - name: Audit backend dependencies
+        run: cd backend && uv run --with pip-audit pip-audit
 
       - name: Build sidecar with PyInstaller
         shell: pwsh
@@ -61,7 +65,7 @@ jobs:
           Write-Host "Total size: $([math]::Round($total, 1)) MB"
 
       - name: Upload backend sidecar artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-sidecar-windows
           path: src-tauri/resources/backend/
@@ -74,9 +78,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -84,14 +88,23 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=moderate
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
 
+      - name: Audit Rust dependencies
+        run: |
+          cargo install cargo-audit --locked
+          cd src-tauri
+          cargo audit
+
       - name: Download backend sidecar
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: backend-sidecar-windows
           path: src-tauri/resources/backend/
