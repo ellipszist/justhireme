@@ -197,42 +197,57 @@ export function IngestionView({ api }: { api: ApiFetch }) {
   };
 
   const TABS = [
-    { id: "resume" as const,   label: "Resume Upload" },
-    { id: "manual" as const,   label: "Manual Forms"  },
-    { id: "raw" as const,      label: "Raw Text"      },
-    { id: "template" as const, label: "📄 Resume Template" },
-    { id: "linkedin" as const, label: "LinkedIn Export" },
-    { id: "github" as const,   label: "GitHub" },
-    { id: "portfolio" as const, label: "Portfolio URL" },
-    { id: "json-import" as const, label: "JSON Import" },
+    { id: "resume" as const, label: "Resume", description: "PDF parser", icon: "upload", accent: "teal" },
+    { id: "manual" as const, label: "Manual", description: "Skills, roles, projects", icon: "plus", accent: "blue" },
+    { id: "raw" as const, label: "Raw Text", description: "Paste notes", icon: "file", accent: "yellow" },
+    { id: "template" as const, label: "Template", description: "Resume format", icon: "layers", accent: "purple" },
+    { id: "linkedin" as const, label: "LinkedIn", description: "Data export", icon: "brief", accent: "blue" },
+    { id: "github" as const, label: "GitHub", description: "Repo signals", icon: "external-link", accent: "green" },
+    { id: "portfolio" as const, label: "Portfolio", description: "Personal site", icon: "globe", accent: "orange" },
+    { id: "json-import" as const, label: "JSON", description: "Structured import", icon: "download", accent: "pink" },
   ];
+  const activeTabMeta = TABS.find(t => t.id === activeTab) ?? TABS[0];
 
   return (
-    <div className="col scroll" style={{ flex: 1, height: "100%", overflow: "auto", background: "var(--paper)", padding: "48px 32px", alignItems: "center" }}>
-      <div style={{ maxWidth: 680, width: "100%" }}>
-        <div style={{ marginBottom: 32 }}>
-          <span className="eyebrow">Append-only Pipeline</span>
-          <h2 style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em" }}>Add Context</h2>
-          <p style={{ color: "var(--ink-3)", marginTop: 8, fontSize: 14 }}>Everything you add is merged into your Identity Graph. Set a resume template so the generator follows your preferred format.</p>
+    <div className="ingestion-page scroll">
+      <div className="ingestion-shell">
+        <div className="ingestion-hero">
+          <div className="ingestion-hero-copy">
+            <span className="eyebrow">Append-only Pipeline</span>
+            <h2>Add Context</h2>
+            <p>Merge resumes, repos, portfolio pages, exports, and hand-written notes into one clean Identity Graph.</p>
+          </div>
+          <div className={`ingestion-active-card ingestion-accent-${activeTabMeta.accent}`}>
+            <div className="ingestion-active-icon"><Icon name={activeTabMeta.icon} size={18} /></div>
+            <div>
+              <span>Current source</span>
+              <strong>{activeTabMeta.label}</strong>
+            </div>
+          </div>
         </div>
 
-        <div className="row gap-2" style={{ background: "var(--paper-3)", padding: 6, borderRadius: 12, marginBottom: 32 }}>
+        <div className="ingestion-tabs" role="tablist" aria-label="Context source">
           {TABS.map(t => (
             <button key={t.id} onClick={() => { setActiveTab(t.id); setStatus("idle"); }}
-              className={"btn " + (activeTab === t.id ? "btn-primary" : "btn-ghost")}
-              style={{ flex: 1, border: "none", boxShadow: activeTab === t.id ? "var(--shadow-sm)" : "none", fontSize: 13, padding: "10px 0", borderRadius: 8 }}>
-              {t.label}
+              className={`ingestion-tab ingestion-accent-${t.accent} ${activeTab === t.id ? "active" : ""}`}
+              role="tab"
+              aria-selected={activeTab === t.id}>
+              <span className="ingestion-tab-icon"><Icon name={t.icon} size={15} /></span>
+              <span className="ingestion-tab-copy">
+                <strong>{t.label}</strong>
+                <small>{t.description}</small>
+              </span>
             </button>
           ))}
         </div>
 
         {status === "done" && (
-          <motion.div initial={{opacity:0,y:-10}} animate={{opacity:1,y:0}} style={{ padding: 16, background: "var(--green-soft)", color: "var(--green-ink)", borderRadius: 12, marginBottom: 24, display: "flex", alignItems: "center", gap: 12, border: "1px solid var(--green)" }}>
+          <motion.div initial={{opacity:0,y:-10}} animate={{opacity:1,y:0}} className="ingestion-alert success">
             <Icon name="check" size={18} /><div style={{fontWeight:600}}>Saved successfully!</div>
           </motion.div>
         )}
         {status === "error" && (
-          <motion.div initial={{opacity:0,y:-10}} animate={{opacity:1,y:0}} style={{ padding: 16, background: "var(--bad-soft)", color: "var(--bad)", borderRadius: 12, marginBottom: 24, border: "1px solid var(--bad)" }}>
+          <motion.div initial={{opacity:0,y:-10}} animate={{opacity:1,y:0}} className="ingestion-alert error">
             An error occurred.
           </motion.div>
         )}
@@ -244,7 +259,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
             <div style={{ fontSize: 14, color: "var(--ink-3)", maxWidth: 360, lineHeight: 1.5 }}>Our ingestion agent discovers skills, roles, and projects and maps them into your graph.</div>
             <input type="file" accept=".pdf" onChange={e => e.target.files?.[0] && ingestResume(e.target.files[0])} style={{ display: "none" }} id="pdf-in" />
             <button className="btn btn-primary" style={{ marginTop: 16, padding: "12px 32px", fontSize: 15 }} onClick={() => document.getElementById("pdf-in")?.click()}>Select PDF File</button>
-            {status === "loading" && <div className="mono pulse" style={{ fontSize: 12, marginTop: 16 }}>Agent parsing resume…</div>}
+            {status === "loading" && <div className="mono pulse" style={{ fontSize: 12, marginTop: 16 }}>Agent parsing resume...</div>}
           </motion.div>
         )}
 
@@ -284,9 +299,9 @@ export function IngestionView({ api }: { api: ApiFetch }) {
         {activeTab === "raw" && (
           <motion.div initial={{opacity:0}} animate={{opacity:1}} className="card col gap-4" style={{ padding: 24 }}>
             <div className="eyebrow">Raw Text Aggregator</div>
-            <textarea className="field-input" placeholder="Paste unstructured text from LinkedIn, personal websites, or notes…" rows={16} value={rawText} onChange={v => setRawText(v.target.value)} style={{ fontSize: 14, lineHeight: 1.6 }} />
+            <textarea className="field-input" placeholder="Paste unstructured text from LinkedIn, personal websites, or notes..." rows={16} value={rawText} onChange={v => setRawText(v.target.value)} style={{ fontSize: 14, lineHeight: 1.6 }} />
             <button className="btn btn-primary" style={{ padding: 16, fontSize: 15 }} onClick={ingestRaw} disabled={status==="loading"}>
-              {status === "loading" ? "Processing…" : "Sync Raw Context"}
+              {status === "loading" ? "Processing..." : "Sync Raw Context"}
             </button>
           </motion.div>
         )}
@@ -312,7 +327,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
                 {linkedinFile ? "File ready to import." : "or click to browse"}
               </div>
               <div style={{ fontSize: 12, color: "var(--ink-4)", maxWidth: 420, lineHeight: 1.6, marginTop: 4 }}>
-                How to get it: LinkedIn → Settings → Data Privacy → Get a copy of your data
+                How to get it: LinkedIn &gt; Settings &gt; Data Privacy &gt; Get a copy of your data
               </div>
               <input type="file" accept=".zip" id="linkedin-zip-in" style={{ display: "none" }}
                 onChange={e => { const f = e.target.files?.[0]; if (f) { setLinkedinFile(f); setLinkedinResult(null); } }} />
@@ -320,7 +335,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
             <button className="btn btn-primary" style={{ padding: 16, fontSize: 15 }}
               disabled={!linkedinFile || status === "loading"}
               onClick={ingestLinkedin}>
-              {status === "loading" ? "Importing…" : "Import LinkedIn data"}
+              {status === "loading" ? "Importing..." : "Import LinkedIn data"}
             </button>
             {linkedinResult && (
               <div style={{
@@ -331,7 +346,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
                 border: `1px solid ${linkedinResult.status === "ok" ? "var(--green)" : "var(--line)"}`,
               }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                  Imported: {linkedinResult.stats?.skills ?? 0} skills · {linkedinResult.stats?.experience ?? 0} jobs · {linkedinResult.stats?.projects ?? 0} projects · {linkedinResult.stats?.certifications ?? 0} certifications
+                  Imported: {linkedinResult.stats?.skills ?? 0} skills - {linkedinResult.stats?.experience ?? 0} jobs - {linkedinResult.stats?.projects ?? 0} projects - {linkedinResult.stats?.certifications ?? 0} certifications
                 </div>
                 {linkedinResult.status === "partial" && (
                   <div style={{ fontSize: 13, marginTop: 4, color: "var(--ink-3)" }}>Some items could not be imported.</div>
@@ -349,14 +364,14 @@ export function IngestionView({ api }: { api: ApiFetch }) {
                 onChange={e => setGithubUsername(e.target.value)} />
               <button className="btn btn-ghost" style={{ alignSelf: "flex-start", fontSize: 13, padding: "6px 12px" }}
                 onClick={() => setShowToken(t => !t)}>
-                {showToken ? "− Hide token" : "+ Add GitHub token for higher rate limits"}
+                {showToken ? "- Hide token" : "+ Add GitHub token for higher rate limits"}
               </button>
               {showToken && (
                 <div className="col gap-2">
-                  <input className="field-input" type="password" placeholder="ghp_…" value={githubToken}
+                  <input className="field-input" type="password" placeholder="ghp_..." value={githubToken}
                     onChange={e => setGithubToken(e.target.value)} />
                   <div style={{ fontSize: 12, color: "var(--ink-4)", lineHeight: 1.5 }}>
-                    Optional — increases API rate limit from 60 to 5,000 req/hr. Never stored remotely.
+                    Optional: increases API rate limit from 60 to 5,000 req/hr. Never stored remotely.
                   </div>
                 </div>
               )}
@@ -370,7 +385,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
             <button className="btn btn-primary" style={{ padding: 16, fontSize: 15 }}
               disabled={!githubUsername.trim() || status === "loading"}
               onClick={ingestGithub}>
-              {status === "loading" ? "Fetching repos and reading READMEs…" : "Scan GitHub profile"}
+              {status === "loading" ? "Fetching repos and reading READMEs..." : "Scan GitHub profile"}
             </button>
             {githubResult && !githubResult.errorMsg && (
               <div className="card col gap-3" style={{ padding: 24 }}>
@@ -389,7 +404,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
                   </div>
                 </div>
                 <div style={{ fontSize: 14, color: "var(--ink-2)" }}>
-                  Found {githubResult.stats?.repos_fetched ?? 0} repos · Extracted {githubResult.stats?.projects_extracted ?? 0} projects
+                  Found {githubResult.stats?.repos_fetched ?? 0} repos - Extracted {githubResult.stats?.projects_extracted ?? 0} projects
                 </div>
                 {githubResult.errors?.length > 0 && (
                   <div style={{ fontSize: 13, color: "var(--ink-4)" }}>Some items skipped</div>
@@ -429,7 +444,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
                 {portfolioResult.candidate ? (
                   <>
                     <div style={{ fontSize: 14, color: "var(--ink-2)" }}>
-                      Found {portfolioResult.stats?.skills ?? 0} skills Â· {portfolioResult.stats?.projects ?? 0} projects
+                      Found {portfolioResult.stats?.skills ?? 0} skills - {portfolioResult.stats?.projects ?? 0} projects
                     </div>
                     {portfolioResult.imported ? (
                       <div style={{ padding: 12, background: "var(--green-soft)", color: "var(--green-ink)", borderRadius: 8, border: "1px solid var(--green)", fontWeight: 600 }}>
@@ -487,7 +502,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
                 border: `1px solid ${jsonResult.status === "ok" ? "var(--green)" : "var(--line)"}`,
               }}>
                 <div style={{ fontWeight: 600 }}>
-                  Imported: {jsonResult.stats?.skills ?? 0} skills Â· {jsonResult.stats?.experience ?? 0} jobs Â· {jsonResult.stats?.projects ?? 0} projects Â· {jsonResult.stats?.certifications ?? 0} certifications
+                  Imported: {jsonResult.stats?.skills ?? 0} skills - {jsonResult.stats?.experience ?? 0} jobs - {jsonResult.stats?.projects ?? 0} projects - {jsonResult.stats?.certifications ?? 0} certifications
                 </div>
                 {jsonResult.status === "partial" && (
                   <div style={{ fontSize: 13, marginTop: 4, color: "var(--ink-3)" }}>Some items were skipped.</div>
@@ -502,7 +517,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
             <div className="card" style={{ padding: 24, background: "var(--purple-soft)", border: "1px solid var(--purple)" }}>
               <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>Resume Template</h3>
               <p style={{ fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.6 }}>
-                Paste your preferred resume format here (plain text or Markdown). When the agent generates a tailored resume, it will follow this structure — section order, headings, and layout — and fill it in with your profile and the job's requirements.
+                Paste your preferred resume format here (plain text or Markdown). When the agent generates a tailored resume, it will follow this structure: section order, headings, and layout, and fill it in with your profile and the job requirements.
               </p>
             </div>
             <div className="card col gap-4" style={{ padding: 24 }}>
@@ -512,7 +527,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
               </div>
               <textarea
                 className="field-input"
-                placeholder={`Paste your resume template here. For example:\n\n# [Name]\n[Contact info]\n\n## Summary\n[2-3 sentence professional summary]\n\n## Experience\n### [Role] — [Company] ([Period])\n- [Bullet points]\n\n## Projects\n### [Project Name]\n- Stack: ...\n- Impact: ...\n\n## Skills\n[Comma-separated list]`}
+                placeholder={`Paste your resume template here. For example:\n\n# [Name]\n[Contact info]\n\n## Summary\n[2-3 sentence professional summary]\n\n## Experience\n### [Role] - [Company] ([Period])\n- [Bullet points]\n\n## Projects\n### [Project Name]\n- Stack: ...\n- Impact: ...\n\n## Skills\n[Comma-separated list]`}
                 rows={24}
                 value={template}
                 onChange={e => setTemplate(e.target.value)}
@@ -520,7 +535,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
               />
               <div className="row gap-3" style={{ alignItems: "center" }}>
                 <button className="btn btn-primary" style={{ padding: "12px 28px", fontSize: 14 }} onClick={saveTemplate} disabled={status==="loading"}>
-                  {status === "loading" ? "Saving…" : "Save Template"}
+                  {status === "loading" ? "Saving..." : "Save Template"}
                 </button>
                 {template && (
                   <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={() => { setTemplate(""); }}>
@@ -536,7 +551,3 @@ export function IngestionView({ api }: { api: ApiFetch }) {
     </div>
   );
 }
-
-/* ══════════════════════════════════════
-   APPROVAL DRAWER
-══════════════════════════════════════ */

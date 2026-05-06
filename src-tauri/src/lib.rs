@@ -1,7 +1,6 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::Mutex,
-};
+#[cfg(debug_assertions)]
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -45,6 +44,7 @@ fn notify_high_score_lead(app: tauri::AppHandle, title: String, body: String) {
         .show();
 }
 
+#[cfg(debug_assertions)]
 fn bundled_python_path(app: &AppHandle) -> Option<PathBuf> {
     let runtime_dir = app
         .path()
@@ -65,6 +65,7 @@ fn bundled_python_path(app: &AppHandle) -> Option<PathBuf> {
         .find(|path| path.exists())
 }
 
+#[cfg(debug_assertions)]
 fn local_venv_python_path(backend_dir: &Path) -> Option<PathBuf> {
     let candidates = if cfg!(windows) {
         vec![".venv/Scripts/python.exe", ".venv/Scripts/python"]
