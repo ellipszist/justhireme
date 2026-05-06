@@ -25,6 +25,8 @@
   &middot;
   <a href="#quick-start">Quick Start</a>
   &middot;
+  <a href="#agent-skill-and-mcp">Agent Skill + MCP</a>
+  &middot;
   <a href="#contributing">Contributing</a>
   &middot;
   <a href="#roadmap">Roadmap</a>
@@ -312,7 +314,76 @@ The Tauri shell starts the frontend and launches the Python backend sidecar/dev 
 | Frontend build | `npm run build` |
 | Backend tests on Windows | `backend/.venv/Scripts/python.exe -m pytest backend/tests` |
 | Backend tests on macOS/Linux | `backend/.venv/bin/python -m pytest backend/tests` |
+| MCP server on Windows | `backend/.venv/Scripts/python.exe backend/mcp_server.py` |
+| MCP server on macOS/Linux | `backend/.venv/bin/python backend/mcp_server.py` |
 | Rust check | `cd src-tauri && cargo check` |
+
+---
+
+## Agent Skill And MCP
+
+JustHireMe includes two reusable agent surfaces:
+
+- An agent-neutral skill at `skills/justhireme/SKILL.md`
+- A lightweight stdio MCP server at `backend/mcp_server.py`
+
+The skill is plain Markdown with YAML frontmatter. It is written to be useful in any AI coding assistant that can load local instructions, including Claude, Codex, IDE agents, and custom agent runners. It tells an agent how to work safely inside this repository: preserve local-first behavior, keep ranking explainable, treat browser automation as experimental, and use the existing backend/frontend patterns.
+
+### Use The Skill
+
+Point your agent or assistant at:
+
+```text
+skills/justhireme/SKILL.md
+```
+
+If your agent expects skills in a separate directory, copy or symlink the `skills/justhireme` folder into that tool's skill/instruction location. The skill has no runtime dependency on Codex-specific APIs.
+
+### Use The MCP Server
+
+Install backend dependencies first:
+
+```bash
+cd backend
+uv sync --dev
+cd ..
+```
+
+Start the MCP server from the repository root on Windows:
+
+```powershell
+backend\.venv\Scripts\python.exe backend\mcp_server.py
+```
+
+Start it on macOS/Linux:
+
+```bash
+backend/.venv/bin/python backend/mcp_server.py
+```
+
+The MCP server exposes:
+
+| Tool | Purpose |
+| --- | --- |
+| `score_job_fit` | Score a raw job posting against a candidate JSON profile |
+| `evaluate_lead_quality` | Run the deterministic quality gate for a normalized lead |
+| `extract_lead_intel` | Extract company, location, budget, urgency, stack, and signal quality from lead text |
+
+Example MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "justhireme": {
+      "command": "/absolute/path/to/JustHireMe/backend/.venv/bin/python",
+      "args": ["/absolute/path/to/JustHireMe/backend/mcp_server.py"],
+      "cwd": "/absolute/path/to/JustHireMe"
+    }
+  }
+}
+```
+
+On Windows, use the venv interpreter at `backend\\.venv\\Scripts\\python.exe`. More detail: [docs/MCP.md](docs/MCP.md)
 
 ---
 
