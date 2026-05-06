@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2ea44f?style=for-the-badge"></a>
+  <a href="LICENSE"><img alt="License: Personal Open Source" src="https://img.shields.io/badge/license-personal%20open%20source-2ea44f?style=for-the-badge"></a>
   <img alt="Status: Alpha" src="https://img.shields.io/badge/status-alpha-f59e0b?style=for-the-badge">
   <img alt="Local First" src="https://img.shields.io/badge/local--first-yes-0ea5e9?style=for-the-badge">
   <img alt="Desktop: Tauri" src="https://img.shields.io/badge/desktop-Tauri-24c8db?style=for-the-badge">
@@ -507,7 +507,12 @@ Near-term priorities:
 
 ## License
 
-JustHireMe is released under the [MIT License](LICENSE).
+JustHireMe is released under the [JustHireMe Personal Open Source License](LICENSE).
+
+Personal, educational, research, evaluation, and non-commercial use are allowed.
+Any commercial use, selling, paid service, revenue generation, or business use
+requires prior written permission from Vasudev Siddh or vasu-devs and a separate
+royalty agreement.
 
 ---
 

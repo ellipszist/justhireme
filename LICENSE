@@ -1,21 +1,62 @@
-MIT License
+JustHireMe Personal Open Source License
 
-Copyright (c) 2026 Vasudev Siddh
+Copyright (c) 2026 Vasudev Siddh and vasu-devs
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This license applies to the JustHireMe source code, documentation, assets, and
+other files in this repository unless a file states otherwise.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Personal Use Grant
+
+You may use, copy, study, modify, and share this software for personal,
+educational, research, evaluation, and non-commercial purposes, provided that
+you preserve this license notice and all copyright notices in copies or
+substantial portions of the software.
+
+2. Commercial Use Requires Permission
+
+You may not use this software, modified versions of this software, or any
+substantial portion of this software for any commercial purpose without prior
+written permission from Vasudev Siddh or vasu-devs.
+
+Commercial purpose includes, but is not limited to:
+
+- selling, licensing, sublicensing, renting, or offering the software;
+- using the software to provide paid services, hosted services, consulting,
+  client work, or internal business operations;
+- bundling the software with a paid product or service;
+- using the software to generate revenue, advertising income, subscription
+  income, commissions, leads, or other commercial advantage.
+
+3. Royalties
+
+Any approved commercial use must be governed by a separate written agreement
+with Vasudev Siddh or vasu-devs. That agreement must define the required
+royalties, payment terms, scope of use, duration, and any other commercial
+conditions. No commercial rights are granted until that written agreement is in
+effect.
+
+4. No Trademark Rights
+
+This license does not grant permission to use the names "JustHireMe",
+"Vasudev Siddh", "vasu-devs", or any related logos, branding, or marks except
+as needed to preserve attribution notices.
+
+5. Contributions
+
+Unless otherwise agreed in writing, contributions submitted to this repository
+are licensed under this same license.
+
+6. Warranty Disclaimer
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES,
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+7. Reservation of Rights
+
+All rights not expressly granted by this license are reserved by Vasudev Siddh
+and vasu-devs.
