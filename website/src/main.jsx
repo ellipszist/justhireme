@@ -367,13 +367,13 @@ function App() {
   const { downloads, trackDownload } = useDownloadCounter();
   const github = useGitHubStars();
   const installerUrl = "";
+  const installerReady = Boolean(installerUrl);
 
   const handleDownload = React.useCallback(async () => {
+    if (!installerReady) return;
     await trackDownload().catch(() => {});
-    if (installerUrl) {
-      window.location.href = installerUrl;
-    }
-  }, [trackDownload, installerUrl]);
+    window.location.href = installerUrl;
+  }, [trackDownload, installerUrl, installerReady]);
 
   return (
     <>
@@ -403,7 +403,7 @@ function App() {
               <span>Desktop-first</span>
             </div>
             <div className="hero-actions">
-              <button className="button primary" onClick={handleDownload} title="Public installer is being prepared">
+              <button className="button primary" onClick={handleDownload} disabled={!installerReady} title="Public installer is being prepared">
                 <Icon name="download" />
                 Download soon
               </button>
@@ -514,10 +514,10 @@ function App() {
           </p>
           <div className="download-proof">
             <strong>{formatCount(downloads)}</strong>
-            <span>people waiting for the installer</span>
+            <span>{installerReady ? "verified installer downloads" : "downloads start when installer ships"}</span>
           </div>
           <div className="hero-actions centered">
-            <button className="button primary" onClick={handleDownload}><Icon name="download" /> Installer waiting</button>
+            <button className="button primary" onClick={handleDownload} disabled={!installerReady}><Icon name="download" /> Installer waiting</button>
             <a className="button secondary" href={repoUrl}><Icon name="github" /> View source</a>
           </div>
           <div className="creator-links" aria-label="Creator links">
