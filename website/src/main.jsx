@@ -228,6 +228,7 @@ function Icon({ name }) {
     github: "M9 19c-5 1.5-5-2.5-7-3 M15 22v-3.9a3.4 3.4 0 0 0-.9-2.6c3-.3 6.1-1.5 6.1-6.6a5.2 5.2 0 0 0-1.4-3.6 4.8 4.8 0 0 0-.1-3.6s-1.1-.3-3.7 1.4a12.7 12.7 0 0 0-6.7 0C5.7.4 4.6.7 4.6.7a4.8 4.8 0 0 0-.1 3.6A5.2 5.2 0 0 0 3.1 8c0 5.1 3.1 6.3 6.1 6.6a3.4 3.4 0 0 0-.9 2.6V22",
     globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M3 12h18 M12 3a14 14 0 0 1 0 18 M12 3a14 14 0 0 0 0 18",
     xlogo: "M4 4l16 16 M20 4L4 20",
+    ban: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M5.6 5.6l12.8 12.8",
   };
 
   return (
@@ -404,8 +405,8 @@ function App() {
             </div>
             <div className="hero-actions">
               <button className="button primary" onClick={handleDownload} disabled={!installerReady} title="Public installer is being prepared">
-                <Icon name="download" />
-                Download soon
+                <Icon name={installerReady ? "download" : "ban"} />
+                {installerReady ? "Download" : "Available soon"}
               </button>
               <a className="button secondary" href={repoUrl}>
                 <Icon name="star" />
@@ -517,7 +518,10 @@ function App() {
             <span>{installerReady ? "verified installer downloads" : "downloads start when installer ships"}</span>
           </div>
           <div className="hero-actions centered">
-            <button className="button primary" onClick={handleDownload} disabled={!installerReady}><Icon name="download" /> Installer waiting</button>
+            <button className="button primary" onClick={handleDownload} disabled={!installerReady}>
+              <Icon name={installerReady ? "download" : "ban"} />
+              {installerReady ? "Download installer" : "Available soon"}
+            </button>
             <a className="button secondary" href={repoUrl}><Icon name="github" /> View source</a>
           </div>
           <div className="creator-links" aria-label="Creator links">
