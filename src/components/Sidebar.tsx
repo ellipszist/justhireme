@@ -12,10 +12,11 @@ const NAV = [
   { id: "ingestion", label: "Add Context",   icon: "plus",   tone: "teal"   },
 ];
 
-export function Sidebar({ view, setView, leadCounts, online, port, beat, onSettings }: {
+export function Sidebar({ view, setView, leadCounts, online, port, beat, onSettings, onSetup }: {
   view: View; setView: (v: View) => void;
   leadCounts: any; online: boolean; port: number | null; beat: number;
   onSettings: () => void;
+  onSetup?: () => void;
 }) {
   return (
     <aside className="sidebar">
@@ -78,6 +79,10 @@ export function Sidebar({ view, setView, leadCounts, online, port, beat, onSetti
       </div>
 
       <div className="grow" />
+
+      <button className="profile-add-context" onClick={onSetup} style={{ marginBottom: 10, minHeight: 44 }}>
+        <Icon name="spark" size={14} /> Setup Guide
+      </button>
 
       <div className="card-flat" style={{ padding: 10, background: "var(--card)" }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>

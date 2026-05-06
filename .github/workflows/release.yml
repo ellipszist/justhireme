@@ -35,6 +35,14 @@ jobs:
       - name: Audit backend dependencies
         run: cd backend && uv run --with pip-audit pip-audit
 
+      - name: Install Playwright Chromium runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:PLAYWRIGHT_BROWSERS_PATH = "..\src-tauri\resources\bin\ms-playwright"
+          cd backend
+          uv run python -m playwright install chromium
+
       - name: Build sidecar with PyInstaller
         shell: pwsh
         run: |
@@ -69,6 +77,13 @@ jobs:
         with:
           name: backend-sidecar-windows
           path: src-tauri/resources/backend/
+          retention-days: 1
+
+      - name: Upload browser runtime artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-runtime-windows
+          path: src-tauri/resources/bin/ms-playwright/
           retention-days: 1
 
   build-tauri:
@@ -109,6 +124,12 @@ jobs:
           name: backend-sidecar-windows
           path: src-tauri/resources/backend/
 
+      - name: Download browser runtime
+        uses: actions/download-artifact@v8
+        with:
+          name: browser-runtime-windows
+          path: src-tauri/resources/bin/ms-playwright/
+
       - name: Verify sidecar exists
         shell: pwsh
         run: |
@@ -121,9 +142,15 @@ jobs:
           if (-not (Test-Path $internal)) {
             throw "_internal directory not found; PyInstaller onedir bundle is incomplete"
           }
+          $browsers = "src-tauri\resources\bin\ms-playwright"
+          if (-not (Test-Path $browsers)) {
+            throw "Playwright browser runtime not found at $browsers"
+          }
           $internalCount = (Get-ChildItem -Path $internal -Recurse -File).Count
+          $browserCount = (Get-ChildItem -Path $browsers -Recurse -File).Count
           Write-Host "Sidecar verified: $sidecar ($(( Get-Item $sidecar ).Length / 1MB) MB)"
           Write-Host "_internal verified: $internalCount files"
+          Write-Host "Browser runtime verified: $browserCount files"
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0

@@ -54,6 +54,10 @@ export default function App() {
     setApplyAutoFocus(true);
   }, []);
   const openSettings = useCallback(() => setShowSettings(true), []);
+  const openSetupGuide = useCallback(() => {
+    localStorage.removeItem(ONBOARDING_KEY);
+    setShowOnboarding(true);
+  }, []);
 
   useEffect(() => {
     const h = () => setScanning(false);
@@ -169,7 +173,7 @@ export default function App() {
   };
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", alignItems: "stretch" }}>
-      <Sidebar view={view} setView={setView} leadCounts={leadCounts} online={conn === "connected"} port={port} beat={beat} onSettings={() => setShowSettings(true)} />
+      <Sidebar view={view} setView={setView} leadCounts={leadCounts} online={conn === "connected"} port={port} beat={beat} onSettings={() => setShowSettings(true)} onSetup={openSetupGuide} />
       <div className="app-main">
         <Topbar view={view} />
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
@@ -179,8 +183,8 @@ export default function App() {
           {view === "pipeline"  && <ErrorBoundary label="Pipeline"><PipelineView leads={leads} openDrawer={setSel} deleteLead={deleteLead} port={port} api={api} scanning={scanning} reevaluating={reevaluating} cleaning={cleaning} onReevaluate={onReevaluateJobs} onStopReevaluate={onStopReevaluate} onCleanup={onCleanupLeads} loading={leadsLoading || !port || !api} error={leadsError} /></ErrorBoundary>}
           {view === "graph"     && <ErrorBoundary label="Graph"><GraphView stats={stats} /></ErrorBoundary>}
           {view === "activity"  && <ErrorBoundary label="Activity"><ActivityView logs={logs} /></ErrorBoundary>}
-          {view === "profile"   && port && api && <ErrorBoundary label="Profile"><ProfileView api={api} setView={setView} /></ErrorBoundary>}
-          {view === "ingestion" && port && api && <ErrorBoundary label="Ingestion"><IngestionView api={api} /></ErrorBoundary>}
+          {view === "profile"   && (api ? <ErrorBoundary label="Profile"><ProfileView api={api} setView={setView} /></ErrorBoundary> : <BackendUnavailable title="Profile" conn={conn} port={port} />)}
+          {view === "ingestion" && (api ? <ErrorBoundary label="Ingestion"><IngestionView api={api} /></ErrorBoundary> : <BackendUnavailable title="Add Context" conn={conn} port={port} />)}
         </div>
       </div>
 
@@ -205,6 +209,31 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function BackendUnavailable({ title, conn, port }: { title: string; conn: string; port: number | null }) {
+  return (
+    <div className="ingestion-page scroll">
+      <div className="ingestion-shell">
+        <div className="card col gap-4" style={{ padding: 28 }}>
+          <div className="row gap-3">
+            <div className="spinner" />
+            <div>
+              <div className="eyebrow">Starting local backend</div>
+              <h2 style={{ marginTop: 6 }}>{title} will appear automatically</h2>
+            </div>
+          </div>
+          <p style={{ color: "var(--ink-2)", maxWidth: 620, lineHeight: 1.6 }}>
+            JustHireMe is waiting for the bundled sidecar to publish its API token and port. This should take a few seconds after launch.
+          </p>
+          <div className="row gap-2" style={{ flexWrap: "wrap" }}>
+            <span className="pill">Connection: {conn}</span>
+            <span className="pill">Port: {port ?? "pending"}</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

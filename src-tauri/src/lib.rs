@@ -191,6 +191,20 @@ pub fn run() {
                     .expect("failed to create sidecar command")
             };
 
+            let mut sidecar_cmd = sidecar_cmd;
+            if let Ok(resource_dir) = handle.path().resource_dir() {
+                let browsers_path = resource_dir
+                    .join("resources")
+                    .join("bin")
+                    .join("ms-playwright");
+                if browsers_path.exists() {
+                    sidecar_cmd = sidecar_cmd.env(
+                        "PLAYWRIGHT_BROWSERS_PATH",
+                        browsers_path.to_string_lossy().to_string(),
+                    );
+                }
+            }
+
             let (mut rx, child) = sidecar_cmd.spawn().expect("Failed to spawn Python sidecar");
 
             let sidecar_pid = child.pid();

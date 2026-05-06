@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 from pydantic import BaseModel, Field
 
+from agents.browser_runtime import launch_chromium
 from logger import get_logger
 
 _log = get_logger(__name__)
@@ -36,15 +38,15 @@ async def ingest_portfolio_url(url: str) -> dict:
     Returns the same shape as ProfileImportBody so the caller can
     feed it directly into profile JSON import logic.
     """
-    from playwright.async_api import async_playwright
-
     page_text = ""
     screenshot_b64 = ""
     fetch_error = None
 
     try:
+        from playwright.async_api import async_playwright
+
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
+            browser = await launch_chromium(pw, headless=True)
             page = await browser.new_page()
             await page.goto(url, wait_until="networkidle", timeout=25000)
             await page.wait_for_timeout(1500)
@@ -65,8 +67,9 @@ async def ingest_portfolio_url(url: str) -> dict:
                 pass
             await browser.close()
     except Exception as exc:
-        _log.error("portfolio fetch failed for %s: %s", url, exc)
+        _log.warning("portfolio browser fetch failed for %s: %s; trying HTTP fallback", url, exc)
         fetch_error = str(exc)
+        page_text = await asyncio.to_thread(_fetch_portfolio_text_http, url)
 
     if not page_text and fetch_error:
         return {"error": fetch_error}
@@ -132,3 +135,27 @@ async def ingest_portfolio_url(url: str) -> dict:
         "candidate": None,
         "error": "LLM unavailable - configure an API key to extract structured data",
     }
+
+
+def _fetch_portfolio_text_http(url: str) -> str:
+    import html
+    import httpx
+
+    try:
+        with httpx.Client(timeout=20, follow_redirects=True) as client:
+            response = client.get(
+                url,
+                headers={"User-Agent": "JustHireMe portfolio importer"},
+            )
+            response.raise_for_status()
+            text = response.text
+    except Exception as exc:
+        _log.warning("portfolio HTTP fallback failed for %s: %s", url, exc)
+        return ""
+
+    text = re.sub(r"(?is)<(script|style|noscript|svg|head).*?</\1>", " ", text)
+    text = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>|</h[1-6]>", "\n", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line)[:6000]

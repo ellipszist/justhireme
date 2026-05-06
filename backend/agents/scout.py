@@ -10,6 +10,7 @@ import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from pydantic import BaseModel, Field
+from agents.browser_runtime import launch_chromium
 from agents.quality_gate import MIN_DEFAULT_QUALITY, attach_quality_metadata, evaluate_lead_quality
 from db.client import url_exists, save_lead
 from logger import get_logger
@@ -240,32 +241,10 @@ def _to_md(html: str) -> str:
     return h.handle(html)
 
 
-def _chromium_executable() -> str | None:
-    import os
-
-    candidates = [
-        os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE", ""),
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-    ]
-    for candidate in candidates:
-        if candidate and os.path.exists(candidate):
-            return candidate
-    return None
-
-
 async def _crawl(u: str, headed: bool = False) -> str:
     from playwright.async_api import async_playwright
     async with async_playwright() as pw:
-        try:
-            br = await pw.chromium.launch(headless=not headed)
-        except Exception as exc:
-            executable = _chromium_executable()
-            if not executable or "Executable doesn't exist" not in str(exc):
-                raise
-            br = await pw.chromium.launch(headless=not headed, executable_path=executable)
+        br = await launch_chromium(pw, headless=not headed)
         ctx = await br.new_context(ignore_https_errors=True)
         pg = await ctx.new_page()
         await pg.goto(u, wait_until="domcontentloaded", timeout=30000)

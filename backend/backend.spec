@@ -2,6 +2,7 @@
 import sys
 import site
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 backend_root = Path("backend").resolve()
@@ -28,17 +29,19 @@ hidden = [
     "agents.actuator", "agents.scout", "agents.free_scout",
     "agents.scoring_engine", "agents.semantic", "agents.contact_lookup",
     "agents.lead_intel", "agents.feedback_ranker", "agents.query_gen",
-    "agents.x_scout", "agents.feedback_ranker",
+    "agents.x_scout", "agents.feedback_ranker", "agents.browser_runtime",
     "graph",
     "db.client",
     "llm", "logger",
-]
+] + collect_submodules("playwright")
+
+datas = collect_data_files("playwright")
 
 a = Analysis(
     ["main.py"],
     pathex=[str(backend_root)],
     binaries=[],
-    datas=[],
+    datas=datas,
     hiddenimports=hidden,
     hookspath=[],
     hooksconfig={},
@@ -46,7 +49,6 @@ a = Analysis(
     excludes=[
         "tkinter", "matplotlib", "PIL", "cv2",
         "pytest", "tensorboard",
-        "playwright",
         "sentence_transformers", "transformers",
         "torch", "torch.distributed",
         "sklearn", "scipy",

@@ -46,6 +46,7 @@ ENV/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+backend/.hf-cache/
 backend/tests/tmp*/
 
 # Rust / Tauri
@@ -58,6 +59,7 @@ src-tauri/resources/python-runtime/*
 !src-tauri/resources/python-runtime/.gitkeep
 src-tauri/resources/bin/chromium/*
 !src-tauri/resources/bin/chromium/.gitkeep
+src-tauri/resources/bin/ms-playwright/
 src-tauri/resources/backend/
 src-tauri/resources/backend-*/
 src-tauri/resources/backend-*

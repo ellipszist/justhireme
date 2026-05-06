@@ -45,6 +45,7 @@ async def read_form(
     Navigate to url, detect form fields using OTA selectors, match each
     field to the candidate profile, and return copyable answers.
     """
+    from agents.browser_runtime import launch_chromium
     from playwright.async_api import async_playwright
     from agents.selectors import get_selectors, get_platform_fields, detect_platform
 
@@ -61,7 +62,7 @@ async def read_form(
 
     try:
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
+            browser = await launch_chromium(pw, headless=True)
             ctx = await browser.new_context(
                 viewport={"width": 1280, "height": 900},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -360,6 +361,7 @@ async def _run(job: dict, asset: str, dry_run: bool = False) -> bool | dict:
     if not job.get("url") or not asset or not os.path.isfile(asset):
         return False
 
+    from agents.browser_runtime import launch_chromium
     from playwright.async_api import async_playwright
     async with async_playwright() as pw:
         from db.client import get_setting as _gs
@@ -368,7 +370,7 @@ async def _run(job: dict, asset: str, dry_run: bool = False) -> bool | dict:
         b = None
         ctx = None
         try:
-            b   = await pw.chromium.launch(headless=not _headed, slow_mo=80 if _headed else 20)
+            b   = await launch_chromium(pw, headless=not _headed, slow_mo=80 if _headed else 20)
             ctx = await b.new_context(
                 viewport={"width": 1280, "height": 900},
                 user_agent=(
