@@ -18,15 +18,15 @@
 
 <p align="center">
   <a href="#what-it-does">What It Does</a>
-  ·
+  &middot;
   <a href="#visual-workflow">Workflow</a>
-  ·
+  &middot;
   <a href="#architecture">Architecture</a>
-  ·
+  &middot;
   <a href="#quick-start">Quick Start</a>
-  ·
+  &middot;
   <a href="#contributing">Contributing</a>
-  ·
+  &middot;
   <a href="#roadmap">Roadmap</a>
 </p>
 
@@ -35,6 +35,21 @@
 ## The Short Version
 
 JustHireMe is an open-source desktop workbench for people who are tired of noisy job boards and black-box AI apply tools.
+
+## Current Status
+
+JustHireMe is in alpha. The repository is public, hackable, and ready for source-adapter, ranking, docs, and Windows packaging contributions, but it is not a polished one-click consumer product yet.
+
+| Area | Status |
+| --- | --- |
+| Frontend workbench | Active |
+| Python sidecar API | Active |
+| Scraper, ranking, vector matching, and customizer core | Supported OSS scope |
+| Windows desktop packaging | First release target |
+| Browser automation / auto-apply | Experimental lab, disabled by default |
+| API key storage | Local app settings for now; OS keychain planned |
+
+If you are new here, start with the frontend preview first. If you want to contribute backend behavior, source adapters, or packaging, use the full desktop setup below.
 
 It helps you:
 
@@ -243,7 +258,22 @@ Optional:
 - Ollama for local model experiments
 - Playwright browser dependencies only for experimental automation work
 
-### Install
+### Fast Frontend Preview
+
+Use this path if you just want to inspect the UI, design direction, or frontend code.
+
+```bash
+git clone https://github.com/vasu-devs/JustHireMe.git
+cd JustHireMe
+npm install
+npm run dev
+```
+
+This starts the Vite frontend only. Backend-backed workflows may show empty, mocked, or unavailable states depending on the screen.
+
+### Full Desktop Setup
+
+Use this path if you want the Tauri shell and Python backend sidecar.
 
 ```bash
 git clone https://github.com/vasu-devs/JustHireMe.git
@@ -254,13 +284,20 @@ uv sync --dev
 cd ..
 ```
 
-### Run The Desktop App
+Then run:
 
 ```bash
 npm run tauri dev
 ```
 
 The Tauri shell starts the frontend and launches the Python backend sidecar/dev process.
+
+### Before Opening An Issue
+
+- Check whether the bug is in supported core behavior or experimental automation.
+- Remove API keys, cookies, resumes, local databases, and generated private documents from logs or screenshots.
+- For source requests, include a public example URL and expected normalized fields.
+- For ranking bugs, include the expected score behavior and sanitized job/profile snippets.
 
 ---
 
