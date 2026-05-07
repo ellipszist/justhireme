@@ -249,10 +249,11 @@ jobs:
           set -euo pipefail
           triple="$(rustc -vV | awk '/host:/ {print $2}')"
           sidecar="src-tauri/resources/backend/backend-${triple}"
-          if [ ! -x "$sidecar" ]; then
-            echo "Sidecar not found or not executable at $sidecar" >&2
+          if [ ! -f "$sidecar" ]; then
+            echo "Sidecar not found at $sidecar" >&2
             exit 1
           fi
+          chmod +x "$sidecar"
           browsers="src-tauri/resources/bin/ms-playwright"
           if [ ! -d "$browsers" ]; then
             echo "Playwright browser runtime not found at $browsers" >&2
