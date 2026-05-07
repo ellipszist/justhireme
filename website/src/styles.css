@@ -257,6 +257,53 @@ p {
   box-shadow: none;
 }
 
+.platform-button {
+  min-height: 58px;
+  min-width: 168px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(31, 26, 20, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  color: currentColor;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.platform-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(31, 26, 20, 0.15);
+  box-shadow: 0 14px 28px rgba(31, 26, 20, 0.08);
+}
+
+.platform-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.86;
+  background: var(--bad-soft, rgba(180, 69, 44, 0.1));
+  color: var(--bad, #b4452c);
+  border-color: rgba(180, 69, 44, 0.34);
+}
+
+.platform-button span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+
+.platform-button strong {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.platform-button small {
+  color: currentColor;
+  font: 800 10px/1 var(--font-mono);
+  opacity: 0.74;
+}
+
 .wait-note {
   width: min(100%, 560px);
   max-width: 100%;
@@ -912,6 +959,30 @@ p {
   font-weight: 750;
 }
 
+.download-breakdown {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.download-breakdown span {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid rgba(31, 26, 20, 0.08);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.download-breakdown strong {
+  font: 800 12px/1 var(--font-mono);
+}
+
 .creator-links {
   display: flex;
   justify-content: center;
@@ -1016,7 +1087,7 @@ footer {
   .brand span { display: none; }
   .hide-mobile { display: none !important; }
   .header-link { padding-inline: 8px; }
-  .hero-actions, .button { width: 100%; }
+  .hero-actions, .button, .platform-button { width: 100%; }
   .preview-main { padding: 16px; }
   .preview-top { align-items: flex-start; }
   .preview-grid { grid-template-columns: 1fr; }

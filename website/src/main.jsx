@@ -98,6 +98,12 @@ const systemSignals = [
   ["CRM memory", "blue"],
 ];
 
+const platformOptions = [
+  { id: "windows", label: "Windows", hint: "Installer", tone: "blue" },
+  { id: "mac", label: "macOS", hint: "DMG / PKG", tone: "purple" },
+  { id: "linux", label: "Linux", hint: "AppImage / package", tone: "green" },
+];
+
 function formatCount(value) {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
 }
@@ -145,18 +151,23 @@ function useViewCounter() {
 }
 
 function useDownloadCounter() {
-  const [downloads, setDownloads] = React.useState(0);
+  const [downloads, setDownloads] = React.useState({ total: 0, windows: 0, mac: 0, linux: 0 });
   const [configured, setConfigured] = React.useState(false);
 
-  const syncDownloads = React.useCallback(async (method = "GET") => {
+  const syncDownloads = React.useCallback(async (method = "GET", platform = null) => {
     const response = await fetch("/api/downloads", {
       method,
       headers: { "content-type": "application/json" },
-      body: method === "POST" ? JSON.stringify({ visitorId: getVisitorId() }) : undefined,
+      body: method === "POST" ? JSON.stringify({ visitorId: getVisitorId(), platform }) : undefined,
     });
     const payload = await response.json();
     if (typeof payload.total === "number") {
-      setDownloads(payload.total);
+      setDownloads({
+        total: payload.total,
+        windows: payload.windows || 0,
+        mac: payload.mac || 0,
+        linux: payload.linux || 0,
+      });
       setConfigured(Boolean(payload.configured));
     }
     return payload;
@@ -168,7 +179,7 @@ function useDownloadCounter() {
     return () => window.clearInterval(timer);
   }, [syncDownloads]);
 
-  const trackDownload = React.useCallback(() => syncDownloads("POST"), [syncDownloads]);
+  const trackDownload = React.useCallback((platform) => syncDownloads("POST", platform), [syncDownloads]);
 
   return { downloads, configured, trackDownload };
 }
@@ -202,6 +213,42 @@ function useGitHubStars() {
   return github;
 }
 
+function useLatestRelease() {
+  const [release, setRelease] = React.useState({
+    available: false,
+    tag: null,
+    url: repoUrl,
+    assets: { windows: null, mac: null, linux: null },
+  });
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadRelease = async () => {
+      const response = await fetch("/api/releases");
+      const payload = await response.json();
+      if (!cancelled) {
+        setRelease({
+          available: Boolean(payload.available),
+          tag: payload.tag || null,
+          url: payload.url || `${repoUrl}/releases`,
+          assets: payload.assets || { windows: null, mac: null, linux: null },
+        });
+      }
+    };
+
+    loadRelease().catch(() => {});
+    const timer = window.setInterval(() => loadRelease().catch(() => {}), 60000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return release;
+}
+
 function Icon({ name }) {
   if (name === "logo") {
     return (
@@ -229,6 +276,7 @@ function Icon({ name }) {
     globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M3 12h18 M12 3a14 14 0 0 1 0 18 M12 3a14 14 0 0 0 0 18",
     xlogo: "M4 4l16 16 M20 4L4 20",
     ban: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M5.6 5.6l12.8 12.8",
+    laptop: "M4 5h16v10H4z M2 19h20 M8 19h8",
   };
 
   return (
@@ -367,14 +415,15 @@ function App() {
   const { views, configured } = useViewCounter();
   const { downloads, trackDownload } = useDownloadCounter();
   const github = useGitHubStars();
-  const installerUrl = "";
-  const installerReady = Boolean(installerUrl);
+  const release = useLatestRelease();
+  const primaryInstallerUrl = release.assets.windows?.url || "";
+  const installerReady = Boolean(primaryInstallerUrl);
 
-  const handleDownload = React.useCallback(async () => {
-    if (!installerReady) return;
-    await trackDownload().catch(() => {});
-    window.location.href = installerUrl;
-  }, [trackDownload, installerUrl, installerReady]);
+  const handleDownload = React.useCallback(async (url) => {
+    if (!url) return;
+    await trackDownload(platform).catch(() => {});
+    window.location.href = url;
+  }, [trackDownload]);
 
   return (
     <>
@@ -404,9 +453,9 @@ function App() {
               <span>Desktop-first</span>
             </div>
             <div className="hero-actions">
-              <button className="button primary" onClick={handleDownload} disabled={!installerReady} title="Public installer is being prepared">
+              <button className="button primary" onClick={() => handleDownload(primaryInstallerUrl, "windows")} disabled={!installerReady} title={installerReady ? "Download the latest Windows release" : "Public installer is being prepared"}>
                 <Icon name={installerReady ? "download" : "ban"} />
-                {installerReady ? "Download" : "Available soon"}
+                {installerReady ? "Download Windows" : "Available soon"}
               </button>
               <a className="button secondary" href={repoUrl}>
                 <Icon name="star" />
@@ -426,7 +475,7 @@ function App() {
               {[
                 [github.stars == null ? "-" : formatCount(github.stars), "GitHub stars"],
                 [github.pullRequests == null ? "-" : formatCount(github.pullRequests), "open PRs"],
-                [formatCount(downloads), "downloaders"],
+                [formatCount(downloads.total), "total downloads"],
                 [formatCount(views), "unique views"],
               ].map(([value, label]) => (
                 <div key={label}>
@@ -514,14 +563,37 @@ function App() {
             Open source today. One-click desktop installer next.
           </p>
           <div className="download-proof">
-            <strong>{formatCount(downloads)}</strong>
-            <span>{installerReady ? "verified installer downloads" : "downloads start when installer ships"}</span>
+            <strong>{formatCount(downloads.total)}</strong>
+            <span>{release.available ? "verified release downloads" : "downloads start when release ships"}</span>
+          </div>
+          <div className="download-breakdown">
+            {platformOptions.map((platform) => (
+              <span className={`tone-${platform.tone}`} key={platform.id}>
+                <strong>{formatCount(downloads[platform.id])}</strong>
+                {platform.label}
+              </span>
+            ))}
           </div>
           <div className="hero-actions centered">
-            <button className="button primary" onClick={handleDownload} disabled={!installerReady}>
-              <Icon name={installerReady ? "download" : "ban"} />
-              {installerReady ? "Download installer" : "Available soon"}
-            </button>
+            {platformOptions.map((platform) => {
+              const asset = release.assets?.[platform.id];
+              const available = Boolean(asset?.url);
+              return (
+                <button
+                  className={`platform-button tone-${platform.tone}`}
+                  key={platform.id}
+                  onClick={() => handleDownload(asset?.url, platform.id)}
+                  disabled={!available}
+                  title={available ? `Download ${asset.name}` : `${platform.label} download will be available soon`}
+                >
+                  <Icon name={available ? "download" : "ban"} />
+                  <span>
+                    <strong>{platform.label}</strong>
+                    <small>{available ? (release.tag || "Latest release") : "Available soon"}</small>
+                  </span>
+                </button>
+              );
+            })}
             <a className="button secondary" href={repoUrl}><Icon name="github" /> View source</a>
           </div>
           <div className="creator-links" aria-label="Creator links">
