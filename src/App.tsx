@@ -48,6 +48,7 @@ export default function App() {
   const [reevaluating, setReevaluating] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [scanErr, setScanErr]     = useState<string | null>(null);
+  const [startupSeconds, setStartupSeconds] = useState(0);
   const closeDrawer = useCallback(() => setSel(null), []);
   const focusApplyView = useCallback(() => {
     setView("apply");
@@ -64,6 +65,15 @@ export default function App() {
     window.addEventListener("scan-done", h);
     return () => window.removeEventListener("scan-done", h);
   }, []);
+
+  useEffect(() => {
+    if (api) return;
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      setStartupSeconds(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [api]);
 
   useKeyboardShortcuts({
     onEscape: closeDrawer,
@@ -171,6 +181,11 @@ export default function App() {
     accepted:     leads.filter(l=>l.status==="accepted").length,
     rejected:     leads.filter(l=>l.status==="rejected").length,
   };
+
+  if (!api) {
+    return <StartupScreen conn={conn} port={port} seconds={startupSeconds} />;
+  }
+
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", alignItems: "stretch" }}>
       <Sidebar view={view} setView={setView} leadCounts={leadCounts} online={conn === "connected"} port={port} beat={beat} onSettings={() => setShowSettings(true)} onSetup={openSetupGuide} />
@@ -209,6 +224,53 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function StartupScreen({ conn, port, seconds }: { conn: string; port: number | null; seconds: number }) {
+  const isSlow = seconds >= 20;
+  return (
+    <div style={{
+      minHeight: "100vh",
+      width: "100vw",
+      display: "grid",
+      placeItems: "center",
+      background: "var(--paper)",
+      color: "var(--ink)",
+      padding: 24,
+    }}>
+      <section className="card col gap-4" style={{ width: "min(720px, 100%)", padding: 30 }}>
+        <div className="row gap-3">
+          <div className="spinner" />
+          <div>
+            <div className="eyebrow">Starting JustHireMe</div>
+            <h1 style={{ fontSize: 30, marginTop: 6 }}>Preparing your local workspace</h1>
+          </div>
+        </div>
+        <p style={{ color: "var(--ink-2)", lineHeight: 1.6, maxWidth: 620 }}>
+          The desktop app is launching its bundled backend, opening the local database, and waiting for a private API token.
+          The setup guide will appear automatically as soon as the backend is ready.
+        </p>
+        <div className="row gap-2" style={{ flexWrap: "wrap" }}>
+          <span className="pill">Backend: {conn}</span>
+          <span className="pill">Port: {port ?? "pending"}</span>
+          <span className="pill">Elapsed: {seconds}s</span>
+        </div>
+        {isSlow && (
+          <div style={{
+            border: "1px solid var(--line)",
+            borderRadius: 8,
+            padding: 14,
+            background: "var(--paper-3)",
+            color: "var(--ink-2)",
+            lineHeight: 1.55,
+          }}>
+            This is taking longer than expected. If it stays here, the bundled sidecar failed to start or Windows blocked it.
+            Restarting the app usually clears a locked local database; the Activity view will show live events after startup.
+          </div>
+        )}
+      </section>
     </div>
   );
 }

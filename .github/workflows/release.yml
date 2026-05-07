@@ -47,8 +47,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          Remove-Item -Path src-tauri\resources\backend -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path src-tauri\resources\backend.exe -Force -ErrorAction SilentlyContinue
           cd backend
-          uv run pyinstaller backend.spec --distpath ..\src-tauri\resources --noconfirm --clean
+          uv run pyinstaller backend.spec --distpath ..\src-tauri\resources\backend --noconfirm --clean
           cd ..
 
           $triple = (rustc -vV | Select-String "host:").ToString().Split()[1].Trim()
@@ -129,21 +131,15 @@ jobs:
         run: |
           $triple = (rustc -vV | Select-String "host:").ToString().Split()[1].Trim()
           $sidecar = "src-tauri\resources\backend\backend-$triple.exe"
-          $internal = "src-tauri\resources\backend\_internal"
           if (-not (Test-Path $sidecar)) {
             throw "Sidecar not found at $sidecar"
-          }
-          if (-not (Test-Path $internal)) {
-            throw "_internal directory not found; PyInstaller onedir bundle is incomplete"
           }
           $browsers = "src-tauri\resources\bin\ms-playwright"
           if (-not (Test-Path $browsers)) {
             throw "Playwright browser runtime not found at $browsers"
           }
-          $internalCount = (Get-ChildItem -Path $internal -Recurse -File).Count
           $browserCount = (Get-ChildItem -Path $browsers -Recurse -File).Count
           Write-Host "Sidecar verified: $sidecar ($(( Get-Item $sidecar ).Length / 1MB) MB)"
-          Write-Host "_internal verified: $internalCount files"
           Write-Host "Browser runtime verified: $browserCount files"
 
       - name: Build Tauri app

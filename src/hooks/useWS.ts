@@ -61,16 +61,27 @@ export function useWS() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    let poll: number | undefined;
     (async () => {
       let token: string | null = null;
       let currentPort: number | null = null;
-      try { token = await invoke<string>("get_api_token"); setApiToken(token); } catch { /* not ready */ }
-      try {
-        const p = await invoke<number>("get_sidecar_port");
-        currentPort = p;
-        setPort(p);
-        if (token) connect(p, token);
-      } catch { /* not ready */ }
+      const syncSidecar = async () => {
+        try {
+          token = await invoke<string>("get_api_token");
+          setApiToken(token);
+        } catch { /* not ready */ }
+        try {
+          const p = await invoke<number>("get_sidecar_port");
+          currentPort = p;
+          setPort(p);
+        } catch { /* not ready */ }
+        if (token && currentPort) connect(currentPort, token);
+      };
+      await syncSidecar();
+      poll = window.setInterval(() => {
+        if (!cancelled && (!token || !currentPort)) void syncSidecar();
+      }, 1000);
       unlisten = await listen<number>("sidecar-port", ev => {
         currentPort = ev.payload;
         setPort(ev.payload);
@@ -84,7 +95,12 @@ export function useWS() {
       const prevUnlisten = unlisten;
       unlisten = () => { prevUnlisten?.(); unlistenToken(); };
     })();
-    return () => { unlisten?.(); wsRef.current?.close(); };
+    return () => {
+      cancelled = true;
+      if (poll !== undefined) window.clearInterval(poll);
+      unlisten?.();
+      wsRef.current?.close();
+    };
   }, [connect]);
 
   return { conn, port, apiToken, logs, beat, addLog };

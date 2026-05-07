@@ -2,7 +2,7 @@ import type { Lead, LeadSort, SeniorityFilter } from "../types";
 
 export const getMark = (company: string) => company ? company.charAt(0).toUpperCase() : "?";
 export const PAGE_SIZE = 80;
-export const ONBOARDING_KEY = "justhireme:onboarding:v2";
+export const ONBOARDING_KEY = "justhireme:onboarding:v3";
 export const DEMO_JOB_DRAFT = `https://jobs.example.com/applied-ai-engineer-demo
 
 Applied AI Engineer

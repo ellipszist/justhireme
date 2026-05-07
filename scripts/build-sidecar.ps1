@@ -7,8 +7,10 @@ $env:PYINSTALLER_CONFIG_DIR = Join-Path $repoRoot "backend\.pyinstaller-cache"
 $env:HF_HOME = Join-Path $repoRoot "backend\.hf-cache"
 
 Write-Host "Building Python sidecar..."
+Remove-Item -Path (Join-Path $repoRoot "src-tauri\resources\backend") -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $repoRoot "src-tauri\resources\backend.exe") -Force -ErrorAction SilentlyContinue
 Set-Location backend
-uv run pyinstaller backend.spec --distpath ..\src-tauri\resources --noconfirm --clean
+uv run pyinstaller backend.spec --distpath ..\src-tauri\resources\backend --noconfirm --clean
 if ($LASTEXITCODE -ne 0) {
   throw "PyInstaller failed with exit code $LASTEXITCODE"
 }
