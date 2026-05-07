@@ -1,7 +1,7 @@
 {
   "name": "justhireme",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Local-first AI job intelligence workbench for scraping, ranking, and tailoring applications.",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -20,7 +20,11 @@
     "build": "tsc && vite build",
     "check": "npm run build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "package:fast": "tauri build --no-bundle",
+    "package:windows": "tauri build --bundles nsis",
+    "package:windows:all": "tauri build --bundles nsis msi",
+    "package:windows:msi": "tauri build --bundles msi"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",

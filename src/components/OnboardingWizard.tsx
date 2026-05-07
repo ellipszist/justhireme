@@ -11,20 +11,58 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
   const [role, setRole] = useState("Applied AI Engineer");
   const [market, setMarket] = useState("remote");
   const [provider, setProvider] = useState("ollama");
+  const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
   const [demoDraft, setDemoDraft] = useState(DEMO_JOB_DRAFT);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const steps = ["Resume", "Preferences", "Demo Job"];
+  const steps = ["Resume", "AI Setup", "Workspace Tour", "Demo Job"];
   const keyField: Record<string, string> = {
     openai: "openai_api_key",
     anthropic: "anthropic_key",
+    gemini: "gemini_api_key",
     groq: "groq_api_key",
     deepseek: "deepseek_api_key",
     nvidia: "nvidia_api_key",
   };
+  const modelField: Record<string, string> = {
+    openai: "openai_model",
+    anthropic: "anthropic_model",
+    gemini: "gemini_model",
+    groq: "groq_model",
+    deepseek: "deepseek_model",
+    nvidia: "nvidia_model",
+  };
+  const modelHints: Record<string, string[]> = {
+    openai: ["gpt-4o-mini", "gpt-4o"],
+    anthropic: ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+    gemini: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+    groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-120b"],
+    deepseek: ["deepseek-chat", "deepseek-reasoner"],
+    nvidia: ["z-ai/glm-5.1", "meta/llama-3.1-70b-instruct"],
+  };
+  const providerNotes: Record<string, string> = {
+    ollama: "Runs locally through your own Ollama server. Best for privacy; install models separately.",
+    gemini: "Good default for fast, affordable tailoring. Uses Google's OpenAI-compatible Gemini endpoint.",
+    groq: "Great for fast scouting, parsing, and drafts. Uses Groq's OpenAI-compatible endpoint.",
+    openai: "Strong general default for generation and scoring if you already use OpenAI.",
+    anthropic: "Strong writing and reasoning option for polished resumes and cover letters.",
+    deepseek: "Useful when you want lower-cost reasoning-style evaluation.",
+    nvidia: "Advanced NIM route for users with NVIDIA API access.",
+  };
+  const tourPages = [
+    { name: "Customize", detail: "Paste a job URL or job text, analyze fit, generate a tailored resume, cover letter, and outreach drafts from one screen." },
+    { name: "Dashboard", detail: "See the working snapshot: saved leads, pipeline counts, recent activity, source coverage, and what the agent has been doing." },
+    { name: "Leads", detail: "Review discovered jobs, sort by fit and signal, open details, approve the ones worth applying to, and remove weak leads." },
+    { name: "Job Pipeline", detail: "Track approved jobs from evaluating to applied, interviewing, accepted, or rejected so follow-up work stays organized." },
+    { name: "Knowledge", detail: "Inspect the local profile graph built from your resume, projects, GitHub, portfolio, and manual context." },
+    { name: "Activity", detail: "Read the event trail for scans, scoring, generation, scraping, imports, and failures when you need to debug or audit decisions." },
+    { name: "Profile", detail: "Edit your candidate identity, experience, skills, education, links, and application defaults used in generated packages." },
+    { name: "Add Context", detail: "Import projects, portfolio pages, GitHub data, notes, achievements, or extra resume material into the local knowledge stores." },
+    { name: "Setup Guide", detail: "Reopen this wizard any time from the sidebar if you want to re-check keys, sources, pages, or the first package flow." },
+  ];
 
   const saveResume = async () => {
     if (!file && !rawResume.trim()) {
@@ -63,6 +101,8 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
     if (provider === "ollama") payload.ollama_url = ollamaUrl;
     const field = keyField[provider];
     if (field && apiKey.trim()) payload[field] = apiKey.trim();
+    const modelKey = modelField[provider];
+    if (modelKey && model.trim()) payload[modelKey] = model.trim();
     try {
       const r = await api(`/api/v1/settings`, {
         method: "POST",
@@ -118,7 +158,7 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
             <div className="eyebrow">First Run</div>
             <h2 style={{ fontSize: 30, fontWeight: 800, marginTop: 6 }}>Get to your first package</h2>
             <p style={{ color: "var(--ink-2)", fontSize: 13.5, lineHeight: 1.55, marginTop: 8 }}>
-              Import your resume, set the basics, then open the one-shot customization page with a demo job ready.
+              Import your resume, connect AI, learn the workspace, then open the one-shot customization page with a demo job ready.
             </p>
           </div>
           {progress}
@@ -126,8 +166,9 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
             <b style={{ color: "var(--ink)" }}>{steps[step]}</b>
             <div style={{ marginTop: 4 }}>
               {step === 0 && "Your profile graph starts with resume data."}
-              {step === 1 && "These defaults shape scoring, generation, and source selection."}
-              {step === 2 && "The demo opens directly in Customize with all generated outputs on one page."}
+              {step === 1 && "These defaults shape scoring, generation, source selection, and generated application packages."}
+              {step === 2 && "Every page is part of the same local-first workflow: find jobs, understand fit, tailor, apply, and learn from outcomes."}
+              {step === 3 && "The demo opens directly in Customize with all generated outputs on one page."}
             </div>
           </div>
           <button className="btn btn-ghost" onClick={() => onFinish(DEMO_JOB_DRAFT)} style={{ alignSelf: "flex-start" }}>
@@ -182,15 +223,20 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
                 </div>
                 <div>
                   <label className="eyebrow">LLM Provider</label>
-                  <select className="field-input" value={provider} onChange={e => setProvider(e.target.value)} style={{ marginTop: 7 }}>
+                  <select className="field-input" value={provider} onChange={e => { const next = e.target.value; setProvider(next); setApiKey(""); setModel(modelHints[next]?.[0] || ""); }} style={{ marginTop: 7 }}>
                     <option value="ollama">Ollama</option>
+                    <option value="gemini">Gemini</option>
+                    <option value="groq">Groq</option>
                     <option value="openai">OpenAI</option>
                     <option value="anthropic">Anthropic</option>
-                    <option value="groq">Groq</option>
                     <option value="deepseek">DeepSeek</option>
                     <option value="nvidia">NVIDIA</option>
                   </select>
                 </div>
+              </div>
+              <div style={{ background: "var(--paper-3)", border: "1px solid var(--line)", borderRadius: 8, padding: 12, fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-2)" }}>
+                <b style={{ color: "var(--ink)" }}>{provider === "ollama" ? "Local mode" : provider.toUpperCase()}</b>
+                <div style={{ marginTop: 4 }}>{providerNotes[provider]}</div>
               </div>
               {provider === "ollama" ? (
                 <div>
@@ -198,9 +244,17 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
                   <input className="field-input" value={ollamaUrl} onChange={e => setOllamaUrl(e.target.value)} style={{ marginTop: 7 }} />
                 </div>
               ) : (
-                <div>
-                  <label className="eyebrow">API key</label>
-                  <input className="field-input" type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Optional for now" style={{ marginTop: 7 }} />
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div>
+                    <label className="eyebrow">API key</label>
+                    <input className="field-input" type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Optional for now" style={{ marginTop: 7 }} />
+                  </div>
+                  <div>
+                    <label className="eyebrow">Default model</label>
+                    <select className="field-input" value={model} onChange={e => setModel(e.target.value)} style={{ marginTop: 7 }}>
+                      {(modelHints[provider] || []).map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
                 </div>
               )}
               <div className="row gap-2" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -213,6 +267,22 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
           )}
 
           {step === 2 && (
+            <div className="col gap-4">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
+                {tourPages.map(page => (
+                  <div key={page.name} style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--paper)", padding: 12 }}>
+                    <div style={{ fontWeight: 800, fontSize: 13 }}>{page.name}</div>
+                    <div style={{ color: "var(--ink-2)", fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>{page.detail}</div>
+                  </div>
+                ))}
+              </div>
+              <button className="btn btn-accent" onClick={() => setStep(3)} style={{ justifyContent: "center", padding: "12px 16px" }}>
+                <Icon name="arrow-right" size={14} color="#fff" /> Continue
+              </button>
+            </div>
+          )}
+
+          {step === 3 && (
             <div className="col gap-4">
               <div>
                 <label className="eyebrow">Demo job URL</label>

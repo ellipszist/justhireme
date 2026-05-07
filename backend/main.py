@@ -1236,6 +1236,12 @@ async def _probe_provider_key(provider: str, key: str) -> dict:
                     headers={"Authorization": f"Bearer {key}"},
                 )
                 status = "ok" if r.status_code == 200 else "invalid_key" if r.status_code == 401 else "unreachable"
+            elif provider == "gemini":
+                r = await client.get(
+                    "https://generativelanguage.googleapis.com/v1beta/openai/models",
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+                status = "ok" if r.status_code == 200 else "invalid_key" if r.status_code in {401, 403} else "unreachable"
             else:
                 status = "unchecked"
     except Exception:
@@ -1249,14 +1255,20 @@ async def validate_settings():
     from llm import _ENV_NAMES, _KEY_NAMES
 
     cfg = get_settings()
-    providers = ["anthropic", "openai", "groq", *[p for p in _KEY_NAMES if p not in {"anthropic", "openai", "groq"}]]
+    probed = {"anthropic", "gemini", "openai", "groq"}
+    providers = ["anthropic", "gemini", "openai", "groq", *[p for p in _KEY_NAMES if p not in probed]]
 
     async def one(provider: str):
         key_name = _KEY_NAMES.get(provider, "")
-        key = str(cfg.get(key_name) or os.environ.get(_ENV_NAMES.get(provider, ""), "") or "").strip()
+        key = str(
+            cfg.get(key_name)
+            or os.environ.get(_ENV_NAMES.get(provider, ""), "")
+            or (os.environ.get("GOOGLE_API_KEY", "") if provider == "gemini" else "")
+            or ""
+        ).strip()
         if not key:
             return provider, {"status": "not_configured", "latency_ms": 0}
-        if provider not in {"anthropic", "openai", "groq"}:
+        if provider not in probed:
             return provider, {"status": "unchecked", "latency_ms": 0}
         return provider, await _probe_provider_key(provider, key)
 

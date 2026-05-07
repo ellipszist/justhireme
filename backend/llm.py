@@ -14,6 +14,7 @@ _TIMEOUT = httpx.Timeout(300.0, connect=10.0)
 # Maps provider id → settings key holding the global API key
 _KEY_NAMES: dict[str, str] = {
     "anthropic": "anthropic_key",
+    "gemini":    "gemini_api_key",
     "groq":      "groq_api_key",
     "nvidia":    "nvidia_api_key",
     "openai":    "openai_api_key",
@@ -23,6 +24,7 @@ _KEY_NAMES: dict[str, str] = {
 # Maps provider id → environment variable fallback
 _ENV_NAMES: dict[str, str] = {
     "anthropic": "ANTHROPIC_API_KEY",
+    "gemini":    "GEMINI_API_KEY",
     "groq":      "GROQ_API_KEY",
     "nvidia":    "NVIDIA_API_KEY",
     "openai":    "OPENAI_API_KEY",
@@ -32,6 +34,7 @@ _ENV_NAMES: dict[str, str] = {
 # Default model per provider (used when no step/global model is set)
 _DEFAULT_MODELS: dict[str, str] = {
     "anthropic": "claude-sonnet-4-6",
+    "gemini":    "gemini-2.5-flash",
     "groq":      "llama-3.3-70b-versatile",
     "nvidia":    "z-ai/glm-5.1",
     "openai":    "gpt-4o-mini",
@@ -61,15 +64,14 @@ def _resolve(step: str | None = None) -> tuple[str, str, str]:
         k = sk
     else:
         k = (get_setting(_KEY_NAMES.get(p, ""), "")
-             or os.environ.get(_ENV_NAMES.get(p, ""), ""))
+             or os.environ.get(_ENV_NAMES.get(p, ""), "")
+             or (os.environ.get("GOOGLE_API_KEY", "") if p == "gemini" else ""))
 
     # Model: step-specific > provider-level setting > default
     if sm:
         model = sm
-    elif p == "nvidia":
-        model = get_setting("nvidia_model", _DEFAULT_MODELS["nvidia"])
-    elif p == "openai":
-        model = get_setting("openai_model", _DEFAULT_MODELS["openai"])
+    elif p in {"anthropic", "gemini", "groq", "nvidia", "openai", "deepseek"}:
+        model = get_setting(f"{p}_model", _DEFAULT_MODELS[p])
     else:
         model = _DEFAULT_MODELS.get(p, "llama3")
 
@@ -93,6 +95,15 @@ def _client_nvidia(k: str):
             max_retries=0,
         ),
         mode=instructor.Mode.JSON,
+    )
+
+
+def _client_gemini(k: str):
+    return OpenAI(
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        api_key=k,
+        timeout=_TIMEOUT,
+        max_retries=0,
     )
 
 
@@ -127,6 +138,18 @@ def call_llm(s: str, u: str, m: type[BaseModel], step: str | None = None):
             OpenAI(base_url="https://api.groq.com/openai/v1", api_key=k,
                    timeout=_TIMEOUT, max_retries=0)
         )
+        return c.chat.completions.create(
+            model=model,
+            response_model=m,
+            max_retries=1,
+            messages=[{"role": "system", "content": s}, {"role": "user", "content": u}],
+        )
+
+    elif p == "gemini":
+        if not k:
+            _log.warning("gemini: no key (step=%s); falling back", step)
+            return _parse_fallback(u, m)
+        c = instructor.from_openai(_client_gemini(k), mode=instructor.Mode.JSON)
         return c.chat.completions.create(
             model=model,
             response_model=m,
@@ -214,6 +237,16 @@ def call_raw(s: str, u: str, step: str | None = None) -> str:
             return ""
         c = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=k,
                    timeout=_TIMEOUT, max_retries=0)
+        r = c.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": s}, {"role": "user", "content": u}],
+        )
+        return r.choices[0].message.content or ""
+
+    elif p == "gemini":
+        if not k:
+            return ""
+        c = _client_gemini(k)
         r = c.chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": s}, {"role": "user", "content": u}],

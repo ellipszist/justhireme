@@ -25,5 +25,7 @@ Use this before cutting a public release or sharing a build link.
 1. Update versions in `package.json`, `backend/pyproject.toml`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
 2. Run the required checks above.
 3. Create a tag like `v0.1.0`.
-4. Push the tag and let the release workflow build a draft release.
-5. Download and smoke-test the installer before publishing the draft.
+4. For a quick local smoke test, run `npm run package:fast` and launch `src-tauri/target/release/justhireme.exe`.
+5. For the standard Windows installer, run `npm run package:windows`.
+6. Push the tag and let the release workflow build a draft release.
+7. Download and smoke-test the installer before publishing the draft.

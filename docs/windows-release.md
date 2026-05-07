@@ -10,16 +10,34 @@ cd backend
 uv sync --dev
 cd ..
 .\scripts\build-sidecar.ps1
-npm run tauri build
+npm run package:windows
 ```
 
-The Windows build produces:
+The standard Windows release build now produces only the NSIS installer. This keeps local release testing fast enough to use regularly.
 
 | Artifact | Use |
 | --- | --- |
-| `src-tauri/target/release/bundle/nsis/JustHireMe_0.1.0_x64-setup.exe` | Recommended public download for testers |
-| `src-tauri/target/release/bundle/msi/JustHireMe_0.1.0_x64_en-US.msi` | Alternate installer for managed Windows environments |
+| `src-tauri/target/release/bundle/nsis/JustHireMe_0.1.5_x64-setup.exe` | Recommended public download for testers |
 | `src-tauri/target/release/justhireme.exe` | Unbundled release executable for local smoke tests |
+
+For the fastest release smoke test, skip installer generation:
+
+```powershell
+npm run package:fast
+.\src-tauri\target\release\justhireme.exe
+```
+
+Build MSI only when you specifically need managed Windows deployment:
+
+```powershell
+npm run package:windows:msi
+```
+
+Build both NSIS and MSI only for a full compatibility release:
+
+```powershell
+npm run package:windows:all
+```
 
 For the alpha installer, the bundled Python sidecar intentionally excludes the experimental browser automation stack and heavyweight local embedding model packages. The supported release smoke path is app launch, settings, profile/lead workflows, deterministic ranking, and document/outreach generation. Semantic matching should fail soft when local embedding packages are unavailable.
 

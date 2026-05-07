@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Cfg } from "./shared";
-import { ApiKeyInput, KEY_FIELD, ModelChips, ProviderPills, SectionLabel } from "./shared";
+import { ApiKeyInput, GLOBAL_MODEL_FIELD, KEY_FIELD, ModelChips, ProviderPills, SectionLabel } from "./shared";
 import type { ApiFetch } from "../types";
 
 type KeyStatus = "ok" | "invalid_key" | "unreachable" | "not_configured" | "unchecked";
@@ -33,6 +33,7 @@ export function GlobalSettings({ cfg, set, onChange, prov, api }: { cfg: Cfg; se
       setChecking(false);
     }
   };
+  const globalModelField = GLOBAL_MODEL_FIELD[prov];
 
   const badgeStyle = (status: KeyStatus) => {
     const tone = status === "ok" ? "green" : status === "invalid_key" ? "bad" : status === "unreachable" ? "yellow" : "paper";
@@ -63,10 +64,10 @@ export function GlobalSettings({ cfg, set, onChange, prov, api }: { cfg: Cfg; se
                 <input type="text" placeholder="http://localhost:11434/v1" value={cfg.ollama_url} onChange={set("ollama_url")} className="mono field-input"
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 12 }} />
               )}
-              {(prov === "nvidia" || prov === "openai") && (
+              {globalModelField && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 7 }}>Global Model</div>
-                  <ModelChips provider={prov} value={prov === "nvidia" ? cfg.nvidia_model : cfg.openai_model} onChange={v => onChange(prov === "nvidia" ? "nvidia_model" : "openai_model", v)} />
+                  <ModelChips provider={prov} value={cfg[globalModelField] as string} onChange={v => onChange(globalModelField, v)} />
                 </div>
               )}
               <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>

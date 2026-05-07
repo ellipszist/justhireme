@@ -3,8 +3,9 @@ import Icon from "../components/Icon";
 
 export interface Cfg {
   llm_provider: string;
-  anthropic_key: string; openai_api_key: string; openai_model: string;
-  deepseek_api_key: string; groq_api_key: string; nvidia_api_key: string;
+  anthropic_key: string; anthropic_model: string; openai_api_key: string; openai_model: string;
+  deepseek_api_key: string; deepseek_model: string; gemini_api_key: string; gemini_model: string;
+  groq_api_key: string; groq_model: string; nvidia_api_key: string;
   nvidia_model: string; ollama_url: string;
   scout_provider: string;     scout_api_key: string;     scout_model: string;
   evaluator_provider: string; evaluator_api_key: string; evaluator_model: string;
@@ -21,8 +22,9 @@ export interface Cfg {
 
 export const EMPTY: Cfg = {
   llm_provider: "ollama",
-  anthropic_key: "", openai_api_key: "", openai_model: "gpt-4o-mini",
-  deepseek_api_key: "", groq_api_key: "", nvidia_api_key: "",
+  anthropic_key: "", anthropic_model: "claude-sonnet-4-6", openai_api_key: "", openai_model: "gpt-4o-mini",
+  deepseek_api_key: "", deepseek_model: "deepseek-chat", gemini_api_key: "", gemini_model: "gemini-2.5-flash",
+  groq_api_key: "", groq_model: "llama-3.3-70b-versatile", nvidia_api_key: "",
   nvidia_model: "z-ai/glm-5.1", ollama_url: "http://localhost:11434/v1",
   scout_provider: "", scout_api_key: "", scout_model: "",
   evaluator_provider: "", evaluator_api_key: "", evaluator_model: "",
@@ -38,6 +40,7 @@ export const EMPTY: Cfg = {
 };
 
 export const PROVIDERS = [
+  { id: "gemini",    label: "Gemini",    tone: "green",  sub: "2.5 Flash" },
   { id: "deepseek",  label: "DeepSeek",  tone: "teal",   sub: "V3 / R1"   },
   { id: "nvidia",    label: "NVIDIA",    tone: "green",  sub: "GLM / NIM" },
   { id: "groq",      label: "Groq",      tone: "orange", sub: "Llama 3.3" },
@@ -47,9 +50,10 @@ export const PROVIDERS = [
 ];
 
 export const MODEL_HINTS: Record<string, string[]> = {
+  gemini:    ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
   deepseek:  ["deepseek-chat", "deepseek-reasoner"],
   nvidia:    ["z-ai/glm-5.1", "meta/llama-3.1-70b-instruct", "nvidia/llama-3.3-nemotron-super-49b-v1"],
-  groq:      ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+  groq:      ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-120b"],
   openai:    ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
   anthropic: ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"],
   ollama:    ["llama3", "mistral", "gemma2", "codellama"],
@@ -106,8 +110,17 @@ export const INDIA_SOURCE_PRESET = [
 ].join("\n");
 
 export const KEY_FIELD: Record<string, keyof Cfg> = {
-  anthropic: "anthropic_key", groq: "groq_api_key",
+  anthropic: "anthropic_key", gemini: "gemini_api_key", groq: "groq_api_key",
   nvidia: "nvidia_api_key", openai: "openai_api_key", deepseek: "deepseek_api_key",
+};
+
+export const GLOBAL_MODEL_FIELD: Record<string, keyof Cfg> = {
+  anthropic: "anthropic_model",
+  deepseek: "deepseek_model",
+  gemini: "gemini_model",
+  groq: "groq_model",
+  nvidia: "nvidia_model",
+  openai: "openai_model",
 };
 
 /* helpers */
@@ -187,7 +200,7 @@ export function ApiKeyInput({ value, onChange, provider, isStep, disabled = fals
   value: string; onChange: (v: string) => void; provider: string; isStep?: boolean; disabled?: boolean; placeholder?: string;
 }) {
   if (provider === "ollama") return null;
-  const ph: Record<string, string> = { anthropic: "sk-ant-••••", groq: "gsk_••••", nvidia: "nvapi-••••", openai: "sk-••••", deepseek: "sk-••••" };
+  const ph: Record<string, string> = { anthropic: "sk-ant-••••", gemini: "AIza••••", groq: "gsk_••••", nvidia: "nvapi-••••", openai: "sk-••••", deepseek: "sk-••••" };
   return (
     <input type="password" value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
       placeholder={placeholder || (isStep ? `API key for ${provider}` : ph[provider] || "API key")}
