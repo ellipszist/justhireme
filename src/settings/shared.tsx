@@ -6,7 +6,12 @@ export interface Cfg {
   anthropic_key: string; anthropic_model: string; openai_api_key: string; openai_model: string;
   deepseek_api_key: string; deepseek_model: string; gemini_api_key: string; gemini_model: string;
   groq_api_key: string; groq_model: string; nvidia_api_key: string;
-  nvidia_model: string; ollama_url: string;
+  nvidia_model: string; xai_api_key: string; xai_model: string; kimi_api_key: string; kimi_model: string;
+  mistral_api_key: string; mistral_model: string; openrouter_api_key: string; openrouter_model: string;
+  together_api_key: string; together_model: string; fireworks_api_key: string; fireworks_model: string;
+  cerebras_api_key: string; cerebras_model: string; perplexity_api_key: string; perplexity_model: string;
+  huggingface_api_key: string; huggingface_model: string; custom_api_key: string; custom_model: string; custom_base_url: string;
+  ollama_url: string;
   scout_provider: string;     scout_api_key: string;     scout_model: string;
   evaluator_provider: string; evaluator_api_key: string; evaluator_model: string;
   generator_provider: string; generator_api_key: string; generator_model: string;
@@ -16,6 +21,7 @@ export interface Cfg {
   hunter_api_key: string; proxycurl_api_key: string; contact_lookup_enabled: string;
   x_max_requests_per_scan: string; x_max_results_per_query: string; x_min_signal_score: string; x_hot_lead_threshold: string; x_enable_notifications: string;
   free_sources_enabled: string; free_source_targets: string; company_watchlist: string; free_source_max_requests: string; free_source_min_signal_score: string;
+  custom_connectors_enabled: string; custom_connectors: string; custom_connector_headers: string;
   job_boards: string; job_market_focus: string;
   ghost_mode: string; auto_apply: string; headed_browser: string;
 }
@@ -25,7 +31,12 @@ export const EMPTY: Cfg = {
   anthropic_key: "", anthropic_model: "claude-sonnet-4-6", openai_api_key: "", openai_model: "gpt-4o-mini",
   deepseek_api_key: "", deepseek_model: "deepseek-chat", gemini_api_key: "", gemini_model: "gemini-2.5-flash",
   groq_api_key: "", groq_model: "llama-3.3-70b-versatile", nvidia_api_key: "",
-  nvidia_model: "z-ai/glm-5.1", ollama_url: "http://localhost:11434/v1",
+  nvidia_model: "z-ai/glm-5.1", xai_api_key: "", xai_model: "grok-4", kimi_api_key: "", kimi_model: "kimi-k2-turbo-preview",
+  mistral_api_key: "", mistral_model: "mistral-large-latest", openrouter_api_key: "", openrouter_model: "openrouter/auto",
+  together_api_key: "", together_model: "openai/gpt-oss-120b", fireworks_api_key: "", fireworks_model: "accounts/fireworks/models/llama-v3p1-70b-instruct",
+  cerebras_api_key: "", cerebras_model: "llama-3.3-70b", perplexity_api_key: "", perplexity_model: "sonar",
+  huggingface_api_key: "", huggingface_model: "openai/gpt-oss-120b", custom_api_key: "", custom_model: "model-id", custom_base_url: "https://api.openai.com/v1",
+  ollama_url: "http://localhost:11434/v1",
   scout_provider: "", scout_api_key: "", scout_model: "",
   evaluator_provider: "", evaluator_api_key: "", evaluator_model: "",
   generator_provider: "", generator_api_key: "", generator_model: "",
@@ -35,6 +46,7 @@ export const EMPTY: Cfg = {
   hunter_api_key: "", proxycurl_api_key: "", contact_lookup_enabled: "true",
   x_max_requests_per_scan: "5", x_max_results_per_query: "50", x_min_signal_score: "60", x_hot_lead_threshold: "80", x_enable_notifications: "false",
   free_sources_enabled: "false", free_source_targets: "", company_watchlist: "", free_source_max_requests: "20", free_source_min_signal_score: "60",
+  custom_connectors_enabled: "false", custom_connectors: "", custom_connector_headers: "",
   job_boards: "", job_market_focus: "global",
   ghost_mode: "false", auto_apply: "false", headed_browser: "false",
 };
@@ -44,8 +56,18 @@ export const PROVIDERS = [
   { id: "deepseek",  label: "DeepSeek",  tone: "teal",   sub: "V3 / R1"   },
   { id: "nvidia",    label: "NVIDIA",    tone: "green",  sub: "GLM / NIM" },
   { id: "groq",      label: "Groq",      tone: "orange", sub: "Llama 3.3" },
+  { id: "xai",       label: "Grok",      tone: "blue",   sub: "xAI"       },
+  { id: "kimi",      label: "Kimi",      tone: "purple", sub: "Moonshot"  },
+  { id: "mistral",   label: "Mistral",   tone: "orange", sub: "Large"     },
+  { id: "openrouter", label: "OpenRouter", tone: "teal", sub: "Many"      },
+  { id: "together",  label: "Together",  tone: "pink",   sub: "OSS"       },
+  { id: "fireworks", label: "Fireworks", tone: "yellow", sub: "Fast OSS"  },
+  { id: "cerebras",  label: "Cerebras",  tone: "green",  sub: "Fast"      },
+  { id: "perplexity", label: "Perplexity", tone: "blue", sub: "Search"    },
+  { id: "huggingface", label: "HuggingFace", tone: "yellow", sub: "Router" },
   { id: "openai",    label: "OpenAI",    tone: "blue",   sub: "GPT-4o"    },
   { id: "anthropic", label: "Anthropic", tone: "purple", sub: "Claude"    },
+  { id: "custom",    label: "Custom",    tone: "pink",   sub: "OpenAI API" },
   { id: "ollama",    label: "Ollama",    tone: "pink",   sub: "Local"     },
 ];
 
@@ -54,8 +76,18 @@ export const MODEL_HINTS: Record<string, string[]> = {
   deepseek:  ["deepseek-chat", "deepseek-reasoner"],
   nvidia:    ["z-ai/glm-5.1", "meta/llama-3.1-70b-instruct", "nvidia/llama-3.3-nemotron-super-49b-v1"],
   groq:      ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-120b"],
+  xai:       ["grok-4", "grok-3", "grok-3-mini"],
+  kimi:      ["kimi-k2-turbo-preview", "kimi-k2.5", "moonshot-v1-128k"],
+  mistral:   ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "ministral-8b-latest"],
+  openrouter: ["openrouter/auto", "anthropic/claude-sonnet-4.5", "google/gemini-2.5-pro", "moonshotai/kimi-k2"],
+  together:  ["openai/gpt-oss-120b", "meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-V3.1", "moonshotai/Kimi-K2-Instruct"],
+  fireworks: ["accounts/fireworks/models/llama-v3p1-70b-instruct", "accounts/fireworks/models/qwen2p5-72b-instruct", "accounts/fireworks/models/deepseek-v3"],
+  cerebras:  ["llama-3.3-70b", "llama3.1-8b", "gpt-oss-120b"],
+  perplexity: ["sonar", "sonar-pro", "sonar-reasoning", "sonar-deep-research"],
+  huggingface: ["openai/gpt-oss-120b", "meta-llama/Llama-3.1-8B-Instruct", "Qwen/Qwen2.5-72B-Instruct"],
   openai:    ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
   anthropic: ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"],
+  custom:    ["model-id", "provider/model", "chat-model"],
   ollama:    ["llama3", "mistral", "gemma2", "codellama"],
 };
 
@@ -75,15 +107,10 @@ export const STEPS = [
 export const GLOBAL_SOURCE_PRESET = [
   "hn-hiring,",
   "https://remoteok.com/api,",
-  "https://remotive.com/api/remote-jobs?search=junior,",
-  "https://remotive.com/api/remote-jobs?search=python,",
-  "https://remotive.com/api/remote-jobs?search=react,",
-  "https://remotive.com/api/remote-jobs?search=ai,",
-  "https://jobicy.com/api/v2/remote-jobs?count=50&tag=python,",
-  "https://jobicy.com/api/v2/remote-jobs?count=50&tag=react,",
+  "https://remotive.com/api/remote-jobs,",
+  "https://jobicy.com/api/v2/remote-jobs?count=50,",
   "https://jobicy.com/feed/newjobs,",
-  "https://weworkremotely.com/categories/remote-programming-jobs.rss,",
-  "https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss,",
+  "https://weworkremotely.com/remote-jobs.rss,",
   "site:boards.greenhouse.io,",
   "site:jobs.lever.co,",
   "site:jobs.ashbyhq.com,",
@@ -91,18 +118,24 @@ export const GLOBAL_SOURCE_PRESET = [
   "site:wellfound.com/jobs,",
   "site:linkedin.com/jobs,",
   "site:indeed.com/jobs,",
+  "site:glassdoor.com/Job,",
+  "site:jobs.smartrecruiters.com,",
+  "site:workdayjobs.com,",
   "site:naukri.com,",
   "site:instahyre.com,",
   "site:cutshort.io/jobs,",
 ].join("\n");
 
 export const INDIA_SOURCE_PRESET = [
-  "site:wellfound.com/jobs India startup,",
-  "site:cutshort.io/jobs software engineer India startup,",
-  "site:instahyre.com software engineer India,",
-  "site:naukri.com software engineer startup India,",
-  "site:linkedin.com/jobs software engineer India startup,",
-  "site:indeed.com/jobs software engineer India startup,",
+  "site:wellfound.com/jobs India,",
+  "site:cutshort.io/jobs India startup,",
+  "site:instahyre.com jobs India,",
+  "site:naukri.com jobs India,",
+  "site:foundit.in jobs India,",
+  "site:internshala.com/jobs India,",
+  "site:linkedin.com/jobs India,",
+  "site:indeed.com/jobs India,",
+  "site:glassdoor.co.in Job India,",
   "site:boards.greenhouse.io India,",
   "site:jobs.lever.co India,",
   "site:jobs.ashbyhq.com India,",
@@ -112,6 +145,10 @@ export const INDIA_SOURCE_PRESET = [
 export const KEY_FIELD: Record<string, keyof Cfg> = {
   anthropic: "anthropic_key", gemini: "gemini_api_key", groq: "groq_api_key",
   nvidia: "nvidia_api_key", openai: "openai_api_key", deepseek: "deepseek_api_key",
+  xai: "xai_api_key", kimi: "kimi_api_key", mistral: "mistral_api_key",
+  openrouter: "openrouter_api_key", together: "together_api_key", fireworks: "fireworks_api_key",
+  cerebras: "cerebras_api_key", perplexity: "perplexity_api_key", huggingface: "huggingface_api_key",
+  custom: "custom_api_key",
 };
 
 export const GLOBAL_MODEL_FIELD: Record<string, keyof Cfg> = {
@@ -121,6 +158,16 @@ export const GLOBAL_MODEL_FIELD: Record<string, keyof Cfg> = {
   groq: "groq_model",
   nvidia: "nvidia_model",
   openai: "openai_model",
+  xai: "xai_model",
+  kimi: "kimi_model",
+  mistral: "mistral_model",
+  openrouter: "openrouter_model",
+  together: "together_model",
+  fireworks: "fireworks_model",
+  cerebras: "cerebras_model",
+  perplexity: "perplexity_model",
+  huggingface: "huggingface_model",
+  custom: "custom_model",
 };
 
 /* helpers */
@@ -200,7 +247,12 @@ export function ApiKeyInput({ value, onChange, provider, isStep, disabled = fals
   value: string; onChange: (v: string) => void; provider: string; isStep?: boolean; disabled?: boolean; placeholder?: string;
 }) {
   if (provider === "ollama") return null;
-  const ph: Record<string, string> = { anthropic: "sk-ant-••••", gemini: "AIza••••", groq: "gsk_••••", nvidia: "nvapi-••••", openai: "sk-••••", deepseek: "sk-••••" };
+  const ph: Record<string, string> = {
+    anthropic: "sk-ant-••••", gemini: "AIza••••", groq: "gsk_••••", nvidia: "nvapi-••••",
+    openai: "sk-••••", deepseek: "sk-••••", xai: "xai-••••", kimi: "sk-••••",
+    mistral: "••••", openrouter: "sk-or-••••", together: "••••", fireworks: "fw_••••",
+    cerebras: "csk-••••", perplexity: "pplx-••••", huggingface: "hf_••••", custom: "API key",
+  };
   return (
     <input type="password" value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
       placeholder={placeholder || (isStep ? `API key for ${provider}` : ph[provider] || "API key")}

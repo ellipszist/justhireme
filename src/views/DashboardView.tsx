@@ -1,7 +1,114 @@
 import Icon from "../components/Icon";
+import type React from "react";
 import type { Lead, LogLine, View } from "../types";
-import { StatCard } from "../components/Topbar";
-import { getMark, getTone } from "../lib/leadUtils";
+import { getMark, getTone, leadDisplayHeading, leadSignal } from "../lib/leadUtils";
+
+const warmSurface = "rgba(255, 255, 255, 0.64)";
+const warmSurfaceStrong = "rgba(255, 255, 255, 0.78)";
+const warmBorder = "rgba(201, 100, 66, 0.16)";
+
+const MiniStat = ({ tone, label, value, hint, icon }: { tone: string; label: string; value: number; hint: string; icon: string }) => (
+  <div style={{
+    border: `1px solid color-mix(in srgb, var(--${tone}) 72%, transparent)`,
+    background: `linear-gradient(135deg, var(--${tone}-soft) 0%, rgba(255,255,255,0.48) 100%)`,
+    borderRadius: 8,
+    padding: 14,
+    minHeight: 104,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+  }}>
+    <div style={{
+      width: 30,
+      height: 30,
+      borderRadius: 8,
+      background: `var(--${tone})`,
+      color: `var(--${tone}-ink)`,
+      display: "grid",
+      placeItems: "center",
+    }}>
+      <Icon name={icon} size={14} />
+    </div>
+    <div>
+      <div className="display tabular" style={{ fontSize: 34, color: `var(--${tone}-ink)`, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 4 }}>{label}</div>
+      <div className="mono" style={{ fontSize: 9.5, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 2 }}>{hint}</div>
+    </div>
+  </div>
+);
+
+const LeadRow = ({ lead, openDrawer }: { lead: Lead; openDrawer: (l: Lead) => void }) => {
+  const { role, company } = leadDisplayHeading(lead);
+  const signal = leadSignal(lead);
+  const tone = getTone(lead.status);
+  return (
+    <button
+      onClick={() => openDrawer(lead)}
+      className="lift"
+      style={{
+        width: "100%",
+        border: `1px solid ${warmBorder}`,
+        borderRadius: 8,
+        background: warmSurfaceStrong,
+        padding: 10,
+        display: "grid",
+        gridTemplateColumns: "34px minmax(0, 1fr) auto",
+        gap: 10,
+        alignItems: "center",
+        textAlign: "left",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{
+        width: 34,
+        height: 34,
+        borderRadius: 8,
+        background: `var(--${tone}-soft)`,
+        border: `1px solid var(--${tone})`,
+        color: `var(--${tone}-ink)`,
+        display: "grid",
+        placeItems: "center",
+        fontFamily: "var(--font-display)",
+        fontSize: 17,
+        fontWeight: 700,
+      }}>{getMark(company)}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 750, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{role}</div>
+        <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {company} / {lead.platform || "source"} / {lead.status}
+        </div>
+      </div>
+      <span className="mono tabular" style={{
+        fontSize: 12,
+        fontWeight: 850,
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: signal >= 80 ? "var(--orange-soft)" : signal >= 55 ? "var(--yellow-soft)" : "var(--paper-3)",
+        color: signal >= 80 ? "var(--orange-ink)" : signal >= 55 ? "var(--yellow-ink)" : "var(--ink-3)",
+      }}>{signal}</span>
+    </button>
+  );
+};
+
+const SecondaryButton = ({ children, onClick, disabled, danger }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; danger?: boolean }) => (
+  <button
+    className="btn"
+    onClick={onClick}
+    disabled={disabled}
+    style={{
+      minHeight: 38,
+      borderRadius: 8,
+      fontSize: 12,
+      opacity: disabled ? 0.55 : 1,
+      cursor: disabled ? "not-allowed" : "pointer",
+      background: danger ? "var(--bad-soft)" : warmSurfaceStrong,
+      color: danger ? "var(--bad)" : "var(--ink-2)",
+      borderColor: danger ? "var(--bad)" : warmBorder,
+    }}
+  >
+    {children}
+  </button>
+);
 
 export function DashboardView({
   leads, dueFollowups, logs, setView, openDrawer,
@@ -11,192 +118,180 @@ export function DashboardView({
   scanning: boolean; reevaluating: boolean; cleaning: boolean;
   onScan: () => void; onStopScan: () => void; onReevaluate: () => void; onStopReevaluate: () => void; onCleanup: () => void; scanErr: string | null;
 }) {
+  const active = leads.filter(l => l.status !== "discarded");
   const counts = {
-    total:      leads.length,
-    discovered: leads.filter(l=>l.status==="discovered").length,
-    evaluated:  leads.filter(l=>l.score > 0).length,
-    tailoring:  leads.filter(l=>l.status==="tailoring").length,
-    approved:   leads.filter(l=>l.status==="approved").length,
-    applied:    leads.filter(l=>l.status==="applied").length,
+    total: active.length,
+    scored: active.filter(l => l.score > 0).length,
+    ready: active.filter(l => l.status === "approved").length,
+    applied: active.filter(l => l.status === "applied").length,
+    tailoring: active.filter(l => l.status === "tailoring").length,
   };
-  const topMatches = [...leads].filter(l => l.score > 0).sort((a,b) => b.score - a.score).slice(0, 4);
-  const dailyHot = [...leads]
-    .filter(l => l.status !== "discarded")
-    .sort((a, b) => Math.max(b.signal_score || 0, b.score || 0) - Math.max(a.signal_score || 0, a.score || 0))
-    .slice(0, 6);
+  const queue = [...active]
+    .sort((a, b) => leadSignal(b) - leadSignal(a) || (b.score || 0) - (a.score || 0))
+    .slice(0, 4);
+  const busy = scanning || reevaluating || cleaning;
+  const latest = logs[0];
 
   return (
     <div className="scroll" style={{ padding: 24, flex: 1, height: "100%", minHeight: 0 }}>
-      <div className="card" style={{ padding: "26px 28px", marginBottom: 18, background: "linear-gradient(135deg, var(--orange-soft) 0%, var(--pink-soft) 60%, var(--purple-soft) 100%)" }}>
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", gap: 24, flexWrap: "wrap" }}>
-          <div className="col gap-3" style={{ maxWidth: 560 }}>
-            <span className="eyebrow">Agent Online</span>
-            <h1 style={{ fontSize: 52 }}>The hunt is <span className="italic-serif" style={{ color: "var(--ink-2)" }}>on.</span></h1>
-            <div style={{ fontSize: 14.5, color: "var(--ink-2)", lineHeight: 1.55, maxWidth: 480 }}>
-              Scanned <b>{leads.length} job leads</b>, evaluated <b>{counts.evaluated}</b> with scores, tailored <b>{counts.tailoring + counts.approved} resumes</b>.
+      <section style={{
+        border: "1px solid rgba(201,100,66,0.20)",
+        borderRadius: 8,
+        padding: 22,
+        marginBottom: 16,
+        background: "linear-gradient(135deg, var(--orange-soft) 0%, var(--pink-soft) 58%, var(--purple-soft) 100%)",
+        boxShadow: "var(--shadow-sm)",
+      }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.1fr) minmax(260px, 0.9fr)", gap: 22, alignItems: "end" }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="eyebrow">Agent Online</div>
+            <h1 style={{ fontSize: 44, marginTop: 8 }}>
+              The hunt is <span className="italic-serif" style={{ color: "var(--ink-2)" }}>on.</span>
+            </h1>
+            <div style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.55, maxWidth: 560, marginTop: 10 }}>
+              Scanned <b>{leads.length} job leads</b>, evaluated <b>{counts.scored}</b> with scores, tailored <b>{counts.tailoring + counts.ready} resumes</b>.
             </div>
-            <div className="row gap-2" style={{ marginTop: 6 }}>
-              <button onClick={onScan} disabled={scanning || reevaluating || cleaning} style={{
-                padding: "10px 22px", borderRadius: 12, fontSize: 12, fontWeight: 700,
-                letterSpacing: "0.12em", textTransform: "uppercase", cursor: scanning ? "wait" : reevaluating || cleaning ? "not-allowed" : "pointer",
-                background: scanning || reevaluating || cleaning ? "var(--ink-4)" : "var(--ink)",
-                color: "var(--paper)", border: "1px solid var(--ink-3)",
-                opacity: (reevaluating || cleaning) && !scanning ? 0.72 : 1,
-                transition: "all .2s ease", display: "flex", alignItems: "center", gap: 8,
-              }}>
-                {scanning ? <><span className="dot pulse-soft" /> SCAN IN PROGRESS...</> : <><Icon name="spark" size={13} /> INITIATE AUTONOMOUS SCAN</>}
-              </button>
-              {scanning && (
+            <div className="row gap-2" style={{ flexWrap: "wrap", marginTop: 16 }}>
+              {scanning ? (
                 <button onClick={onStopScan} style={{
-                  padding: "10px 18px", borderRadius: 12, fontSize: 12, fontWeight: 700,
-                  letterSpacing: "0.12em", textTransform: "uppercase", cursor: "pointer",
-                  background: "var(--bad-soft)", color: "var(--bad)", border: "1px solid var(--bad)",
-                  transition: "all .2s ease", display: "flex", alignItems: "center", gap: 7,
+                  minHeight: 48,
+                  padding: "10px 18px",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  background: "var(--bad-soft)",
+                  color: "var(--bad)",
+                  border: "1px solid var(--bad)",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
                 }}>
-                  <Icon name="x" size={13} color="var(--bad)" /> STOP SCAN
-                </button>
-              )}
-              {reevaluating ? (
-                <button onClick={onStopReevaluate} style={{
-                  padding: "10px 18px", borderRadius: 12, fontSize: 12, fontWeight: 700,
-                  letterSpacing: "0.12em", textTransform: "uppercase", cursor: "pointer",
-                  background: "var(--bad-soft)", color: "var(--bad)", border: "1px solid var(--bad)",
-                  transition: "all .2s ease", display: "flex", alignItems: "center", gap: 7,
-                }}>
-                  <Icon name="x" size={13} color="var(--bad)" /> STOP RE-EVAL
+                  <Icon name="x" size={13} color="var(--bad)" /> Stop scan
                 </button>
               ) : (
-                <button onClick={onReevaluate} disabled={scanning || leads.length === 0} className="btn" style={{
-                  opacity: scanning || leads.length === 0 ? 0.58 : 1,
-                  cursor: scanning || leads.length === 0 ? "not-allowed" : "pointer",
+                <button onClick={onScan} disabled={reevaluating || cleaning} style={{
+                  minHeight: 48,
+                  padding: "10px 22px",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 850,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  background: reevaluating || cleaning ? "var(--ink-4)" : "var(--ink)",
+                  color: "var(--paper)",
+                  border: "1px solid var(--ink)",
+                  cursor: reevaluating || cleaning ? "not-allowed" : "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
                 }}>
-                  <Icon name="pulse" size={13} /> Re-evaluate jobs
+                  <Icon name="search" size={13} color="var(--paper)" /> Scan sources
                 </button>
               )}
-              <button onClick={onCleanup} disabled={scanning || reevaluating || cleaning || leads.length === 0} className="btn" style={{
-                opacity: scanning || reevaluating || cleaning || leads.length === 0 ? 0.58 : 1,
-                cursor: cleaning ? "wait" : scanning || reevaluating || leads.length === 0 ? "not-allowed" : "pointer",
-              }}>
-                <Icon name="trash" size={13} /> {cleaning ? "Cleaning..." : "Clean bad data"}
-              </button>
-              <button className="btn btn-accent" onClick={() => setView("pipeline")}>Open pipeline <Icon name="arrow-right" size={13} /></button>
-              <button className="btn" onClick={() => setView("inbox")}><Icon name="plus" size={13} /> Paste lead</button>
-              <button className="btn" onClick={() => setView("activity")}><Icon name="pulse" size={13} /> Live activity</button>
+              <SecondaryButton onClick={() => setView("apply")} disabled={busy}>
+                <Icon name="spark" size={13} /> Customize job
+              </SecondaryButton>
+              <SecondaryButton onClick={() => setView("inbox")}>
+                <Icon name="layers" size={13} /> Leads
+              </SecondaryButton>
+              <SecondaryButton onClick={() => setView("pipeline")}>
+                Pipeline <Icon name="arrow-right" size={13} />
+              </SecondaryButton>
             </div>
-            {scanErr && <div style={{ marginTop: 6, fontSize: 12, color: "var(--bad)", fontWeight: 500 }}>⚠ {scanErr}</div>}
+            {scanErr && <div style={{ marginTop: 10, fontSize: 12, color: "var(--bad)", fontWeight: 700 }}>{scanErr}</div>}
           </div>
-          <div className="col gap-2" style={{ width: 300 }}>
-            <div className="eyebrow" style={{ marginBottom: 2 }}>Top matches awaiting review</div>
-            {topMatches.length === 0 ? (
-              <div className="card-flat" style={{ padding: 14, fontSize: 12, color: "var(--ink-3)" }}>Run a scan to find matches.</div>
-            ) : topMatches.map(l => (
-              <div key={l.job_id} onClick={() => openDrawer(l)} className="lift" style={{
-                background: "var(--card)", border: "1px solid var(--line)", borderRadius: 12,
-                padding: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
-              }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: 10,
-                  background: `var(--${getTone(l.status)})`, color: `var(--${getTone(l.status)}-ink)`,
-                  display: "grid", placeItems: "center",
-                  fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 500,
-                  border: `1px solid var(--${getTone(l.status)}-ink)`,
-                }}>{getMark(l.company)}</div>
-                <div className="col" style={{ flex: 1, minWidth: 0, gap: 1 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</div>
-                  <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{l.company}</div>
-                </div>
-                <span style={{
-                  fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-                  background: l.score >= 85 ? "var(--green)" : l.score >= 50 ? "var(--yellow)" : "var(--bad-soft)",
-                  color: l.score >= 85 ? "var(--green-ink)" : l.score >= 50 ? "var(--yellow-ink)" : "var(--bad)",
-                }}>{l.score}%</span>
+
+          <div style={{
+            background: warmSurface,
+            border: `1px solid ${warmBorder}`,
+            borderRadius: 8,
+            padding: 14,
+            minWidth: 0,
+          }}>
+            <div className="eyebrow">Now</div>
+            <div style={{ marginTop: 8, fontSize: 13, color: "var(--ink-2)", lineHeight: 1.5 }}>
+              {busy ? (scanning ? "Scanning configured sources..." : reevaluating ? "Re-scoring saved jobs..." : "Cleaning weak rows...") : "Ready for the next action."}
+            </div>
+            {latest && (
+              <div style={{ marginTop: 12, borderTop: `1px solid ${warmBorder}`, paddingTop: 10 }}>
+                <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)" }}>{latest.ts} / {latest.kind}</div>
+                <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.45, marginTop: 4 }}>{latest.msg}</div>
               </div>
-            ))}
+            )}
           </div>
         </div>
-      </div>
+      </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 18 }}>
-        <StatCard tone="blue"   label="Leads found"      value={counts.discovered} sub="Awaiting eval"   icon="layers" />
-        <StatCard tone="yellow" label="Evaluated"         value={counts.evaluated}  sub="Non-zero scores" icon="spark"  />
-        <StatCard tone="purple" label="Resumes tailored"  value={counts.tailoring}  sub="PDFs cached"     icon="file"   />
-        <StatCard tone="green"  label="Awaiting approval" value={counts.approved}   sub="Ready to fire"   icon="check"  />
-        <StatCard tone="orange" label="Applications sent" value={counts.applied}    sub="Success"         icon="arrow-up" />
-      </div>
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <MiniStat tone="blue" label="Active leads" value={counts.total} hint="not discarded" icon="layers" />
+        <MiniStat tone="yellow" label="Scored" value={counts.scored} hint="fit known" icon="spark" />
+        <MiniStat tone="green" label="Ready" value={counts.ready} hint="approved" icon="check" />
+        <MiniStat tone="orange" label="Applied" value={counts.applied} hint="sent" icon="arrow-up" />
+      </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, marginBottom: 18 }}>
-        <div className="card" style={{ padding: 18 }}>
-          <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-            <h3>Daily hot leads</h3>
-            <button className="btn btn-ghost" onClick={() => setView("pipeline")} style={{ fontSize: 12 }}>Pipeline <Icon name="arrow-right" size={12} /></button>
+      <section style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(260px, 360px)", gap: 14 }}>
+        <div style={{
+          padding: 16,
+          borderRadius: 8,
+          border: `1px solid ${warmBorder}`,
+          background: "linear-gradient(180deg, rgba(255,255,255,0.80) 0%, rgba(252,224,200,0.24) 100%)",
+          boxShadow: "var(--shadow-sm)",
+        }}>
+          <div className="row" style={{ justifyContent: "space-between", marginBottom: 12, gap: 12 }}>
+            <div>
+              <h3>Best leads to open</h3>
+              <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>Top 4 only; everything else lives in Leads.</div>
+            </div>
+            <button className="btn btn-ghost" onClick={() => setView("inbox")} style={{ fontSize: 12 }}>All leads <Icon name="arrow-right" size={12} /></button>
           </div>
           <div className="col gap-2">
-            {dailyHot.length === 0 ? (
-              <div className="card-flat" style={{ padding: 14, color: "var(--ink-3)", fontSize: 12 }}>No hot leads yet.</div>
-            ) : dailyHot.map(lead => {
-              const signal = Math.max(lead.signal_score || 0, lead.score || 0);
-              const nextAction = lead.last_contacted_at
-                ? "Follow up"
-                : "Send fit email";
-              return (
-                <div key={lead.job_id} onClick={() => openDrawer(lead)} className="lift" style={{ padding: 12, borderRadius: 12, border: "1px solid var(--line)", background: "var(--card)", cursor: "pointer", display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.title}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.learning_reason || lead.signal_reason || lead.reason || nextAction}</div>
-                    <div className="row gap-2" style={{ marginTop: 4, flexWrap: "wrap" }}>
-                      <span className="pill mono" style={{ fontSize: 9 }}>{lead.platform}</span>
-                      <span className="pill mono" style={{ fontSize: 9 }}>{lead.kind || "job"}</span>
-                      <span className="pill mono" style={{ fontSize: 9, background: "var(--blue-soft)", color: "var(--blue-ink)" }}>{nextAction}</span>
-                      {!!lead.learning_delta && <span className="pill mono" style={{ fontSize: 9, background: lead.learning_delta > 0 ? "var(--green-soft)" : "var(--bad-soft)", color: lead.learning_delta > 0 ? "var(--green-ink)" : "var(--bad)" }}>learn {lead.learning_delta > 0 ? "+" : ""}{lead.learning_delta}</span>}
-                      {lead.budget && <span className="pill mono" style={{ fontSize: 9, background: "var(--green-soft)", color: "var(--green-ink)" }}>{lead.budget}</span>}
-                    </div>
-                  </div>
-                  <span className="mono" style={{ alignSelf: "center", fontSize: 13, fontWeight: 800, color: signal >= 80 ? "var(--orange-ink)" : "var(--ink-3)" }}>{signal}</span>
-                </div>
-              );
-            })}
+            {queue.length === 0 ? (
+              <div style={{ padding: 14, fontSize: 12.5, color: "var(--ink-3)", borderRadius: 8, border: `1px solid ${warmBorder}`, background: warmSurface }}>
+                Run a scan to fill this list.
+              </div>
+            ) : queue.map(lead => <LeadRow key={lead.job_id} lead={lead} openDrawer={openDrawer} />)}
           </div>
         </div>
-        <div className="card" style={{ padding: 18, background: "var(--green-soft)" }}>
-          <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-            <h3>Follow-ups due</h3>
-            <span className="pill mono" style={{ background: "var(--green)", color: "var(--green-ink)" }}>{dueFollowups.length}</span>
+
+        <div style={{
+          padding: 16,
+          borderRadius: 8,
+          border: `1px solid ${warmBorder}`,
+          background: "linear-gradient(180deg, rgba(255,255,255,0.76) 0%, rgba(231,220,238,0.30) 100%)",
+          boxShadow: "var(--shadow-sm)",
+        }}>
+          <h3>Maintenance</h3>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2, marginBottom: 12 }}>
+            Use these only when the data feels stale.
           </div>
           <div className="col gap-2">
-            {dueFollowups.length === 0 ? (
-              <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.45 }}>No follow-ups due right now.</div>
-            ) : dueFollowups.slice(0, 5).map(lead => (
-              <div key={lead.job_id} onClick={() => openDrawer(lead)} className="lift" style={{ padding: 10, borderRadius: 10, border: "1px solid var(--line)", background: "var(--card)", cursor: "pointer" }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.title}</div>
-                <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", marginTop: 3 }}>{lead.company}</div>
-              </div>
-            ))}
+            {reevaluating ? (
+              <SecondaryButton danger onClick={onStopReevaluate}>
+                <Icon name="x" size={13} /> Stop re-score
+              </SecondaryButton>
+            ) : (
+              <SecondaryButton onClick={onReevaluate} disabled={scanning || leads.length === 0}>
+                <Icon name="pulse" size={13} /> Re-score jobs
+              </SecondaryButton>
+            )}
+            <SecondaryButton onClick={onCleanup} disabled={busy || leads.length === 0}>
+              <Icon name="trash" size={13} /> {cleaning ? "Cleaning..." : "Clean bad data"}
+            </SecondaryButton>
+            <button className="btn btn-ghost" onClick={() => setView("activity")} style={{ justifyContent: "center", fontSize: 12 }}>
+              Activity log <Icon name="arrow-right" size={12} />
+            </button>
           </div>
+          {dueFollowups.length > 0 && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${warmBorder}` }}>
+              <div className="eyebrow">Follow-ups due</div>
+              <div className="display tabular" style={{ fontSize: 28, color: "var(--green-ink)", marginTop: 4 }}>{dueFollowups.length}</div>
+            </div>
+          )}
         </div>
-      </div>
-
-      <div className="card" style={{ padding: 18, background: "var(--yellow-soft)" }}>
-        <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-          <h3>Recent agent events</h3>
-          <button className="btn btn-ghost" onClick={() => setView("activity")} style={{ fontSize: 12 }}>See all <Icon name="arrow-right" size={12} /></button>
-        </div>
-        <div className="col gap-1" style={{ fontSize: 12 }}>
-          {logs.slice(0, 6).map((ln, i) => {
-            const tone = ln.kind === "heartbeat" ? "blue" : ln.kind === "agent" ? "green" : "yellow";
-            return (
-              <div key={ln.id} className="row gap-3" style={{ padding: "7px 10px", borderRadius: 8, background: i === 0 ? "var(--card)" : "transparent" }}>
-                <span className="mono tabular" style={{ fontSize: 10, color: "var(--ink-3)", minWidth: 50 }}>{ln.ts}</span>
-                <span className="mono" style={{ fontSize: 9.5, fontWeight: 600, padding: "1px 6px", borderRadius: 3, background: `var(--${tone})`, color: `var(--${tone}-ink)`, textTransform: "uppercase", letterSpacing: "0.08em" }}>{ln.kind}</span>
-                <span style={{ fontSize: 12, flex: 1, color: "var(--ink-2)" }}>{ln.msg}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      </section>
     </div>
   );
 }
-
-/* ══════════════════════════════════════
-   JOB CARD (shared across tabs)
-══════════════════════════════════════ */

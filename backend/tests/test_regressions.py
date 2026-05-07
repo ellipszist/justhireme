@@ -151,6 +151,52 @@ def _sample_scoring_profile():
 
 
 class RegressionTests(unittest.TestCase):
+    def test_extended_llm_provider_catalog_is_configured(self):
+        from llm import _DEFAULT_MODELS, _ENV_NAMES, _KEY_NAMES, _OPENAI_COMPAT_BASE_URLS
+
+        providers = {
+            "xai", "kimi", "mistral", "openrouter", "together", "fireworks",
+            "cerebras", "perplexity", "huggingface", "custom",
+        }
+        for provider in providers:
+            self.assertIn(provider, _KEY_NAMES)
+            self.assertIn(provider, _ENV_NAMES)
+            self.assertIn(provider, _DEFAULT_MODELS)
+        for provider in providers - {"custom"}:
+            self.assertTrue(_OPENAI_COMPAT_BASE_URLS[provider].startswith("https://"))
+
+    def test_help_assistant_answers_api_and_llm_setup_from_guide(self):
+        from agents.help_agent import answer
+
+        result = answer("what is an api and what all are available in here for llm and how do i get them")
+        text = result["answer"].lower()
+
+        self.assertEqual(result["source"], "guide")
+        self.assertIn("api key is", text)
+        self.assertIn("settings > global ai", text)
+        for provider in ["gemini", "deepseek", "nvidia", "groq", "grok", "kimi", "anthropic", "ollama"]:
+            self.assertIn(provider, text)
+        self.assertIn("run the provider check", text)
+
+    def test_model_facing_agents_have_production_guardrails(self):
+        import inspect
+        from agents import actuator, evaluator, generator, scout
+
+        contracts = [
+            evaluator._SYSTEM_PROMPT,
+            scout._SCOUT_EXTRACT_SYSTEM,
+            scout._WELLFOUND_EXTRACT_SYSTEM,
+            actuator._VISION_SYSTEM,
+            inspect.getsource(generator._draft_package),
+        ]
+        joined = "\n".join(contracts).lower()
+
+        self.assertIn("production", joined)
+        self.assertIn("untrusted", joined)
+        self.assertIn("never invent", joined)
+        self.assertIn("do not click final", actuator._VISION_SYSTEM.lower())
+        self.assertIn("structured output only", scout._SCOUT_EXTRACT_SYSTEM.lower())
+
     def test_job_evaluator_is_deterministic_and_quantified(self):
         from agents.evaluator import score
 
@@ -636,7 +682,7 @@ End-to-end build of a production-grade financial reporting platform.
         self.assertFalse(_is_hn_hiring_story({"title": "Ask HN: Why is Claude Code ignoring hooks?"}))
 
     def test_hn_hiring_post_filter_rejects_discussion_comments(self):
-        from agents.scout import _looks_like_hn_job_post, _strip_html_text
+        from agents.scout import _hn_company_role, _looks_like_hn_job_post, _strip_html_text
 
         bad = (
             "Maybe Claude code&#x2F;anthropic should deprecate certain features."
@@ -650,6 +696,19 @@ End-to-end build of a production-grade financial reporting platform.
         self.assertEqual(_strip_html_text("Claude code&#x2F;anthropic"), "Claude code/anthropic")
         self.assertFalse(_looks_like_hn_job_post(bad))
         self.assertTrue(_looks_like_hn_job_post(good))
+        self.assertEqual(_hn_company_role(good), ("Acme AI", "Backend Engineer"))
+
+    def test_hn_hiring_role_extraction_uses_role_not_thread_title(self):
+        from agents.scout import _hn_company_role, _looks_like_hn_job_post
+
+        text = """
+Baseten Labs | San Francisco, New York | ONSITE, REMOTE, HYBRID | VISA SPONSORSHIP | RELOCATION SUPPORT
+We are Baseten. We're growing quickly and hiring for multiple core roles: 1 Solution Architect.
+This role is a great fit for customer-facing technical professionals. Apply here: https://jobs.ashbyhq.com/baseten
+"""
+
+        self.assertTrue(_looks_like_hn_job_post(text))
+        self.assertEqual(_hn_company_role(text), ("Baseten Labs", "Solution Architect"))
 
     def test_job_seniority_classifier_segregates_roles(self):
         from agents.scout import _passes_beginner_job_filter, classify_job_seniority
@@ -706,17 +765,32 @@ End-to-end build of a production-grade financial reporting platform.
     def test_india_job_targets_use_india_only_fallback_and_filter(self):
         import main
 
-        self.assertIn("site:cutshort.io/jobs software engineer India startup", main._job_targets("", "india"))
+        defaults = main._job_targets("", "india")
+        self.assertIn("site:naukri.com jobs India", defaults)
+        self.assertIn("site:foundit.in jobs India", defaults)
+        self.assertIn("site:internshala.com/jobs India", defaults)
+        self.assertNotIn("software engineer", " ".join(defaults).lower())
 
         targets = main._job_targets("\n".join([
             "https://remoteok.com/api",
             "site:jobs.lever.co India",
-            "site:cutshort.io/jobs software engineer India startup",
+            "site:cutshort.io/jobs India startup",
         ]), "india")
 
         self.assertIn("site:jobs.lever.co India", targets)
-        self.assertIn("site:cutshort.io/jobs software engineer India startup", targets)
+        self.assertIn("site:cutshort.io/jobs India startup", targets)
         self.assertNotIn("https://remoteok.com/api", targets)
+
+    def test_global_job_targets_are_general_market_defaults(self):
+        import main
+
+        targets = main._job_targets("", "global")
+
+        self.assertIn("site:linkedin.com/jobs", targets)
+        self.assertIn("site:indeed.com/jobs", targets)
+        self.assertIn("site:workdayjobs.com", targets)
+        self.assertIn("https://remotive.com/api/remote-jobs", targets)
+        self.assertNotIn("software engineer", " ".join(targets).lower())
 
     def test_india_query_generation_keeps_location_clause_on_fallback(self):
         from agents import query_gen
@@ -728,6 +802,62 @@ End-to-end build of a production-grade financial reporting platform.
         self.assertIn("site:jobs.lever.co", queries[0])
         self.assertIn("India", queries[0])
         self.assertIn("Indian startup", queries[0])
+
+    def test_query_generation_fallback_is_not_tech_only(self):
+        from agents import query_gen
+
+        profile = {
+            "s": "Growth marketing specialist with SEO and lifecycle experience",
+            "skills": [{"n": "SEO"}, {"n": "Lifecycle marketing"}],
+            "projects": [{"title": "Marketing Site", "stack": ["Analytics", "Content"]}],
+            "exp": [{"role": "Growth Marketer"}],
+        }
+
+        with mock.patch("llm.call_llm", side_effect=RuntimeError("offline")):
+            queries = query_gen.generate(profile, ["site:linkedin.com/jobs"], "global")
+
+        self.assertEqual(len(queries), 1)
+        self.assertIn("site:linkedin.com/jobs", queries[0])
+        self.assertIn("SEO", queries[0])
+        self.assertNotIn("software engineer", queries[0].lower())
+
+    def test_desired_position_is_merged_into_discovery_profile(self):
+        import main
+
+        profile = {"s": "Experienced with SEO and lifecycle campaigns.", "skills": [{"n": "SEO"}]}
+        cfg = {"onboarding_target_role": "Growth Marketing Manager"}
+
+        merged = main._profile_for_discovery(profile, cfg)
+
+        self.assertIn("Growth Marketing Manager", merged["s"])
+        self.assertEqual(merged["desired_position"], "Growth Marketing Manager")
+
+    def test_query_generation_enriches_supported_api_sources_with_profile_terms(self):
+        from agents import query_gen
+
+        profile = {"s": "Growth Marketing Manager", "skills": [{"n": "SEO"}], "projects": []}
+
+        with mock.patch("llm.call_llm", side_effect=RuntimeError("offline")):
+            queries = query_gen.generate(
+                profile,
+                [
+                    "https://remotive.com/api/remote-jobs",
+                    "https://jobicy.com/api/v2/remote-jobs?count=50",
+                    "site:linkedin.com/jobs",
+                ],
+                "global",
+            )
+
+        self.assertIn("https://remotive.com/api/remote-jobs?search=Growth+Marketing+Manager", queries)
+        self.assertIn("https://jobicy.com/api/v2/remote-jobs?count=50&tag=Growth+Marketing+Manager", queries)
+        self.assertTrue(any(q.startswith("site:linkedin.com/jobs") and "Growth Marketing Manager" in q for q in queries))
+
+    def test_x_scout_accepts_non_tech_role_job_signals(self):
+        from agents import x_scout
+
+        kind = x_scout.classify_post("We are hiring a Growth Marketing Manager for SEO and lifecycle campaigns. Apply today.")
+
+        self.assertEqual(kind, "job")
 
     def test_target_parser_ignores_comments_without_swallowing_urls(self):
         import main
@@ -820,6 +950,45 @@ End-to-end build of a production-grade financial reporting platform.
             _ats_targets_from_watchlist("greenhouse,openai\nlever|perplexity\nashby,linear\nworkable,acme"),
             ["ats:greenhouse:openai", "ats:lever:perplexity", "ats:ashby:linear", "ats:workable:acme"],
         )
+
+    def test_free_scout_runs_custom_connectors_through_save_pipeline(self):
+        from agents import free_scout
+
+        async def fake_connector(_connector, _headers):
+            return [free_scout._text_lead({
+                "title": "Junior AI Engineer",
+                "company": "PremiumCo",
+                "url": "https://premium.example/jobs/1",
+                "platform": "connector:PremiumCo",
+                "description": "Entry level Python and React role. Remote. Apply this week.",
+                "posted_date": "today",
+                "source_meta": {"source": "custom_connector", "connector": "PremiumCo"},
+            })]
+
+        saved = []
+        with mock.patch.object(free_scout, "_scrape_custom_connector", side_effect=fake_connector), \
+             mock.patch.object(free_scout, "_scrape_target", new=mock.AsyncMock(return_value=[])), \
+             mock.patch.object(free_scout, "url_exists", return_value=False), \
+             mock.patch.object(free_scout, "save_lead", side_effect=lambda *args, **kwargs: saved.append((args, kwargs))):
+            leads = free_scout.run(
+                raw_targets="",
+                raw_watchlist="",
+                raw_custom_connectors='[{"name":"PremiumCo","url":"https://premium.example/jobs","items_path":"jobs"}]',
+                raw_custom_headers='{"PremiumCo":{"Authorization":"Bearer secret"}}',
+                custom_connectors_enabled=True,
+                targets=["noop"],
+                max_requests=3,
+                min_signal_score=40,
+            )
+
+        self.assertEqual(len(leads), 1)
+        self.assertEqual(saved[0][0][3], "https://premium.example/jobs/1")
+        self.assertEqual(saved[0][1]["source_meta"]["source"], "custom_connector")
+
+    def test_custom_connector_headers_are_sensitive_settings(self):
+        import main
+
+        self.assertIn("custom_connector_headers", main._sensitive({"custom_connector_headers": "secret"}))
 
 
 class TestScoringEngineCaps(unittest.TestCase):
