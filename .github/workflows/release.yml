@@ -16,8 +16,25 @@ env:
 
 jobs:
   build-backend:
-    name: Build backend sidecar (Windows)
-    runs-on: windows-latest
+    name: Build backend sidecar (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            platform: windows
+            os: windows-latest
+            experimental: false
+          - name: Linux
+            platform: linux
+            os: ubuntu-latest
+            experimental: true
+          - name: macOS
+            platform: macos
+            os: macos-latest
+            experimental: true
     steps:
       - uses: actions/checkout@v6
 
@@ -35,7 +52,8 @@ jobs:
       - name: Audit backend dependencies
         run: cd backend && uv run --with pip-audit pip-audit
 
-      - name: Install Playwright Chromium runtime
+      - name: Install Playwright Chromium runtime (Windows)
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -43,7 +61,17 @@ jobs:
           cd backend
           uv run python -m playwright install chromium
 
-      - name: Build sidecar with PyInstaller
+      - name: Install Playwright Chromium runtime (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PLAYWRIGHT_BROWSERS_PATH="../src-tauri/resources/bin/ms-playwright"
+          cd backend
+          uv run python -m playwright install chromium
+
+      - name: Build sidecar with PyInstaller (Windows)
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -63,7 +91,30 @@ jobs:
           Copy-Item $src $dst -Force
           Write-Host "Sidecar ready: $dst"
 
-      - name: List sidecar output
+      - name: Build sidecar with PyInstaller (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf src-tauri/resources/backend src-tauri/resources/backend.exe
+          cd backend
+          uv run pyinstaller backend.spec --distpath ../src-tauri/resources/backend --noconfirm --clean
+          cd ..
+
+          triple="$(rustc -vV | awk '/host:/ {print $2}')"
+          src="src-tauri/resources/backend/backend"
+          dst="src-tauri/resources/backend/backend-${triple}"
+
+          if [ ! -f "$src" ]; then
+            echo "Expected sidecar was not created: $src" >&2
+            exit 1
+          fi
+          cp "$src" "$dst"
+          chmod +x "$dst"
+          echo "Sidecar ready: $dst"
+
+      - name: List sidecar output (Windows)
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           Write-Host "Sidecar directory:"
@@ -74,26 +125,55 @@ jobs:
             Measure-Object -Property Length -Sum).Sum / 1MB
           Write-Host "Total size: $([math]::Round($total, 1)) MB"
 
+      - name: List sidecar output (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          find src-tauri/resources/backend -maxdepth 3 -type f -print
+          total_kb="$(du -sk src-tauri/resources/backend | awk '{print $1}')"
+          echo "Total size: $((total_kb / 1024)) MB"
+
       - name: Upload backend sidecar artifact
         uses: actions/upload-artifact@v7
         with:
-          name: backend-sidecar-windows
+          name: backend-sidecar-${{ matrix.platform }}
           path: src-tauri/resources/backend/
           retention-days: 1
 
       - name: Upload browser runtime artifact
         uses: actions/upload-artifact@v7
         with:
-          name: browser-runtime-windows
+          name: browser-runtime-${{ matrix.platform }}
           path: src-tauri/resources/bin/ms-playwright/
           retention-days: 1
 
   build-tauri:
-    name: Build Tauri installer (Windows)
+    name: Build Tauri installer (${{ matrix.name }})
     needs: build-backend
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
     permissions:
-      contents: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            platform: windows
+            os: windows-latest
+            package_script: package:windows
+            experimental: false
+          - name: Linux
+            platform: linux
+            os: ubuntu-latest
+            package_script: package:linux
+            experimental: true
+          - name: macOS
+            platform: macos
+            os: macos-latest
+            package_script: package:macos
+            experimental: true
     steps:
       - uses: actions/checkout@v6
 
@@ -108,6 +188,25 @@ jobs:
       - name: Audit frontend dependencies
         run: npm audit --audit-level=moderate
 
+      - name: Install Tauri Linux system dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            pkg-config \
+            patchelf \
+            wget
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -117,16 +216,17 @@ jobs:
       - name: Download backend sidecar
         uses: actions/download-artifact@v8
         with:
-          name: backend-sidecar-windows
+          name: backend-sidecar-${{ matrix.platform }}
           path: src-tauri/resources/backend/
 
       - name: Download browser runtime
         uses: actions/download-artifact@v8
         with:
-          name: browser-runtime-windows
+          name: browser-runtime-${{ matrix.platform }}
           path: src-tauri/resources/bin/ms-playwright/
 
-      - name: Verify sidecar exists
+      - name: Verify sidecar exists (Windows)
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           $triple = (rustc -vV | Select-String "host:").ToString().Split()[1].Trim()
@@ -142,78 +242,158 @@ jobs:
           Write-Host "Sidecar verified: $sidecar ($(( Get-Item $sidecar ).Length / 1MB) MB)"
           Write-Host "Browser runtime verified: $browserCount files"
 
-      - name: Build Tauri installer
-        run: npm run package:windows
-
-      - name: Generate release checksums
-        id: checksums
-        shell: pwsh
+      - name: Verify sidecar exists (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
         run: |
-          $ErrorActionPreference = "Stop"
-          $assets = Get-ChildItem -Path "src-tauri\target\release\bundle" -Recurse -File -Include "*.exe", "*.msi" |
-            Sort-Object Name
-          if (-not $assets) {
-            throw "No installer artifacts were produced."
-          }
+          set -euo pipefail
+          triple="$(rustc -vV | awk '/host:/ {print $2}')"
+          sidecar="src-tauri/resources/backend/backend-${triple}"
+          if [ ! -x "$sidecar" ]; then
+            echo "Sidecar not found or not executable at $sidecar" >&2
+            exit 1
+          fi
+          browsers="src-tauri/resources/bin/ms-playwright"
+          if [ ! -d "$browsers" ]; then
+            echo "Playwright browser runtime not found at $browsers" >&2
+            exit 1
+          fi
+          browser_count="$(find "$browsers" -type f | wc -l | tr -d ' ')"
+          echo "Sidecar verified: $sidecar ($(du -h "$sidecar" | awk '{print $1}'))"
+          echo "Browser runtime verified: $browser_count files"
 
-          $lines = foreach ($asset in $assets) {
-            $hash = (Get-FileHash -Algorithm SHA256 -Path $asset.FullName).Hash.ToLowerInvariant()
-            "$hash  $($asset.Name)"
-          }
-          $lines | Set-Content -Path "SHA256SUMS.txt" -Encoding utf8
-          $tag = "${{ github.ref_name }}"
-          $version = $tag -replace "^v", ""
+      - name: Build Tauri installer
+        run: npm run ${{ matrix.package_script }}
 
-          $notes = @(
-            "## JustHireMe $tag",
-            "",
-            "### Installation",
-            "1. Download JustHireMe_${version}_x64-setup.exe from the assets below.",
-            "2. Run the installer. Windows may show SmartScreen because this alpha build is not code-signed yet.",
-            "3. If SmartScreen appears, click **More info**, then **Run anyway**.",
-            "4. Launch JustHireMe from your Start Menu.",
-            "5. Follow the setup wizard to configure your API keys and profile.",
-            "",
-            "> **Your data stays on your machine.** JustHireMe is local-first: no hosted backend, no tracking, and no app data leaves your computer by default.",
-            "",
-            "### SHA256 checksums",
-            "",
-            ($lines | ForEach-Object { "    $_" }),
-            "",
-            "### What's inside",
-            "- Local-first job intelligence workbench",
-            "- Source adapters, quality gates, and transparent ranking",
-            "- Built-in CRM for your job pipeline",
-            "- Profile-aware graph and vector matching",
-            "- Resume, cover letter, and outreach draft generation",
-            "- Bundled backend sidecar and browser runtime",
-            "",
-            "---",
-            "_This installer was built by GitHub Actions from tag $tag. Having issues? [Open an issue](https://github.com/${{ github.repository }}/issues) or check the [README](https://github.com/${{ github.repository }}#readme)._"
-          )
-          $notes | Set-Content -Path "release-notes.md" -Encoding utf8
-
-      - name: Publish GitHub release
+      - name: Collect release assets (Windows)
+        if: matrix.platform == 'windows'
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
           $releaseDir = "release-assets"
           New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-          Get-ChildItem -Path "src-tauri\target\release\bundle" -Recurse -File -Include "*.exe", "*.msi" |
-            Sort-Object Name |
-            Copy-Item -Destination $releaseDir
-          Copy-Item "SHA256SUMS.txt" -Destination $releaseDir
+          $assets = Get-ChildItem -Path "src-tauri\target\release\bundle" -Recurse -File -Include "*.exe", "*.msi" |
+            Sort-Object Name
+          if (-not $assets) {
+            throw "No Windows installer artifacts were produced."
+          }
 
-          Push-Location $releaseDir
-          $assets = Get-ChildItem -File |
-            Where-Object { $_.Name -like "*.exe" -or $_.Name -like "*.msi" -or $_.Name -eq "SHA256SUMS.txt" } |
-            Sort-Object Name |
-            ForEach-Object { $_.Name }
-          gh release create "${{ github.ref_name }}" @assets `
-            --repo "${{ github.repository }}" `
-            --title "JustHireMe ${{ github.ref_name }}" `
-            --notes-file "..\release-notes.md" `
+          $lines = foreach ($asset in $assets) {
+            Copy-Item $asset.FullName -Destination $releaseDir -Force
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $asset.FullName).Hash.ToLowerInvariant()
+            "$hash  $($asset.Name)"
+          }
+          $lines | Set-Content -Path "$releaseDir\SHA256SUMS-windows.txt" -Encoding utf8
+
+      - name: Collect release assets (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="release-assets"
+          mkdir -p "$release_dir"
+
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            mapfile -t assets < <(find src-tauri/target/release/bundle -type f \( -name "*.deb" -o -name "*.AppImage" \) | sort)
+          else
+            mapfile -t assets < <(find src-tauri/target/release/bundle -type f -name "*.dmg" | sort)
+          fi
+
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No ${{ matrix.name }} installer artifacts were produced." >&2
+            exit 1
+          fi
+
+          checksum_file="$release_dir/SHA256SUMS-${{ matrix.platform }}.txt"
+          : > "$checksum_file"
+          for asset in "${assets[@]}"; do
+            cp "$asset" "$release_dir/"
+            shasum -a 256 "$asset" | awk -v name="$(basename "$asset")" '{print $1 "  " name}' >> "$checksum_file"
+          done
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assets-${{ matrix.platform }}
+          path: release-assets/
+          retention-days: 1
+
+  publish-release:
+    name: Publish GitHub release
+    needs: build-tauri
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download release assets
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-assets-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate release checksums and notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          cd release-assets
+
+          find . -type f ! -name "SHA256SUMS-*.txt" -printf "%P\n" | sort | while read -r asset; do
+            sha256sum "$asset"
+          done > SHA256SUMS.txt
+
+          cd ..
+          {
+            echo "## JustHireMe ${tag}"
+            echo
+            echo "### Installation"
+            if find release-assets -maxdepth 1 -type f -name "*.exe" | grep -q .; then
+              echo "- Windows: download JustHireMe_${version}_x64-setup.exe, run it, and use More info -> Run anyway if SmartScreen appears."
+            fi
+            if find release-assets -maxdepth 1 -type f \( -name "*.AppImage" -o -name "*.deb" \) | grep -q .; then
+              echo "- Linux: download the .AppImage, run chmod a+x on it, then launch it; or install the .deb on Debian/Ubuntu-based systems."
+            fi
+            if find release-assets -maxdepth 1 -type f -name "*.dmg" | grep -q .; then
+              echo "- macOS: download the .dmg and drag JustHireMe into Applications. This alpha build uses ad-hoc signing, so macOS may require Privacy & Security -> Open Anyway."
+            fi
+            echo
+            echo "> **Your data stays on your machine.** JustHireMe is local-first: no hosted backend, no tracking, and no app data leaves your computer by default."
+            echo
+            echo "### SHA256 checksums"
+            echo
+            sed 's/^/    /' release-assets/SHA256SUMS.txt
+            echo
+            echo "### What's inside"
+            echo "- Local-first job intelligence workbench"
+            echo "- Source adapters, quality gates, and transparent ranking"
+            echo "- Built-in CRM for your job pipeline"
+            echo "- Profile-aware graph and vector matching"
+            echo "- Resume, cover letter, and outreach draft generation"
+            echo "- Bundled backend sidecar and browser runtime"
+            echo
+            echo "---"
+            echo "_This installer set was built by GitHub Actions from tag ${tag}. Having issues? [Open an issue](https://github.com/${GITHUB_REPOSITORY}/issues) or check the [README](https://github.com/${GITHUB_REPOSITORY}#readme)._"
+          } > release-notes.md
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          mapfile -t assets < <(find . -maxdepth 1 -type f -printf "%P\n" | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets found." >&2
+            exit 1
+          fi
+
+          gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "JustHireMe ${GITHUB_REF_NAME}" \
+            --notes-file "../release-notes.md" \
             --latest
-          Pop-Location

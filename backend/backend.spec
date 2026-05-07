@@ -8,7 +8,10 @@ block_cipher = None
 backend_root = Path("backend").resolve()
 if not (backend_root / "main.py").exists():
     backend_root = Path(".").resolve()
-venv_site_packages = backend_root / ".venv" / "Lib" / "site-packages"
+if sys.platform == "win32":
+    venv_site_packages = backend_root / ".venv" / "Lib" / "site-packages"
+else:
+    venv_site_packages = backend_root / ".venv" / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
 site.getusersitepackages = lambda: str(venv_site_packages)
 
 hidden = [
