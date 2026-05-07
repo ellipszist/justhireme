@@ -24,7 +24,9 @@
     "package:fast": "tauri build --no-bundle",
     "package:windows": "tauri build --bundles nsis",
     "package:windows:all": "tauri build --bundles nsis msi",
-    "package:windows:msi": "tauri build --bundles msi"
+    "package:windows:msi": "tauri build --bundles msi",
+    "package:linux": "tauri build --bundles deb appimage",
+    "package:macos": "tauri build --bundles dmg"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",
