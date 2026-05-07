@@ -293,24 +293,26 @@ jobs:
           set -euo pipefail
           release_dir="release-assets"
           mkdir -p "$release_dir"
+          asset_list="$release_dir/assets.txt"
 
           if [ "${{ matrix.platform }}" = "linux" ]; then
-            mapfile -t assets < <(find src-tauri/target/release/bundle -type f \( -name "*.deb" -o -name "*.AppImage" \) | sort)
+            find src-tauri/target/release/bundle -type f \( -name "*.deb" -o -name "*.AppImage" \) | sort > "$asset_list"
           else
-            mapfile -t assets < <(find src-tauri/target/release/bundle -type f -name "*.dmg" | sort)
+            find src-tauri/target/release/bundle -type f -name "*.dmg" | sort > "$asset_list"
           fi
 
-          if [ "${#assets[@]}" -eq 0 ]; then
+          if [ ! -s "$asset_list" ]; then
             echo "No ${{ matrix.name }} installer artifacts were produced." >&2
             exit 1
           fi
 
           checksum_file="$release_dir/SHA256SUMS-${{ matrix.platform }}.txt"
           : > "$checksum_file"
-          for asset in "${assets[@]}"; do
+          while IFS= read -r asset; do
             cp "$asset" "$release_dir/"
             shasum -a 256 "$asset" | awk -v name="$(basename "$asset")" '{print $1 "  " name}' >> "$checksum_file"
-          done
+          done < "$asset_list"
+          rm "$asset_list"
 
       - name: Upload release assets
         uses: actions/upload-artifact@v7
