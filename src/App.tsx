@@ -25,7 +25,7 @@ import { OnboardingWizard } from "./components/OnboardingWizard";
 import { HelpChat } from "./components/HelpChat";
 
 export default function App() {
-  const { conn, port, apiToken, logs, beat, addLog: wsAddLog } = useWS();
+  const { conn, port, apiToken, sidecarError, logs, beat, addLog: wsAddLog } = useWS();
   const api = useMemo<ApiFetch | null>(() => {
     if (!port || !apiToken) return null;
     return (path, opts) => {
@@ -184,7 +184,7 @@ export default function App() {
   };
 
   if (!api) {
-    return <StartupScreen conn={conn} port={port} seconds={startupSeconds} />;
+    return <StartupScreen conn={conn} port={port} seconds={startupSeconds} sidecarError={sidecarError} />;
   }
 
   return (
@@ -230,7 +230,7 @@ export default function App() {
   );
 }
 
-function StartupScreen({ conn, port, seconds }: { conn: string; port: number | null; seconds: number }) {
+function StartupScreen({ conn, port, seconds, sidecarError }: { conn: string; port: number | null; seconds: number; sidecarError: string | null }) {
   const isSlow = seconds >= 20;
   return (
     <div style={{
@@ -268,8 +268,23 @@ function StartupScreen({ conn, port, seconds }: { conn: string; port: number | n
             color: "var(--ink-2)",
             lineHeight: 1.55,
           }}>
-            This is taking longer than expected. If it stays here, the bundled sidecar failed to start or Windows blocked it.
-            Restarting the app usually clears a locked local database; the Activity view will show live events after startup.
+            This is taking longer than expected. If it stays here, the bundled backend failed to start.
+            On macOS, use Privacy &amp; Security &gt; Open Anyway if the app was blocked, then restart JustHireMe.
+          </div>
+        )}
+        {sidecarError && (
+          <div style={{
+            border: "1px solid var(--bad)",
+            borderRadius: 8,
+            padding: 14,
+            background: "var(--bad-soft)",
+            color: "var(--bad)",
+            lineHeight: 1.55,
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            whiteSpace: "pre-wrap",
+          }}>
+            {sidecarError}
           </div>
         )}
       </section>

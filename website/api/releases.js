@@ -24,6 +24,29 @@ function classifyAsset(asset) {
   return [null, null];
 }
 
+function assetRank(platform, asset) {
+  const name = asset.name.toLowerCase();
+  const ranks = {
+    windows: [
+      [/\.(exe)$/, 0],
+      [/\.(msi)$/, 1],
+      [/\.(msix)$/, 2],
+    ],
+    mac: [
+      [/\.(dmg)$/, 0],
+      [/\.(pkg)$/, 1],
+    ],
+    linux: [
+      [/\.(appimage)$/, 0],
+      [/\.(deb)$/, 1],
+      [/\.(rpm)$/, 2],
+    ],
+  };
+
+  const match = ranks[platform]?.find(([pattern]) => pattern.test(name));
+  return match ? match[1] : 99;
+}
+
 export default async function handler(request, response) {
   if (request.method !== "GET") {
     response.status(405).json({ error: "Method not allowed" });
@@ -58,7 +81,10 @@ export default async function handler(request, response) {
 
     for (const asset of release.assets || []) {
       const [platform, payload] = classifyAsset(asset);
-      if (platform && !assets[platform]) {
+      if (
+        platform &&
+        (!assets[platform] || assetRank(platform, payload) < assetRank(platform, assets[platform]))
+      ) {
         assets[platform] = payload;
       }
     }
