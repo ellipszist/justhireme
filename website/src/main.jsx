@@ -184,6 +184,38 @@ function useDownloadCounter() {
   return { downloads, configured, trackDownload };
 }
 
+function PlatformDownload({ platform, asset, releaseTag, onDownload }) {
+  const available = Boolean(asset?.url);
+  const content = (
+    <>
+      <Icon name={available ? "download" : "ban"} />
+      <span>
+        <strong>{platform.label}</strong>
+        <small>{available ? (releaseTag || "Latest release") : "Available soon"}</small>
+      </span>
+    </>
+  );
+
+  if (!available) {
+    return (
+      <button className={`platform-button tone-${platform.tone}`} disabled title={`${platform.label} download will be available soon`}>
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <a
+      className={`platform-button tone-${platform.tone}`}
+      href={asset.url}
+      onClick={() => onDownload(platform.id)}
+      title={`Download ${asset.name}`}
+    >
+      {content}
+    </a>
+  );
+}
+
 function useGitHubStars() {
   const [github, setGithub] = React.useState({ stars: null, pullRequests: null });
 
@@ -419,10 +451,8 @@ function App() {
   const primaryInstallerUrl = release.assets.windows?.url || "";
   const installerReady = Boolean(primaryInstallerUrl);
 
-  const handleDownload = React.useCallback(async (url) => {
-    if (!url) return;
-    await trackDownload(platform).catch(() => {});
-    window.location.href = url;
+  const recordDownload = React.useCallback((platform) => {
+    trackDownload(platform).catch(() => {});
   }, [trackDownload]);
 
   return (
@@ -453,18 +483,36 @@ function App() {
               <span>Desktop-first</span>
             </div>
             <div className="hero-actions">
-              <button className="button primary" onClick={() => handleDownload(primaryInstallerUrl, "windows")} disabled={!installerReady} title={installerReady ? "Download the latest Windows release" : "Public installer is being prepared"}>
-                <Icon name={installerReady ? "download" : "ban"} />
-                {installerReady ? "Download Windows" : "Available soon"}
-              </button>
+              {installerReady ? (
+                <a className="button primary" href={primaryInstallerUrl} onClick={() => recordDownload("windows")} title="Download the latest Windows release">
+                  <Icon name="download" />
+                  Download Windows
+                </a>
+              ) : (
+                <button className="button primary" disabled title="Public installer is being prepared">
+                  <Icon name="ban" />
+                  Available soon
+                </button>
+              )}
               <a className="button secondary" href={repoUrl}>
                 <Icon name="star" />
                 {github.stars == null ? "GitHub stars" : `${formatCount(github.stars)} stars`}
               </a>
             </div>
+            <div className="hero-downloads" aria-label="Latest release downloads">
+              {platformOptions.map((platform) => (
+                <PlatformDownload
+                  key={platform.id}
+                  platform={platform}
+                  asset={release.assets?.[platform.id]}
+                  releaseTag={release.tag}
+                  onDownload={recordDownload}
+                />
+              ))}
+            </div>
             <div className="wait-note">
               <span className="spinner" />
-              Installer coming soon. Source is live.
+              {release.available ? `Latest release: ${release.tag}` : "Installer coming soon. Source is live."}
             </div>
             <div className="live-counter" title={configured ? "Backed by the deployed view counter" : "Connect Upstash Redis on Vercel to persist this counter"}>
               <span className="live-dot" />
@@ -575,25 +623,15 @@ function App() {
             ))}
           </div>
           <div className="hero-actions centered">
-            {platformOptions.map((platform) => {
-              const asset = release.assets?.[platform.id];
-              const available = Boolean(asset?.url);
-              return (
-                <button
-                  className={`platform-button tone-${platform.tone}`}
-                  key={platform.id}
-                  onClick={() => handleDownload(asset?.url, platform.id)}
-                  disabled={!available}
-                  title={available ? `Download ${asset.name}` : `${platform.label} download will be available soon`}
-                >
-                  <Icon name={available ? "download" : "ban"} />
-                  <span>
-                    <strong>{platform.label}</strong>
-                    <small>{available ? (release.tag || "Latest release") : "Available soon"}</small>
-                  </span>
-                </button>
-              );
-            })}
+            {platformOptions.map((platform) => (
+              <PlatformDownload
+                key={platform.id}
+                platform={platform}
+                asset={release.assets?.[platform.id]}
+                releaseTag={release.tag}
+                onDownload={recordDownload}
+              />
+            ))}
             <a className="button secondary" href={repoUrl}><Icon name="github" /> View source</a>
           </div>
           <div className="creator-links" aria-label="Creator links">

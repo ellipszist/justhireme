@@ -268,8 +268,21 @@ p {
   border-radius: 12px;
   cursor: pointer;
   color: currentColor;
+  text-decoration: none;
   box-shadow: var(--shadow-sm);
   transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.hero-downloads {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+  max-width: 560px;
+}
+
+.hero-downloads .platform-button {
+  min-width: 0;
 }
 
 .platform-button:hover:not(:disabled) {
@@ -1074,6 +1087,7 @@ footer {
   .app-preview { grid-template-columns: 1fr; min-height: auto; }
   .preview-sidebar { display: none; }
   .preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero-downloads { grid-template-columns: 1fr; }
   .system-signals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .preview-docs { grid-template-columns: 1fr; }
   .job-row { grid-template-columns: 38px minmax(0, 1fr); }

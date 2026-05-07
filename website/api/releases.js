@@ -5,6 +5,10 @@ function classifyAsset(asset) {
   const url = asset.browser_download_url;
   const size = asset.size || 0;
 
+  if (name.includes("sha256") || name.includes("checksum")) {
+    return [null, null];
+  }
+
   if (/\.(exe|msi|msix)$/.test(name) || name.includes("windows") || name.includes("win32") || name.includes("win64")) {
     return ["windows", { name: asset.name, url, size }];
   }
