@@ -7,6 +7,7 @@ export function useWS() {
   const [conn, setConn] = useState<ConnSt>("disconnected");
   const [port, setPort] = useState<number | null>(null);
   const [apiToken, setApiToken] = useState<string | null>(null);
+  const [sidecarError, setSidecarError] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [beat, setBeat] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
@@ -68,6 +69,10 @@ export function useWS() {
       let currentPort: number | null = null;
       const syncSidecar = async () => {
         try {
+          const err = await invoke<string>("get_sidecar_error");
+          setSidecarError(err);
+        } catch { /* no sidecar error */ }
+        try {
           token = await invoke<string>("get_api_token");
           setApiToken(token);
         } catch { /* not ready */ }
@@ -92,8 +97,12 @@ export function useWS() {
         setApiToken(ev.payload);
         if (currentPort) connect(currentPort, ev.payload);
       });
+      const unlistenError = await listen<string>("sidecar-error", ev => {
+        setSidecarError(ev.payload);
+        addLog(ev.payload, "system", "sidecar");
+      });
       const prevUnlisten = unlisten;
-      unlisten = () => { prevUnlisten?.(); unlistenToken(); };
+      unlisten = () => { prevUnlisten?.(); unlistenToken(); unlistenError(); };
     })();
     return () => {
       cancelled = true;
@@ -103,5 +112,5 @@ export function useWS() {
     };
   }, [connect]);
 
-  return { conn, port, apiToken, logs, beat, addLog };
+  return { conn, port, apiToken, sidecarError, logs, beat, addLog };
 }

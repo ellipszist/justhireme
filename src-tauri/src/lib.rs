@@ -12,6 +12,7 @@ use tauri_plugin_shell::ShellExt;
 struct SidecarPort(Mutex<Option<u16>>);
 struct ApiTokenState(Mutex<Option<String>>);
 struct SidecarChild(Mutex<Option<CommandChild>>);
+struct SidecarError(Mutex<Option<String>>);
 
 #[tauri::command]
 fn get_sidecar_port(state: State<SidecarPort>) -> Result<u16, String> {
@@ -30,6 +31,16 @@ fn get_api_token(state: State<ApiTokenState>) -> Result<String, String> {
         .map_err(|e| e.to_string())?
         .clone()
         .ok_or_else(|| "API token not yet discovered".into())
+}
+
+#[tauri::command]
+fn get_sidecar_error(state: State<SidecarError>) -> Result<String, String> {
+    state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No sidecar error recorded".into())
 }
 
 #[tauri::command]
@@ -135,9 +146,11 @@ pub fn run() {
         .manage(SidecarPort(Mutex::new(None)))
         .manage(ApiTokenState(Mutex::new(None)))
         .manage(SidecarChild(Mutex::new(None)))
+        .manage(SidecarError(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             get_sidecar_port,
             get_api_token,
+            get_sidecar_error,
             notify_high_score_lead
         ])
         .setup(|app| {
@@ -187,11 +200,19 @@ pub fn run() {
                 eprintln!("[tauri] Using bundled backend sidecar");
                 handle
                     .shell()
-                    .sidecar("backend")
+                    .sidecar("resources/backend/backend")
                     .expect("failed to create sidecar command")
             };
 
             let mut sidecar_cmd = sidecar_cmd;
+            sidecar_cmd = sidecar_cmd.env("PYTHONUNBUFFERED", "1");
+            if let Ok(app_data_dir) = handle.path().app_data_dir() {
+                let _ = std::fs::create_dir_all(&app_data_dir);
+                let app_data = app_data_dir.to_string_lossy().to_string();
+                sidecar_cmd = sidecar_cmd
+                    .env("LOCALAPPDATA", app_data.clone())
+                    .env("JHM_APP_DATA_DIR", app_data);
+            }
             if let Ok(resource_dir) = handle.path().resource_dir() {
                 let browsers_path = resource_dir
                     .join("resources")
@@ -205,7 +226,18 @@ pub fn run() {
                 }
             }
 
-            let (mut rx, child) = sidecar_cmd.spawn().expect("Failed to spawn Python sidecar");
+            let (mut rx, child) = match sidecar_cmd.spawn() {
+                Ok(result) => result,
+                Err(err) => {
+                    let msg = format!("Failed to spawn Python sidecar: {err}");
+                    eprintln!("[tauri] {msg}");
+                    if let Ok(mut guard) = handle.state::<SidecarError>().0.lock() {
+                        *guard = Some(msg.clone());
+                    }
+                    let _ = handle.emit("sidecar-error", msg);
+                    return Ok(());
+                }
+            };
 
             let sidecar_pid = child.pid();
             eprintln!("[tauri] Sidecar PID: {sidecar_pid}");
@@ -239,10 +271,19 @@ pub fn run() {
                             let line = String::from_utf8_lossy(&b).trim().to_string();
                             if !line.is_empty() {
                                 eprintln!("[sidecar] {line}");
+                                if let Ok(mut guard) = app_handle.state::<SidecarError>().0.lock() {
+                                    *guard = Some(line.clone());
+                                }
+                                let _ = app_handle.emit("sidecar-error", line);
                             }
                         }
                         CommandEvent::Terminated(s) => {
                             eprintln!("[tauri] Sidecar terminated: {:?}", s.code);
+                            let msg = format!("Sidecar terminated before startup: {:?}", s.code);
+                            if let Ok(mut guard) = app_handle.state::<SidecarError>().0.lock() {
+                                *guard = Some(msg.clone());
+                            }
+                            let _ = app_handle.emit("sidecar-error", msg);
                             let _ = app_handle.emit("sidecar-terminated", ());
                         }
                         _ => {}

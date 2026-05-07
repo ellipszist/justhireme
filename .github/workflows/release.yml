@@ -30,11 +30,11 @@ jobs:
           - name: Linux
             platform: linux
             os: ubuntu-latest
-            experimental: true
+            experimental: false
           - name: macOS
             platform: macos
             os: macos-latest
-            experimental: true
+            experimental: false
     steps:
       - uses: actions/checkout@v6
 
@@ -168,12 +168,12 @@ jobs:
             platform: linux
             os: ubuntu-latest
             package_script: package:linux
-            experimental: true
+            experimental: false
           - name: macOS
             platform: macos
             os: macos-latest
             package_script: package:macos
-            experimental: true
+            experimental: false
     steps:
       - uses: actions/checkout@v6
 
@@ -262,6 +262,17 @@ jobs:
           browser_count="$(find "$browsers" -type f | wc -l | tr -d ' ')"
           echo "Sidecar verified: $sidecar ($(du -h "$sidecar" | awk '{print $1}'))"
           echo "Browser runtime verified: $browser_count files"
+
+      - name: Prepare macOS sidecar permissions
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          triple="$(rustc -vV | awk '/host:/ {print $2}')"
+          sidecar="src-tauri/resources/backend/backend-${triple}"
+          chmod +x "$sidecar"
+          xattr -cr src-tauri/resources/backend || true
+          codesign --force --sign - "$sidecar"
 
       - name: Build Tauri installer
         run: npm run ${{ matrix.package_script }}
