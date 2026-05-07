@@ -19,4 +19,14 @@ Each browser gets a local visitor id and the API counts it once with Redis `SET 
 
 ## Download Counter
 
-The download intent counter is implemented in `api/downloads.js`. It uses the same visitor id and Redis `SET NX` pattern so one browser is counted once when the installer CTA is clicked. Set `DOWNLOAD_COUNT_BASELINE=0` for a fresh public launch.
+The download counter is implemented in `api/downloads.js`. It uses the same visitor id and Redis `SET NX` pattern so one browser is counted once per platform when a real installer asset is clicked. It tracks total downloads plus individual Windows, macOS, and Linux counts. Set `DOWNLOAD_COUNT_BASELINE=0` for a fresh public launch.
+
+## Release Downloads
+
+The platform download buttons are powered by `api/releases.js`, which reads the latest GitHub release from `vasu-devs/JustHireMe` and maps release assets to:
+
+- Windows: `.exe`, `.msi`, `.msix`, or asset names containing `windows`, `win32`, `win64`
+- macOS: `.dmg`, `.pkg`, or asset names containing `mac`, `darwin`, `apple`
+- Linux: `.AppImage`, `.deb`, `.rpm`, or asset names containing `linux`
+
+If an asset is missing, that platform button stays disabled and says `Available soon`.
