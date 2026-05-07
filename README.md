@@ -253,6 +253,18 @@ JustHireMe/
 
 ## Quick Start
 
+### Install On Windows
+
+Use this path if you are not a developer and just want to run JustHireMe.
+
+1. Open the latest [GitHub Release](https://github.com/vasu-devs/JustHireMe/releases/latest).
+2. Download the `JustHireMe_*_x64-setup.exe` installer.
+3. Run the installer.
+4. If Windows SmartScreen appears, click **More info**, then **Run anyway**.
+5. Launch JustHireMe from the Start Menu and follow the setup wizard.
+
+Release notes include SHA256 checksums for the installer assets. The Windows installer is built by GitHub Actions from the release tag so the published binary matches the repository source.
+
 ### Requirements
 
 | Tool | Version |
@@ -493,14 +505,16 @@ Planned improvement:
 
 ## Windows Release Build
 
-The first public packaging target is Windows.
+The first public packaging target is Windows. Public installers are built and published by GitHub Actions when a `v*` tag is pushed.
 
 ```powershell
 .\scripts\build-sidecar.ps1
-npm run tauri build
+npm run package:windows
 ```
 
-Release smoke test: [docs/windows-release.md](docs/windows-release.md)
+For local smoke tests without installer bundling, use `npm run package:fast`.
+
+Release smoke test and packaging details: [docs/windows-release.md](docs/windows-release.md)
 
 ---
 

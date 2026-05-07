@@ -142,32 +142,68 @@ jobs:
           Write-Host "Sidecar verified: $sidecar ($(( Get-Item $sidecar ).Length / 1MB) MB)"
           Write-Host "Browser runtime verified: $browserCount files"
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Tauri installer
+        run: npm run package:windows
+
+      - name: Generate release checksums
+        id: checksums
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $assets = Get-ChildItem -Path "src-tauri\target\release\bundle" -Recurse -File -Include "*.exe", "*.msi" |
+            Sort-Object Name
+          if (-not $assets) {
+            throw "No installer artifacts were produced."
+          }
+
+          $lines = foreach ($asset in $assets) {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $asset.FullName).Hash.ToLowerInvariant()
+            "$hash  $($asset.Name)"
+          }
+          $lines | Set-Content -Path "SHA256SUMS.txt" -Encoding utf8
+          $version = "${{ github.ref_name }}".TrimStart("v")
+
+          $notes = @"
+          ## JustHireMe ${{ github.ref_name }}
+
+          ### Installation
+          1. Download `JustHireMe_$version_x64-setup.exe` from the assets below.
+          2. Run the installer. Windows may show SmartScreen because this alpha build is not code-signed yet.
+          3. If SmartScreen appears, click **More info**, then **Run anyway**.
+          4. Launch JustHireMe from your Start Menu.
+          5. Follow the setup wizard to configure your API keys and profile.
+
+          > **Your data stays on your machine.** JustHireMe is local-first: no hosted backend, no tracking, and no app data leaves your computer by default.
+
+          ### SHA256 checksums
+          ````text
+          $($lines -join "`n")
+          ````
+
+          ### What's inside
+          - Local-first job intelligence workbench
+          - Source adapters, quality gates, and transparent ranking
+          - Built-in CRM for your job pipeline
+          - Profile-aware graph and vector matching
+          - Resume, cover letter, and outreach draft generation
+          - Bundled backend sidecar and browser runtime
+
+          ---
+          _This installer was built by GitHub Actions from tag `${{ github.ref_name }}`. Having issues? [Open an issue](https://github.com/${{ github.repository }}/issues) or check the [README](https://github.com/${{ github.repository }}#readme)._
+          "@
+          $notes | Set-Content -Path "release-notes.md" -Encoding utf8
+
+      - name: Publish GitHub release
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "JustHireMe ${{ github.ref_name }}"
-          releaseBody: |
-            ## JustHireMe ${{ github.ref_name }}
-
-            ### Installation
-            1. Download the `.msi` installer below.
-            2. Run the installer. Windows may show a SmartScreen warning; click "More info", then "Run anyway".
-            3. Launch JustHireMe from your Start Menu.
-            4. Follow the setup wizard to configure your API keys and profile.
-
-            > **Your data stays on your machine.** JustHireMe is local-first: no hosted backend, no tracking, and no app data leaves your computer by default.
-
-            ### What's inside
-            - Local-first job intelligence workbench
-            - Source adapters, quality gates, and transparent ranking
-            - Built-in CRM for your job pipeline
-            - Profile-aware graph and vector matching
-            - Resume, cover letter, and outreach draft generation
-
-            ---
-            _Having issues? [Open an issue](https://github.com/${{ github.repository }}/issues) or check the [README](https://github.com/${{ github.repository }}#readme)._
-          releaseDraft: true
-          prerelease: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $assets = Get-ChildItem -Path "src-tauri\target\release\bundle" -Recurse -File -Include "*.exe", "*.msi" |
+            Sort-Object Name |
+            ForEach-Object { $_.FullName }
+          gh release create "${{ github.ref_name }}" @assets "SHA256SUMS.txt" `
+            --repo "${{ github.repository }}" `
+            --title "JustHireMe ${{ github.ref_name }}" `
+            --notes-file "release-notes.md" `
+            --latest

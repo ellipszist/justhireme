@@ -36,7 +36,7 @@ export default function App() {
   const { leads, setLeads, loading: leadsLoading, error: leadsError } = useLeads(api, wsAddLog);
   const dueFollowups = useDueFollowups(api);
   const stats  = useGraphStats(api);
-  const [view, setView]           = useState<View>("apply");
+  const [view, setView]           = useState<View>("dashboard");
   const [sel, setSel]             = useState<Lead | null>(null);
   // Always pass the live version of the selected lead so the drawer reflects real-time updates
   const liveSel = sel ? (leads.find(l => l.job_id === sel.job_id) ?? sel) : null;

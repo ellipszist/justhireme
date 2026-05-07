@@ -17,7 +17,7 @@ The standard Windows release build now produces only the NSIS installer. This ke
 
 | Artifact | Use |
 | --- | --- |
-| `src-tauri/target/release/bundle/nsis/JustHireMe_0.1.5_x64-setup.exe` | Recommended public download for testers |
+| `src-tauri/target/release/bundle/nsis/JustHireMe_<version>_x64-setup.exe` | Recommended public download for testers |
 | `src-tauri/target/release/justhireme.exe` | Unbundled release executable for local smoke tests |
 
 For the fastest release smoke test, skip installer generation:
@@ -56,3 +56,5 @@ For the alpha installer, the bundled Python sidecar intentionally excludes the e
 
 Mention that browser automation is experimental. The supported workflow is scraper, ranker, vector matching, and customization.
 Mention whether the build is the alpha slim installer or a future full-ML installer.
+Include SHA256 checksums for every uploaded installer asset.
+Public installers should be built by GitHub Actions from the release tag, not uploaded from a local workstation.

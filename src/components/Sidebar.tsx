@@ -2,8 +2,8 @@ import Icon from "./Icon";
 import type { View } from "../types";
 
 const NAV = [
-  { id: "apply",     label: "Customize",     icon: "spark",  tone: "green"  },
   { id: "dashboard", label: "Dashboard",     icon: "home",   tone: "blue"   },
+  { id: "apply",     label: "Customize",     icon: "spark",  tone: "green"  },
   { id: "inbox",     label: "Leads",         icon: "plus",   tone: "orange" },
   { id: "pipeline",  label: "Job Pipeline",  icon: "layers", tone: "purple" },
   { id: "graph",     label: "Knowledge",     icon: "graph",  tone: "green"  },
