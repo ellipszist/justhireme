@@ -55,25 +55,24 @@ export function Sidebar({ view, setView, leadCounts, online, port, beat, onSetti
         })}
       </div>
 
-      <div className="eyebrow" style={{ padding: "16px 12px 4px 12px" }}>Status breakdown</div>
-      <div className="col gap-1">
+      <div className="eyebrow" style={{ padding: "16px 12px 4px 12px" }}>Snapshot</div>
+      <div style={{
+        border: "1px solid var(--line)",
+        borderRadius: 8,
+        background: "var(--card)",
+        padding: 10,
+        display: "grid",
+        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+        gap: 8,
+      }}>
         {[
-          ["evaluating",   "Evaluating",   "yellow",  leadCounts.evaluating],
-          ["approved",     "Approved",     "green",   leadCounts.approved],
-          ["applied",      "Applied",      "orange",  leadCounts.applied],
-          ["interviewing", "Interviewing", "pink",    leadCounts.interviewing],
-          ["accepted",     "Accepted",     "teal",    leadCounts.accepted],
-          ["rejected",     "Rejected",     "red",     leadCounts.rejected],
-        ].map(([k, label, tone, n]) => (
-          <div key={k} className="row" style={{
-            padding: "7px 12px", fontSize: 12, color: "var(--ink-2)", justifyContent: "space-between",
-            borderRadius: 8,
-          }}>
-            <div className="row gap-2">
-              <span style={{ width: 8, height: 8, borderRadius: 3, background: `var(--${tone})`, border: `1px solid var(--${tone}-ink)`, opacity: 0.85 }} />
-              <span>{label}</span>
-            </div>
-            <span className="mono tabular" style={{ color: "var(--ink-3)", fontSize: 11 }}>{n || 0}</span>
+          ["Ready", "green", leadCounts.approved],
+          ["Applied", "orange", leadCounts.applied],
+          ["Interview", "pink", leadCounts.interviewing],
+        ].map(([label, tone, n]) => (
+          <div key={label as string} style={{ minWidth: 0 }}>
+            <div className="mono tabular" style={{ fontSize: 15, fontWeight: 800, color: `var(--${tone}-ink)`, lineHeight: 1 }}>{n || 0}</div>
+            <div style={{ fontSize: 10.5, color: "var(--ink-3)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
           </div>
         ))}
       </div>

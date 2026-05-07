@@ -26,6 +26,15 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
     groq: "groq_api_key",
     deepseek: "deepseek_api_key",
     nvidia: "nvidia_api_key",
+    xai: "xai_api_key",
+    kimi: "kimi_api_key",
+    mistral: "mistral_api_key",
+    openrouter: "openrouter_api_key",
+    together: "together_api_key",
+    fireworks: "fireworks_api_key",
+    cerebras: "cerebras_api_key",
+    perplexity: "perplexity_api_key",
+    huggingface: "huggingface_api_key",
   };
   const modelField: Record<string, string> = {
     openai: "openai_model",
@@ -34,6 +43,15 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
     groq: "groq_model",
     deepseek: "deepseek_model",
     nvidia: "nvidia_model",
+    xai: "xai_model",
+    kimi: "kimi_model",
+    mistral: "mistral_model",
+    openrouter: "openrouter_model",
+    together: "together_model",
+    fireworks: "fireworks_model",
+    cerebras: "cerebras_model",
+    perplexity: "perplexity_model",
+    huggingface: "huggingface_model",
   };
   const modelHints: Record<string, string[]> = {
     openai: ["gpt-4o-mini", "gpt-4o"],
@@ -42,6 +60,15 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
     groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-120b"],
     deepseek: ["deepseek-chat", "deepseek-reasoner"],
     nvidia: ["z-ai/glm-5.1", "meta/llama-3.1-70b-instruct"],
+    xai: ["grok-4", "grok-3", "grok-3-mini"],
+    kimi: ["kimi-k2-turbo-preview", "kimi-k2.5", "moonshot-v1-128k"],
+    mistral: ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
+    openrouter: ["openrouter/auto", "anthropic/claude-sonnet-4.5", "google/gemini-2.5-pro"],
+    together: ["openai/gpt-oss-120b", "meta-llama/Llama-3.3-70B-Instruct-Turbo", "moonshotai/Kimi-K2-Instruct"],
+    fireworks: ["accounts/fireworks/models/llama-v3p1-70b-instruct", "accounts/fireworks/models/qwen2p5-72b-instruct"],
+    cerebras: ["llama-3.3-70b", "llama3.1-8b", "gpt-oss-120b"],
+    perplexity: ["sonar", "sonar-pro", "sonar-reasoning"],
+    huggingface: ["openai/gpt-oss-120b", "meta-llama/Llama-3.1-8B-Instruct"],
   };
   const providerNotes: Record<string, string> = {
     ollama: "Runs locally through your own Ollama server. Best for privacy; install models separately.",
@@ -51,6 +78,15 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
     anthropic: "Strong writing and reasoning option for polished resumes and cover letters.",
     deepseek: "Useful when you want lower-cost reasoning-style evaluation.",
     nvidia: "Advanced NIM route for users with NVIDIA API access.",
+    xai: "Grok models through xAI's OpenAI-compatible endpoint.",
+    kimi: "Moonshot/Kimi models through the OpenAI-compatible Kimi API.",
+    mistral: "Mistral's hosted models; good European provider option.",
+    openrouter: "One key for many providers and models, useful if you want maximum choice.",
+    together: "Open-source model hosting for Llama, DeepSeek, Kimi, Qwen, and more.",
+    fireworks: "Fast open-source model hosting with OpenAI-compatible access.",
+    cerebras: "Very fast inference route for supported models.",
+    perplexity: "Search-grounded models, useful for research-style answers.",
+    huggingface: "Hugging Face router for supported hosted inference providers.",
   };
   const tourPages = [
     { name: "Customize", detail: "Paste a job URL or job text, analyze fit, generate a tailored resume, cover letter, and outreach drafts from one screen." },
@@ -227,6 +263,15 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
                     <option value="ollama">Ollama</option>
                     <option value="gemini">Gemini</option>
                     <option value="groq">Groq</option>
+                    <option value="xai">Grok / xAI</option>
+                    <option value="kimi">Kimi / Moonshot</option>
+                    <option value="mistral">Mistral</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="together">Together</option>
+                    <option value="fireworks">Fireworks</option>
+                    <option value="cerebras">Cerebras</option>
+                    <option value="perplexity">Perplexity</option>
+                    <option value="huggingface">Hugging Face</option>
                     <option value="openai">OpenAI</option>
                     <option value="anthropic">Anthropic</option>
                     <option value="deepseek">DeepSeek</option>

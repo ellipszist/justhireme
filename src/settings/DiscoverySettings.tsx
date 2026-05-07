@@ -1,7 +1,32 @@
+import { useState, type ChangeEvent } from "react";
 import type { Cfg } from "./shared";
 import { BigToggle, GLOBAL_SOURCE_PRESET, INDIA_SOURCE_PRESET, LabelledField, SectionLabel } from "./shared";
 
-export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: keyof Cfg) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void; onChange: (k: keyof Cfg, v: string) => void }) {
+export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: keyof Cfg) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void; onChange: (k: keyof Cfg, v: string) => void }) {
+  const [siteDraft, setSiteDraft] = useState("");
+
+  const sourceTargetFromSite = (raw: string) => {
+    const value = raw.trim().replace(/,$/, "");
+    if (!value) return "";
+    const lower = value.toLowerCase();
+    if (/^(hn-hiring|site:|ats:|github:|hn:|reddit:|https?:\/\/)/i.test(value)) {
+      if (lower.includes("greenhouse.io") || lower.includes("lever.co") || lower.includes("ashbyhq.com") || lower.includes("workable.com")) {
+        return value;
+      }
+      return value;
+    }
+    const domain = value.replace(/^www\./i, "").replace(/\/+$/, "");
+    return `site:${domain} ("jobs" OR "careers" OR "hiring" OR "open roles") (remote OR hybrid OR onsite OR India OR global)`;
+  };
+
+  const addSiteSource = () => {
+    const target = sourceTargetFromSite(siteDraft);
+    if (!target || cfg.job_boards.includes(target)) return;
+    const sep = cfg.job_boards.trim() ? ",\n" : "";
+    onChange("job_boards", cfg.job_boards.trim() + sep + target);
+    setSiteDraft("");
+  };
+
   return (
     <>
 {/* 3. Scraping */}
@@ -54,9 +79,9 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
                 <LabelledField label="X recent-search queries" hint="one query per line; leave blank for AI defaults">
                   <textarea value={cfg.x_search_queries} onChange={set("x_search_queries")} rows={4} className="mono field-input"
                     placeholder={[
-                      "(\"hiring\" OR \"job opening\" OR \"open role\") (\"AI engineer\" OR \"software engineer\" OR \"Python developer\") lang:en -is:retweet",
-                      "(\"we are hiring\" OR \"is hiring\") (\"React developer\" OR \"backend engineer\" OR \"full stack engineer\") lang:en -is:retweet",
-                      "(\"apply\" OR \"open role\") (Python OR React OR FastAPI OR LLM) (remote OR hybrid) lang:en -is:retweet",
+                      "(\"hiring\" OR \"job opening\" OR \"open role\") (\"marketing\" OR \"sales\" OR \"operations\" OR \"developer\") lang:en -is:retweet",
+                      "(\"we are hiring\" OR \"is hiring\") (\"remote\" OR \"hybrid\" OR \"India\" OR \"global\") lang:en -is:retweet",
+                      "(\"apply\" OR \"open role\") (\"entry level\" OR \"associate\" OR \"manager\" OR \"specialist\") lang:en -is:retweet",
                     ].join("\n")}
                     style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5, resize: "vertical", lineHeight: 1.6 }} />
                 </LabelledField>
@@ -118,9 +143,9 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
                 <LabelledField label="Free source targets" hint="github:, hn:, reddit:, or ats: targets">
                   <textarea value={cfg.free_source_targets} onChange={set("free_source_targets")} rows={5} className="mono field-input"
                     placeholder={[
-                      "github:software engineer help wanted",
-                      "hn:software engineer remote",
-                      "reddit:cscareerquestions:developer hiring",
+                      "github:jobs hiring help wanted",
+                      "hn:jobs remote hiring",
+                      "reddit:forhire:hiring job remote",
                       "ats:greenhouse:openai",
                     ].join("\n")}
                     style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5, resize: "vertical", lineHeight: 1.6 }} />
@@ -136,13 +161,59 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
                   </LabelledField>
                 </div>
               </div>
+              <div style={{ padding: 13, borderRadius: 13, background: "var(--paper-2)", border: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 10 }}>
+                <SectionLabel label="Custom Connectors" sub="Premium/private JSON APIs normalized into job leads" />
+                <BigToggle
+                  active={cfg.custom_connectors_enabled === "true"}
+                  onToggle={() => onChange("custom_connectors_enabled", cfg.custom_connectors_enabled === "true" ? "false" : "true")}
+                  icon="layers"
+                  label="Connector scan"
+                  badge={cfg.custom_connectors_enabled === "true" ? "on" : "off"}
+                  sub="Use this for paid tools, internal feeds, private job APIs, and premium lead providers"
+                  tone="purple"
+                />
+                <LabelledField label="Connector definitions" hint="JSON array; no secrets here">
+                  <textarea value={cfg.custom_connectors} onChange={set("custom_connectors")} rows={9} className="mono field-input"
+                    placeholder={JSON.stringify([
+                      {
+                        name: "PremiumJobs",
+                        url: "https://api.example.com/jobs",
+                        method: "GET",
+                        items_path: "jobs",
+                        fields: {
+                          title: "title",
+                          company: "company.name",
+                          url: "apply_url",
+                          description: "description",
+                          posted_date: "posted_at",
+                          location: "location",
+                          budget: "salary",
+                        },
+                      },
+                    ], null, 2)}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5, resize: "vertical", lineHeight: 1.6 }} />
+                </LabelledField>
+                <LabelledField label="Connector headers" hint="JSON object; sensitive, preserved when masked">
+                  <textarea value={cfg.custom_connector_headers} onChange={set("custom_connector_headers")} rows={5} className="mono field-input"
+                    placeholder={JSON.stringify({
+                      PremiumJobs: {
+                        Authorization: "Bearer YOUR_TOKEN",
+                        "X-API-Key": "optional-key",
+                      },
+                    }, null, 2)}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5, resize: "vertical", lineHeight: 1.6 }} />
+                </LabelledField>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
+                  Each connector fetches JSON, reads <span className="mono">items_path</span>, maps fields, then sends leads through the same quality gate. Keep tokens in headers, not definitions.
+                </div>
+              </div>
               <LabelledField label="Target job boards / search URLs" hint="comma-separated">
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Market focus</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {[
-                      { id: "global", label: "Global boards", sub: "HN, RemoteOK, Remotive, ATS, RSS, job boards" },
-                      { id: "india", label: "India only", sub: "India roles, Indian startups, Indian job boards and ATS" },
+                      { id: "global", label: "Global market", sub: "Worldwide job boards, ATS pages, remote feeds, and role-neutral sources" },
+                      { id: "india", label: "India market", sub: "India job boards, Indian startups, local ATS pages, and remote-India roles" },
                     ].map(mode => {
                       const active = (cfg.job_market_focus || "global") === mode.id;
                       return (
@@ -160,6 +231,29 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
                   </div>
                 </div>
                 <div style={{ marginBottom: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, marginBottom: 10 }}>
+                    <input
+                      className="mono field-input"
+                      value={siteDraft}
+                      onChange={e => setSiteDraft(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addSiteSource();
+                        }
+                      }}
+                      placeholder="Paste a job site, ATS board, RSS/API URL, or domain"
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5 }}
+                    />
+                    <button className="btn btn-accent" onClick={addSiteSource} disabled={!siteDraft.trim()} style={{ minWidth: 110, justifyContent: "center" }}>
+                      Add source
+                    </button>
+                  </div>
+                  {siteDraft.trim() && (
+                    <div className="mono" style={{ marginBottom: 10, color: "var(--ink-3)", fontSize: 10.5, lineHeight: 1.45 }}>
+                      Will add: {sourceTargetFromSite(siteDraft)}
+                    </div>
+                  )}
                   <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 7 }}>Quick add sources</div>
                   <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                     {[
@@ -167,18 +261,21 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
                       { label: "India preset", url: INDIA_SOURCE_PRESET },
                       { label: "HN Hiring", url: "hn-hiring" },
                       { label: "RemoteOK", url: "https://remoteok.com/api" },
-                      { label: "Naukri", url: "site:naukri.com software engineer India" },
-                      { label: "Instahyre", url: "site:instahyre.com software engineer India" },
-                      { label: "Cutshort", url: "site:cutshort.io/jobs software engineer India startup" },
+                      { label: "LinkedIn", url: "site:linkedin.com/jobs" },
+                      { label: "Indeed", url: "site:indeed.com/jobs" },
+                      { label: "Naukri", url: "site:naukri.com jobs India" },
+                      { label: "Instahyre", url: "site:instahyre.com jobs India" },
+                      { label: "Cutshort", url: "site:cutshort.io/jobs India startup" },
+                      { label: "Foundit", url: "site:foundit.in jobs India" },
+                      { label: "Internshala", url: "site:internshala.com/jobs India" },
                       { label: "Greenhouse", url: "site:boards.greenhouse.io" },
                       { label: "Lever", url: "site:jobs.lever.co" },
                       { label: "Ashby", url: "site:jobs.ashbyhq.com" },
                       { label: "Workable", url: "site:apply.workable.com" },
                       { label: "Wellfound", url: "site:wellfound.com/jobs" },
                       { label: "WWR", url: "https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss" },
-                      { label: "Remotive AI", url: "https://remotive.com/api/remote-jobs?search=ai" },
-                      { label: "Remotive Python", url: "https://remotive.com/api/remote-jobs?search=python" },
-                      { label: "Remotive React", url: "https://remotive.com/api/remote-jobs?search=react" },
+                      { label: "Remotive All", url: "https://remotive.com/api/remote-jobs" },
+                      { label: "Jobicy All", url: "https://jobicy.com/api/v2/remote-jobs?count=50" },
                       { label: "Jobicy", url: "https://jobicy.com/feed/newjobs" },
                     ].map(p => {
                       const already = cfg.job_boards.includes(p.url);
@@ -209,17 +306,19 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
                     "hn-hiring,",
                     "# Direct API / RSS feeds",
                     "https://remoteok.com/api,",
-                    "https://remotive.com/api/remote-jobs?search=python,",
-                    "https://remotive.com/api/remote-jobs?search=react,",
-                    "https://remotive.com/api/remote-jobs?search=ai,",
+                    "https://remotive.com/api/remote-jobs,",
+                    "https://jobicy.com/api/v2/remote-jobs?count=50,",
                     "https://jobicy.com/feed/newjobs,",
-                    "https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss,",
-                    "# ATS boards (Google site: search — query gen enriches these)",
+                    "https://weworkremotely.com/remote-jobs.rss,",
+                    "# ATS and job boards (query generation tailors these to your profile)",
                     "site:boards.greenhouse.io,",
                     "site:jobs.lever.co,",
                     "site:jobs.ashbyhq.com,",
                     "site:apply.workable.com,",
                     "site:wellfound.com/jobs,",
+                    "site:linkedin.com/jobs,",
+                    "site:indeed.com/jobs,",
+                    "site:naukri.com jobs India,",
                   ].join("\n")}
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5, resize: "vertical", lineHeight: 1.6 }} />
               </LabelledField>

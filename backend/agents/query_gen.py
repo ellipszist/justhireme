@@ -7,6 +7,7 @@ candidate's actual tech stack rather than generic keywords.
 """
 
 import re
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from pydantic import BaseModel
 from typing import List
 from logger import get_logger
@@ -56,11 +57,81 @@ def _detect_experience_level(profile: dict) -> str:
 def _seniority_hint(level: str) -> str:
     hints = {
         "fresher": '"intern" OR "new grad" OR "entry level" OR "junior"',
-        "junior": '"junior" OR "entry level" OR "software engineer" OR "developer"',
-        "mid": '"software engineer" OR "backend engineer" OR "frontend engineer" OR "full stack"',
-        "senior": '"senior" OR "staff" OR "lead" OR "software engineer"',
+        "junior": '"junior" OR "entry level" OR "associate" OR "coordinator"',
+        "mid": '"specialist" OR "associate" OR "manager" OR "consultant"',
+        "senior": '"senior" OR "lead" OR "principal" OR "manager"',
     }
-    return hints.get(level, '"software engineer" OR "developer"')
+    return hints.get(level, '"job" OR "role" OR "hiring"')
+
+
+def _role_terms(profile: dict) -> list[str]:
+    chunks = [
+        str(profile.get("s") or ""),
+        *(str(e.get("role", "")) for e in profile.get("exp", []) if isinstance(e, dict)),
+        *(str(p.get("title", "")) for p in profile.get("projects", []) if isinstance(p, dict)),
+    ]
+    text = " ".join(chunks).lower()
+    catalog = [
+        ("marketing", ("marketing", "growth", "seo", "content")),
+        ("sales", ("sales", "business development", "account executive", "bd")),
+        ("product", ("product manager", "product", "pm")),
+        ("design", ("designer", "design", "ui/ux", "ux")),
+        ("data", ("data analyst", "data scientist", "analytics", "bi")),
+        ("finance", ("finance", "accounting", "investment")),
+        ("operations", ("operations", "ops", "supply chain")),
+        ("customer success", ("customer success", "support", "solutions")),
+        ("human resources", ("hr", "human resources", "recruiter", "talent")),
+        ("software", ("software", "engineer", "developer", "backend", "frontend", "full stack", "ai", "ml")),
+    ]
+    roles = [label for label, aliases in catalog if any(alias in text for alias in aliases)]
+    return roles[:3] or ["job", "role", "hiring"]
+
+
+def _profile_search_terms(profile: dict) -> list[str]:
+    target_role = str(profile.get("s") or "").strip()
+    recent_roles = [str(e.get("role", "")).strip() for e in profile.get("exp", []) if isinstance(e, dict) and e.get("role")]
+    skills = [str(s.get("n", "")).strip() for s in profile.get("skills", []) if isinstance(s, dict) and s.get("n")]
+    terms = [target_role, *recent_roles[:2], *skills[:4], *_role_terms(profile)]
+    clean: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        term = re.sub(r"\s+", " ", term).strip(" ,.;:-")
+        if not term:
+            continue
+        # Keep API search terms compact; long summaries make bad query params.
+        words = term.split()
+        if len(words) > 5:
+            term = " ".join(words[:5])
+        key = term.lower()
+        if key not in seen:
+            seen.add(key)
+            clean.append(term)
+    return clean[:8] or ["job"]
+
+
+def _set_query_param(url: str, key: str, value: str) -> str:
+    parsed = urlparse(url)
+    params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    params[key] = value
+    return urlunparse(parsed._replace(query=urlencode(params)))
+
+
+def _enrich_passthrough_targets(urls: list[str], profile: dict) -> list[str]:
+    if not urls:
+        return urls
+    terms = _profile_search_terms(profile)
+    primary = terms[0]
+    broad_role = next((t for t in terms if t.lower() not in {"job", "role", "hiring"}), primary)
+    out: list[str] = []
+    for url in urls:
+        lower = url.lower()
+        if "remotive.com/api/remote-jobs" in lower and "search=" not in lower:
+            out.append(_set_query_param(url, "search", primary))
+        elif "jobicy.com/api" in lower and "tag=" not in lower:
+            out.append(_set_query_param(url, "tag", broad_role))
+        else:
+            out.append(url)
+    return out
 
 
 def _market_focus(value) -> str:
@@ -85,14 +156,16 @@ def generate(profile: dict, urls: list[str], market_focus: str = "global") -> li
 
     focus = _market_focus(market_focus)
     site_domains, passthrough = _extract_domains(urls)
+    passthrough = _enrich_passthrough_targets(passthrough, profile)
 
     if not site_domains:
         return urls  # nothing to enrich
 
     # ── Build a compact profile summary for the prompt ──────────────────────
-    target_role      = (profile.get("s") or "Software Engineer").strip()
+    target_role      = (profile.get("s") or "General job seeker").strip()
     skills           = [s["n"] for s in profile.get("skills", []) if s.get("n")]
     experience_level = _detect_experience_level(profile)
+    role_terms       = _role_terms(profile)
 
     seniority_hint = _seniority_hint(experience_level)
 
@@ -108,19 +181,22 @@ def generate(profile: dict, urls: list[str], market_focus: str = "global") -> li
     recent_roles = [e.get("role", "") for e in profile.get("exp", []) if e.get("role")][:3]
 
     # ── Prompt ──────────────────────────────────────────────────────────────
-    system = """You are a senior technical recruiter and Boolean search expert.
+    system = """You are JustHireMe's production query-planning agent: a senior global recruiter and Boolean search expert.
 Your job is to write highly targeted Google site: search queries that will surface
 the most relevant job postings for a specific candidate.
 
 Rules:
 - Output exactly ONE query per domain — no more.
 - Each query must start with   site:<domain>
-- Use 2–4 specific technical terms the candidate actually knows.
-- Prefer role-specific terms over generic ones ("LangChain Engineer" beats "Software Engineer").
+- Use 2-4 specific role, industry, tool, or skill terms the candidate actually knows.
+- Do not assume the user is a software/tech candidate; support any field.
+- Prefer role-specific terms over generic ones ("Growth Marketer" beats "Marketing", "SEO Specialist" beats "Content").
 - Use the detected candidate seniority as a preference, not a hard global filter.
 - Do not exclude other levels unless the profile is clearly unsuitable for that level.
 - Use OR between alternatives: site:jobs.lever.co "FastAPI" ("junior" OR "entry level")
 - Never add quotation marks around the whole query, only around individual terms.
+- Never invent skills, locations, seniority, visa status, degrees, employers, or clearance.
+- Avoid query spam: do not include more than 6 OR alternatives in one query.
 - Return only the list of queries — no extra commentary."""
 
     if focus == "india":
@@ -134,7 +210,8 @@ Target role / summary : {target_role}
 Detected seniority    : {experience_level.upper()} - preferred seniority query terms: {seniority_hint}
 Market focus          : {"INDIA ONLY - Indian startups and India-based roles" if focus == "india" else "Global"}
 Top skills            : {', '.join(skills[:15])}
-Project tech stack    : {', '.join(stack_tokens)}
+Detected role themes  : {', '.join(role_terms)}
+Project/tool stack    : {', '.join(stack_tokens)}
 Recent role titles    : {', '.join(recent_roles) if recent_roles else 'none (fresher/student)'}
 
 JOB BOARD DOMAINS (one query each):
@@ -147,8 +224,9 @@ Generate the queries now."""
         smart = [q.strip() for q in result.queries if q.strip()]
     except Exception as exc:
         _log.warning("LLM failed (%s), falling back to default queries", exc)
-        # Fallback: build simple queries from top skills
-        top = " OR ".join(f'"{s}"' for s in skills[:3]) if skills else f'"{target_role}"'
+        # Fallback: build simple queries from top skills or inferred role themes.
+        top_terms = _profile_search_terms(profile)[:3] or skills[:3] or role_terms[:3] or [target_role]
+        top = " OR ".join(f'"{s}"' for s in top_terms)
         smart = [f"site:{d} ({top}) ({seniority_hint})" for d in site_domains]
 
     if focus == "india":

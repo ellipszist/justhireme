@@ -55,8 +55,16 @@ _b = _ensure_dir(_b)
 _g, _v = os.path.join(_b, "graph"), os.path.join(_b, "vector")
 _v = _ensure_dir(_v)
 
-db   = kuzu.Database(_g)
-conn = kuzu.Connection(db)
+_GRAPH_ERROR = ""
+try:
+    db = kuzu.Database(_g)
+    conn = kuzu.Connection(db)
+except Exception as exc:
+    db = None
+    conn = None
+    _GRAPH_ERROR = str(exc)
+    _log.warning("graph store disabled: %s", exc)
+
 try:
     vec: lancedb.LanceDBConnection | _NullVectorStore = lancedb.connect(_v)
 except Exception as exc:
@@ -64,6 +72,8 @@ except Exception as exc:
     vec = _NullVectorStore()
 
 def _init():
+    if conn is None:
+        return
     for s in [
         "CREATE NODE TABLE IF NOT EXISTS Candidate(id STRING, n STRING, s STRING, PRIMARY KEY(id))",
         "CREATE NODE TABLE IF NOT EXISTS Skill(id STRING, n STRING, cat STRING, PRIMARY KEY(id))",
@@ -85,6 +95,27 @@ def _init():
         conn.execute(s)
 
 _init()
+
+
+def graph_available() -> bool:
+    return db is not None and conn is not None
+
+
+def graph_error() -> str:
+    return _GRAPH_ERROR
+
+
+def graph_counts() -> dict:
+    out = {key: 0 for key in ["candidate", "skill", "project", "experience", "joblead"]}
+    if conn is None:
+        return out
+    for t in ["Candidate", "Skill", "Project", "Experience", "JobLead"]:
+        try:
+            r = conn.execute(f"MATCH (n:{t}) RETURN count(n)")
+            out[t.lower()] = r.get_next()[0] if r.has_next() else 0
+        except Exception as exc:
+            _log.warning("graph count failed for %s: %s", t, exc)
+    return out
 
 
 def _init_sql():

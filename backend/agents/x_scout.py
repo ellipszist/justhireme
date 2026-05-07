@@ -38,6 +38,15 @@ TECH_TERMS = (
     "typescript", "voice ai", "livekit", "deepgram", "api", "saas", "mvp",
 )
 
+ROLE_TERMS = (
+    "marketing", "growth", "seo", "content", "sales", "business development",
+    "account executive", "product manager", "designer", "design", "ui/ux",
+    "data analyst", "data scientist", "analytics", "finance", "accounting",
+    "operations", "supply chain", "customer success", "support", "hr",
+    "human resources", "recruiter", "talent", "consultant", "manager",
+    "associate", "coordinator", "intern", "job", "role",
+)
+
 INTENT_TERMS = (
     "hiring", "job opening", "open role", "role available", "we're hiring",
     "we are hiring", "is hiring", "apply", "internship", "new grad",
@@ -129,7 +138,7 @@ def classify_post(text: str) -> str | None:
     lower = _clean_text(text).lower()
     if not lower:
         return None
-    if not _has_any(lower, TECH_TERMS):
+    if not (_has_any(lower, TECH_TERMS) or _has_any(lower, ROLE_TERMS)):
         return None
     if not _has_any(lower, INTENT_TERMS):
         return None
@@ -148,7 +157,7 @@ def signal_quality(text: str, user: dict | None = None, kind: str | None = None)
     reasons: list[str] = []
     score = 0
 
-    tech = _matched_terms(lower, TECH_TERMS)
+    tech = _matched_terms(lower, TECH_TERMS + ROLE_TERMS)
     intent = _matched_terms(lower, INTENT_TERMS)
     urgency = _matched_terms(lower, URGENCY_TERMS)
     buyer = _matched_terms(lower, BUYER_TERMS)
@@ -157,7 +166,7 @@ def signal_quality(text: str, user: dict | None = None, kind: str | None = None)
     if tech:
         score += 25
         tags.extend(tech[:3])
-        reasons.append("technical fit: " + ", ".join(tech[:3]))
+        reasons.append("role/profile signal: " + ", ".join(tech[:3]))
     if intent:
         score += 25
         tags.extend(intent[:3])

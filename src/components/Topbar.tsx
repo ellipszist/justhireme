@@ -12,13 +12,21 @@ export function Topbar({ view }: { view: View }) {
     profile:   "Profile",
     ingestion: "Add Context",
   };
+  const subtitles: Record<View, string> = {
+    apply: "Generate resume, cover letter, and outreach from one job",
+    dashboard: "Scan, review, and move the next best roles forward",
+    inbox: "Quality-gated leads ready for review",
+    pipeline: "Track applications and follow-ups",
+    graph: "Local profile context used by matching",
+    activity: "Backend events and agent logs",
+    profile: "Candidate details used for tailoring",
+    ingestion: "Add resume, project, portfolio, and GitHub context",
+  };
   return (
     <header className="topbar">
-      <div className="row gap-3" style={{ flex: 1 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 600 }}>{titles[view]}</h2>
-        <span className="pill mono" style={{ fontSize: 9.5, background: "var(--paper-3)", color: "var(--ink-3)" }}>
-          {view.toUpperCase()}
-        </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <h2 style={{ fontSize: 19, fontWeight: 600, letterSpacing: 0 }}>{titles[view]}</h2>
+        <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>{subtitles[view]}</div>
       </div>
       {view === "profile" && (
         <button className="btn" onClick={() => window.dispatchEvent(new CustomEvent("profile-export"))}>

@@ -1,5 +1,6 @@
 import asyncio
 import html
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus, urlparse
@@ -22,7 +23,7 @@ from agents.lead_intel import (
     urgency_from_text,
 )
 from agents.quality_gate import MIN_DEFAULT_QUALITY, attach_quality_metadata, evaluate_lead_quality
-from agents.scout import _is_recent, _strip_html_text, classify_job_seniority
+from agents.scout import _hn_company_role, _is_recent, _looks_like_hn_job_post, _strip_html_text, classify_job_seniority
 from db.client import rank_lead_by_feedback, save_lead, url_exists
 from logger import get_logger
 
@@ -35,10 +36,12 @@ DEFAULT_TARGETS = [
     "ats:greenhouse:openai",
     "ats:greenhouse:anthropic",
     "ats:lever:perplexity",
-    "github:software engineer help wanted",
-    "hn:software engineer remote hiring",
-    "reddit:cscareerquestions:software engineer hiring",
+    "github:jobs hiring help wanted",
+    "hn:jobs remote hiring",
+    "reddit:forhire:hiring job remote",
 ]
+
+_CONNECTOR_MAX_ITEMS = 60
 
 
 def split_lines(raw: str | None) -> list[str]:
@@ -54,6 +57,119 @@ def targets_from_settings(raw_targets: str | None, raw_watchlist: str | None) ->
     targets = split_lines(raw_targets)
     targets.extend(_ats_targets_from_watchlist(raw_watchlist))
     return targets or DEFAULT_TARGETS
+
+
+def _dot_get(value, path: str, default=""):
+    current = value
+    for part in str(path or "").split("."):
+        part = part.strip()
+        if not part:
+            continue
+        if isinstance(current, dict):
+            current = current.get(part, default)
+        elif isinstance(current, list) and part.isdigit():
+            idx = int(part)
+            current = current[idx] if 0 <= idx < len(current) else default
+        else:
+            return default
+    return current
+
+
+def _parse_json_setting(raw: str | None, fallback):
+    text = str(raw or "").strip()
+    if not text:
+        return fallback
+    try:
+        return json.loads(text)
+    except Exception as exc:
+        LAST_ERRORS.append(f"custom connectors JSON invalid: {exc}")
+        return fallback
+
+
+def _connector_headers(raw_headers: str | None, name: str) -> dict:
+    data = _parse_json_setting(raw_headers, {})
+    if not isinstance(data, dict):
+        return {}
+    headers = data.get(name) or data.get("*") or {}
+    if not isinstance(headers, dict):
+        return {}
+    return {str(k): str(v) for k, v in headers.items() if str(k).strip() and str(v).strip()}
+
+
+async def _scrape_custom_connector(connector: dict, raw_headers: str | None = None) -> list[dict]:
+    name = str(connector.get("name") or "custom").strip()[:80] or "custom"
+    url = str(connector.get("url") or "").strip()
+    method = str(connector.get("method") or "GET").upper()
+    if method != "GET":
+        LAST_ERRORS.append(f"{name}: only GET custom connectors are supported right now")
+        return []
+    if not url.startswith(("https://", "http://")):
+        LAST_ERRORS.append(f"{name}: connector URL must start with http:// or https://")
+        return []
+
+    headers = {
+        "User-Agent": "JustHireMe custom connector",
+        "Accept": "application/json",
+        **_connector_headers(raw_headers, name),
+    }
+    params = connector.get("params") if isinstance(connector.get("params"), dict) else None
+    async with httpx.AsyncClient(timeout=30, headers=headers, follow_redirects=True) as cx:
+        r = await cx.get(url, params=params)
+        if r.status_code == 429:
+            retry_after = int(r.headers.get("Retry-After", 15))
+            await asyncio.sleep(retry_after)
+            r.raise_for_status()
+        r.raise_for_status()
+        payload = r.json()
+
+    items = _dot_get(payload, str(connector.get("items_path") or ""), payload)
+    if isinstance(items, dict):
+        items = items.get("items") or items.get("jobs") or items.get("results") or []
+    if not isinstance(items, list):
+        LAST_ERRORS.append(f"{name}: items_path did not resolve to a list")
+        return []
+
+    fields = connector.get("fields") if isinstance(connector.get("fields"), dict) else {}
+    defaults = {
+        "title": "title",
+        "company": "company",
+        "url": "url",
+        "description": "description",
+        "posted_date": "posted_date",
+        "location": "location",
+        "budget": "budget",
+    }
+    mapping = {**defaults, **{str(k): str(v) for k, v in fields.items()}}
+    results: list[dict] = []
+    for item in items[:_CONNECTOR_MAX_ITEMS]:
+        if not isinstance(item, dict):
+            continue
+        posted = str(_dot_get(item, mapping.get("posted_date", ""), "") or "")
+        if posted and not _is_recent(posted):
+            continue
+        title = str(_dot_get(item, mapping.get("title", ""), "") or "").strip()
+        lead_url = str(_dot_get(item, mapping.get("url", ""), "") or "").strip()
+        if not title or not lead_url:
+            continue
+        desc = clean_text(str(_dot_get(item, mapping.get("description", ""), "") or ""))
+        location = str(_dot_get(item, mapping.get("location", ""), "") or "")
+        budget = str(_dot_get(item, mapping.get("budget", ""), "") or "")
+        if location:
+            desc = (desc + f"\nLocation: {location}").strip()
+        if budget:
+            desc = (desc + f"\nBudget: {budget}").strip()
+        results.append(_text_lead({
+            "title": title,
+            "company": str(_dot_get(item, mapping.get("company", ""), "") or name),
+            "url": lead_url,
+            "platform": f"connector:{name}",
+            "description": desc[:1600],
+            "posted_date": posted,
+            "location": location,
+            "budget": budget,
+            "source_meta": {"source": "custom_connector", "connector": name},
+        }))
+    return results
 
 
 def _ats_targets_from_watchlist(raw: str | None) -> list[str]:
@@ -280,7 +396,7 @@ async def _scrape_workable(slug: str) -> list[dict]:
 
 def _github_query(raw: str) -> str:
     q = raw.split(":", 1)[1].strip() if raw.lower().startswith("github:") else raw.strip()
-    base = q or "software engineer help wanted"
+    base = q or "jobs hiring help wanted"
     return f'is:issue is:open archived:false updated:>={(datetime.now(timezone.utc) - timedelta(days=30)).date()} {base}'
 
 
@@ -318,7 +434,7 @@ async def _scrape_github(raw: str) -> list[dict]:
 
 async def _scrape_hn(raw: str) -> list[dict]:
     query = raw.split(":", 1)[1].strip() if raw.lower().startswith("hn:") else raw.strip()
-    query = query or "software engineer remote hiring"
+    query = query or "jobs remote hiring"
     cutoff = int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
     data = await _json_get("https://hn.algolia.com/api/v1/search_by_date", {
         "query": query,
@@ -328,22 +444,25 @@ async def _scrape_hn(raw: str) -> list[dict]:
     })
     results = []
     for hit in data.get("hits", []):
+        story_title = hit.get("story_title", "")
+        if not re.match(r"^Ask HN:\s*Who is hiring\?", story_title or "", flags=re.I):
+            continue
         text = _strip_html_text(hit.get("comment_text") or hit.get("story_text") or "")
-        if len(text) < 60:
+        if len(text) < 60 or not _looks_like_hn_job_post(text):
             continue
         created = hit.get("created_at", "")
         if created and not _is_recent(created):
             continue
-        title = (hit.get("story_title") or text.splitlines()[0])[:180]
+        company, title = _hn_company_role(text, hit.get("author", "HN"))
         url = f"https://news.ycombinator.com/item?id={hit.get('objectID')}"
         results.append(_text_lead({
             "title": title,
-            "company": hit.get("author", "HN"),
+            "company": company or hit.get("author", "HN"),
             "url": url,
             "platform": "hn",
             "description": text[:1200],
             "posted_date": created,
-            "source_meta": {"source": "hn", "story": hit.get("story_title", "")},
+            "source_meta": {"source": "hn", "story": story_title},
         }, default_kind="job"))
     return results
 
@@ -351,7 +470,7 @@ async def _scrape_hn(raw: str) -> list[dict]:
 async def _scrape_reddit(raw: str) -> list[dict]:
     parts = raw.split(":", 2)
     subreddit = parts[1].strip("/") if len(parts) >= 2 and parts[1] else "forhire"
-    query = parts[2].strip() if len(parts) >= 3 else "AI automation developer"
+    query = parts[2].strip() if len(parts) >= 3 else "hiring job remote"
     url = f"https://www.reddit.com/r/{subreddit}/search.json"
     data = await _json_get(url, {
         "q": query,
@@ -428,6 +547,9 @@ async def _scrape_target(target: str) -> list[dict]:
 def run(
     raw_targets: str | None = None,
     raw_watchlist: str | None = None,
+    raw_custom_connectors: str | None = None,
+    raw_custom_headers: str | None = None,
+    custom_connectors_enabled: bool = False,
     targets: list[str] | None = None,
     kind_filter: str | None = None,
     max_requests: int = 20,
@@ -437,6 +559,12 @@ def run(
     LAST_ERRORS = []
     wanted = "job"
     all_targets = targets or targets_from_settings(raw_targets, raw_watchlist)
+    custom_connectors = []
+    if custom_connectors_enabled:
+        parsed = _parse_json_setting(raw_custom_connectors, [])
+        custom_connectors = parsed if isinstance(parsed, list) else []
+        if parsed and not isinstance(parsed, list):
+            LAST_ERRORS.append("custom connectors must be a JSON array")
     try:
         cap = max(1, min(int(max_requests or 20), 80))
     except Exception:
@@ -445,7 +573,7 @@ def run(
         min_score = max(0, min(int(min_signal_score or 45), 100))
     except Exception:
         min_score = MIN_DEFAULT_QUALITY
-    LAST_USAGE = {"configured": len(all_targets), "executed": 0, "saved": 0, "filtered": 0}
+    LAST_USAGE = {"configured": len(all_targets) + len(custom_connectors), "executed": 0, "saved": 0, "filtered": 0}
     leads: list[dict] = []
     seen: set[str] = set()
 
@@ -510,6 +638,74 @@ def run(
             LAST_USAGE["saved"] += 1
             leads.append(item)
 
+    remaining = max(0, cap - LAST_USAGE["executed"])
+    for connector in custom_connectors[:remaining]:
+        if not isinstance(connector, dict):
+            LAST_ERRORS.append("custom connector skipped: each connector must be an object")
+            continue
+        try:
+            batch = asyncio.run(_scrape_custom_connector(connector, raw_custom_headers))
+            LAST_USAGE["executed"] += 1
+        except Exception as exc:
+            name = str(connector.get("name") or "custom")
+            detail = str(exc).strip() or type(exc).__name__
+            LAST_ERRORS.append(f"{name}: {detail}")
+            continue
+
+        for item in batch:
+            if wanted and item.get("kind") != wanted:
+                LAST_USAGE["filtered"] += 1
+                continue
+            item = rank_lead_by_feedback(item)
+            quality = evaluate_lead_quality(item, min_quality=min_score)
+            item = attach_quality_metadata(item, quality)
+            if not quality.get("accepted"):
+                LAST_USAGE["filtered"] += 1
+                LAST_ERRORS.append(f"filtered {item.get('platform', 'connector')}:{item.get('url', '')} - {quality.get('reason', 'quality gate')}")
+                continue
+            if (item.get("signal_score") or 0) < min_score:
+                LAST_USAGE["filtered"] += 1
+                continue
+            url = item.get("url", "")
+            if not url:
+                continue
+            jid = lead_id(item.get("platform", "connector"), url)
+            if jid in seen or url_exists(jid):
+                continue
+            seen.add(jid)
+            item["job_id"] = jid
+            save_lead(
+                jid,
+                item.get("title", ""),
+                item.get("company", ""),
+                url,
+                item.get("platform", "connector"),
+                item.get("description", ""),
+                kind=item.get("kind", "job"),
+                budget=item.get("budget", ""),
+                signal_score=item.get("signal_score", 0),
+                signal_reason=item.get("signal_reason", ""),
+                signal_tags=item.get("signal_tags", []),
+                outreach_reply=item.get("outreach_reply", ""),
+                outreach_dm=item.get("outreach_dm", ""),
+                outreach_email=item.get("outreach_email", ""),
+                proposal_draft=item.get("proposal_draft", ""),
+                fit_bullets=item.get("fit_bullets", []),
+                followup_sequence=item.get("followup_sequence", []),
+                proof_snippet=item.get("proof_snippet", ""),
+                tech_stack=item.get("tech_stack", []),
+                location=item.get("location", ""),
+                urgency=item.get("urgency", ""),
+                base_signal_score=item.get("base_signal_score"),
+                learning_delta=item.get("learning_delta"),
+                learning_reason=item.get("learning_reason", ""),
+                source_meta=item.get("source_meta", {}),
+            )
+            LAST_USAGE["saved"] += 1
+            leads.append(item)
+
     if len(all_targets) > cap:
         LAST_ERRORS.append(f"Free-source cap hit: ran {cap} of {len(all_targets)} targets")
+    if len(custom_connectors) > remaining:
+        LAST_ERRORS.append(f"Custom connector cap hit: ran {remaining} of {len(custom_connectors)} connectors")
     return leads

@@ -19,6 +19,16 @@ _KEY_NAMES: dict[str, str] = {
     "nvidia":    "nvidia_api_key",
     "openai":    "openai_api_key",
     "deepseek":  "deepseek_api_key",
+    "xai":       "xai_api_key",
+    "kimi":      "kimi_api_key",
+    "mistral":   "mistral_api_key",
+    "openrouter": "openrouter_api_key",
+    "together":  "together_api_key",
+    "fireworks": "fireworks_api_key",
+    "cerebras":  "cerebras_api_key",
+    "perplexity": "perplexity_api_key",
+    "huggingface": "huggingface_api_key",
+    "custom":    "custom_api_key",
 }
 
 # Maps provider id → environment variable fallback
@@ -29,6 +39,16 @@ _ENV_NAMES: dict[str, str] = {
     "nvidia":    "NVIDIA_API_KEY",
     "openai":    "OPENAI_API_KEY",
     "deepseek":  "DEEPSEEK_API_KEY",
+    "xai":       "XAI_API_KEY",
+    "kimi":      "MOONSHOT_API_KEY",
+    "mistral":   "MISTRAL_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "together":  "TOGETHER_API_KEY",
+    "fireworks": "FIREWORKS_API_KEY",
+    "cerebras":  "CEREBRAS_API_KEY",
+    "perplexity": "PERPLEXITY_API_KEY",
+    "huggingface": "HF_TOKEN",
+    "custom":    "OPENAI_COMPAT_API_KEY",
 }
 
 # Default model per provider (used when no step/global model is set)
@@ -39,8 +59,42 @@ _DEFAULT_MODELS: dict[str, str] = {
     "nvidia":    "z-ai/glm-5.1",
     "openai":    "gpt-4o-mini",
     "deepseek":  "deepseek-chat",
+    "xai":       "grok-4",
+    "kimi":      "kimi-k2-turbo-preview",
+    "mistral":   "mistral-large-latest",
+    "openrouter": "openrouter/auto",
+    "together":  "openai/gpt-oss-120b",
+    "fireworks": "accounts/fireworks/models/llama-v3p1-70b-instruct",
+    "cerebras":  "llama-3.3-70b",
+    "perplexity": "sonar",
+    "huggingface": "openai/gpt-oss-120b",
+    "custom":    "model-id",
     "ollama":    "llama3",
 }
+
+_OPENAI_COMPAT_BASE_URLS: dict[str, str] = {
+    "xai": "https://api.x.ai/v1",
+    "kimi": "https://api.moonshot.ai/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "together": "https://api.together.xyz/v1",
+    "fireworks": "https://api.fireworks.ai/inference/v1",
+    "cerebras": "https://api.cerebras.ai/v1",
+    "perplexity": "https://api.perplexity.ai/v1",
+    "huggingface": "https://router.huggingface.co/v1",
+}
+
+_OPENAI_COMPAT_PROVIDERS = set(_OPENAI_COMPAT_BASE_URLS) | {"custom"}
+
+
+def _provider_base_url(provider: str) -> str:
+    if provider == "custom":
+        return (
+            get_setting("custom_base_url", "")
+            or os.environ.get("OPENAI_COMPAT_BASE_URL", "")
+            or "https://api.openai.com/v1"
+        )
+    return _OPENAI_COMPAT_BASE_URLS[provider]
 
 
 def _resolve(step: str | None = None) -> tuple[str, str, str]:
@@ -70,7 +124,7 @@ def _resolve(step: str | None = None) -> tuple[str, str, str]:
     # Model: step-specific > provider-level setting > default
     if sm:
         model = sm
-    elif p in {"anthropic", "gemini", "groq", "nvidia", "openai", "deepseek"}:
+    elif p in _DEFAULT_MODELS:
         model = get_setting(f"{p}_model", _DEFAULT_MODELS[p])
     else:
         model = _DEFAULT_MODELS.get(p, "llama3")
@@ -102,6 +156,15 @@ def _client_gemini(k: str):
     return OpenAI(
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         api_key=k,
+        timeout=_TIMEOUT,
+        max_retries=0,
+    )
+
+
+def _client_openai_compat(provider: str, key: str):
+    return OpenAI(
+        base_url=_provider_base_url(provider),
+        api_key=key,
         timeout=_TIMEOUT,
         max_retries=0,
     )
@@ -198,6 +261,33 @@ def call_llm(s: str, u: str, m: type[BaseModel], step: str | None = None):
             messages=[{"role": "system", "content": s}, {"role": "user", "content": u}],
         )
 
+    elif p in _OPENAI_COMPAT_PROVIDERS:
+        if not k:
+            _log.warning("%s — no key (step=%s)", p, step)
+            return _parse_fallback(u, m)
+        if p == "perplexity":
+            schema = m.model_json_schema()
+            raw = call_raw(
+                s + "\nReturn only valid JSON matching this schema:\n" + str(schema),
+                u,
+                step=step,
+            )
+            try:
+                return m.model_validate_json(raw)
+            except Exception:
+                _log.warning("perplexity structured parse failed (step=%s)", step)
+                return _parse_fallback(u, m)
+        c = instructor.from_openai(
+            _client_openai_compat(p, k),
+            mode=instructor.Mode.JSON,
+        )
+        return c.chat.completions.create(
+            model=model,
+            response_model=m,
+            max_retries=1,
+            messages=[{"role": "system", "content": s}, {"role": "user", "content": u}],
+        )
+
     else:  # ollama / default
         b = get_setting("ollama_url", "http://localhost:11434/v1")
         _log.info("ollama at %s model=%s (step=%s)", b, model, step)
@@ -280,6 +370,23 @@ def call_raw(s: str, u: str, step: str | None = None) -> str:
         if not k:
             return ""
         c = OpenAI(base_url="https://api.deepseek.com", api_key=k, timeout=_TIMEOUT)
+        r = c.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": s}, {"role": "user", "content": u}],
+        )
+        return r.choices[0].message.content or ""
+
+    elif p in _OPENAI_COMPAT_PROVIDERS:
+        if not k:
+            return ""
+        c = _client_openai_compat(p, k)
+        if p == "perplexity":
+            r = c.responses.create(
+                model=model,
+                instructions=s,
+                input=u,
+            )
+            return getattr(r, "output_text", "") or ""
         r = c.chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": s}, {"role": "user", "content": u}],
