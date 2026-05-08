@@ -87,22 +87,28 @@ export function useWS() {
       poll = window.setInterval(() => {
         if (!cancelled && (!token || !currentPort)) void syncSidecar();
       }, 1000);
-      unlisten = await listen<number>("sidecar-port", ev => {
-        currentPort = ev.payload;
-        setPort(ev.payload);
-        if (token) connect(ev.payload, token);
-      });
-      const unlistenToken = await listen<string>("sidecar-token", ev => {
-        token = ev.payload;
-        setApiToken(ev.payload);
-        if (currentPort) connect(currentPort, ev.payload);
-      });
-      const unlistenError = await listen<string>("sidecar-error", ev => {
-        setSidecarError(ev.payload);
-        addLog(ev.payload, "system", "sidecar");
-      });
-      const prevUnlisten = unlisten;
-      unlisten = () => { prevUnlisten?.(); unlistenToken(); unlistenError(); };
+      try {
+        unlisten = await listen<number>("sidecar-port", ev => {
+          currentPort = ev.payload;
+          setPort(ev.payload);
+          if (token) connect(ev.payload, token);
+        });
+        const unlistenToken = await listen<string>("sidecar-token", ev => {
+          token = ev.payload;
+          setApiToken(ev.payload);
+          if (currentPort) connect(currentPort, ev.payload);
+        });
+        const unlistenError = await listen<string>("sidecar-error", ev => {
+          setSidecarError(ev.payload);
+          addLog(ev.payload, "system", "sidecar");
+        });
+        const prevUnlisten = unlisten;
+        unlisten = () => { prevUnlisten?.(); unlistenToken(); unlistenError(); };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setSidecarError(`Desktop event bridge unavailable: ${message}`);
+        addLog(`Desktop event bridge unavailable: ${message}`, "system", "sidecar");
+      }
     })();
     return () => {
       cancelled = true;
