@@ -1,4 +1,8 @@
 const REPO = "vasu-devs/JustHireMe";
+const RELEASES_URL = `https://github.com/${REPO}/releases`;
+const TAGS_URL = `https://github.com/${REPO}/tags`;
+
+const EMPTY_ASSETS = { windows: null, mac: null, linux: null };
 
 function classifyAsset(asset) {
   const name = asset.name.toLowerCase();
@@ -47,6 +51,44 @@ function assetRank(platform, asset) {
   return match ? match[1] : 99;
 }
 
+async function fetchJson(url) {
+  const res = await fetch(url, {
+    headers: {
+      accept: "application/vnd.github+json",
+      "user-agent": "justhireme-website",
+    },
+  });
+  if (!res.ok) {
+    const error = new Error(`GitHub Releases API responded with ${res.status}`);
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+function releasePayload(release) {
+  const assets = { ...EMPTY_ASSETS };
+
+  for (const asset of release.assets || []) {
+    const [platform, payload] = classifyAsset(asset);
+    if (
+      platform &&
+      (!assets[platform] || assetRank(platform, payload) < assetRank(platform, assets[platform]))
+    ) {
+      assets[platform] = payload;
+    }
+  }
+
+  return {
+    available: Boolean(release.tag_name),
+    tag: release.tag_name,
+    name: release.name || release.tag_name,
+    publishedAt: release.published_at,
+    url: release.html_url || RELEASES_URL,
+    assets,
+  };
+}
+
 export default async function handler(request, response) {
   if (request.method !== "GET") {
     response.status(405).json({ error: "Method not allowed" });
@@ -54,57 +96,38 @@ export default async function handler(request, response) {
   }
 
   try {
-    const releaseRes = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-      headers: {
-        accept: "application/vnd.github+json",
-        "user-agent": "justhireme-website",
-      },
-    });
+    let release = null;
+    try {
+      release = await fetchJson(`https://api.github.com/repos/${REPO}/releases/latest`);
+    } catch (error) {
+      if (error.status !== 404) throw error;
+      const releases = await fetchJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`);
+      release = releases.find((item) => !item.draft && !item.prerelease) || releases.find((item) => !item.draft) || null;
+    }
 
-    if (releaseRes.status === 404) {
+    if (!release) {
       response.setHeader("cache-control", "s-maxage=60, stale-while-revalidate=300");
       response.status(200).json({
         available: false,
         tag: null,
-        url: `https://github.com/${REPO}/releases`,
-        assets: { windows: null, mac: null, linux: null },
+        url: RELEASES_URL,
+        tagsUrl: TAGS_URL,
+        assets: EMPTY_ASSETS,
       });
       return;
     }
 
-    if (!releaseRes.ok) {
-      throw new Error(`GitHub Releases API responded with ${releaseRes.status}`);
-    }
-
-    const release = await releaseRes.json();
-    const assets = { windows: null, mac: null, linux: null };
-
-    for (const asset of release.assets || []) {
-      const [platform, payload] = classifyAsset(asset);
-      if (
-        platform &&
-        (!assets[platform] || assetRank(platform, payload) < assetRank(platform, assets[platform]))
-      ) {
-        assets[platform] = payload;
-      }
-    }
-
     response.setHeader("cache-control", "s-maxage=60, stale-while-revalidate=300");
-    response.status(200).json({
-      available: Boolean(release.tag_name),
-      tag: release.tag_name,
-      name: release.name || release.tag_name,
-      publishedAt: release.published_at,
-      url: release.html_url,
-      assets,
-    });
+    response.status(200).json({ ...releasePayload(release), tagsUrl: TAGS_URL });
   } catch (error) {
     response.setHeader("cache-control", "s-maxage=30");
     response.status(200).json({
       available: false,
       tag: null,
-      url: `https://github.com/${REPO}/releases`,
-      assets: { windows: null, mac: null, linux: null },
+      url: RELEASES_URL,
+      tagsUrl: TAGS_URL,
+      assets: EMPTY_ASSETS,
+      error: "release_lookup_failed",
     });
   }
 }
