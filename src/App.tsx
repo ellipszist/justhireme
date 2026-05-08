@@ -23,6 +23,7 @@ import { IngestionView } from "./views/IngestionView";
 import { ApprovalDrawer } from "./components/ApprovalDrawer";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { HelpChat } from "./components/HelpChat";
+import { UpdatePrompt } from "./components/UpdatePrompt";
 
 export default function App() {
   const { conn, port, apiToken, sidecarError, logs, beat, addLog: wsAddLog } = useWS();
@@ -226,6 +227,7 @@ export default function App() {
         )}
       </AnimatePresence>
       {api && <HelpChat api={api} />}
+      <UpdatePrompt />
     </div>
   );
 }

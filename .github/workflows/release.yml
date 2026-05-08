@@ -274,7 +274,22 @@ jobs:
           xattr -cr src-tauri/resources/backend || true
           codesign --force --sign - "$sidecar"
 
+      - name: Verify updater signing secrets
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ] || [ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+            echo "Missing Tauri updater signing secrets. Set TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD before tagging a release." >&2
+            exit 1
+          fi
+
       - name: Build Tauri installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run ${{ matrix.package_script }}
 
       - name: Collect release assets (Windows)
@@ -284,9 +299,10 @@ jobs:
           $ErrorActionPreference = "Stop"
           $releaseDir = "release-assets"
           New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-          $assets = Get-ChildItem -Path "src-tauri\target\release\bundle" -Recurse -File -Include "*.exe", "*.msi" |
+          $assets = Get-ChildItem -Path "src-tauri\target\release\bundle" -Recurse -File -Include "*.exe", "*.msi", "*.sig" |
             Sort-Object Name
-          if (-not $assets) {
+          $installers = $assets | Where-Object { $_.Extension -in ".exe", ".msi" }
+          if (-not $installers) {
             throw "No Windows installer artifacts were produced."
           }
 
@@ -307,9 +323,9 @@ jobs:
           asset_list="$release_dir/assets.txt"
 
           if [ "${{ matrix.platform }}" = "linux" ]; then
-            find src-tauri/target/release/bundle -type f \( -name "*.deb" -o -name "*.AppImage" \) | sort > "$asset_list"
+            find src-tauri/target/release/bundle -type f \( -name "*.deb" -o -name "*.AppImage" -o -name "*.sig" \) | sort > "$asset_list"
           else
-            find src-tauri/target/release/bundle -type f -name "*.dmg" | sort > "$asset_list"
+            find src-tauri/target/release/bundle -type f \( -name "*.dmg" -o -name "*.tar.gz" -o -name "*.sig" \) | sort > "$asset_list"
           fi
 
           if [ ! -s "$asset_list" ]; then
@@ -360,6 +376,51 @@ jobs:
             sha256sum "$asset"
           done > SHA256SUMS.txt
 
+          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
+          windows_asset="$(find . -maxdepth 1 -type f -name "*.exe" -printf "%f\n" | sort | head -n1)"
+          windows_sig="$(find . -maxdepth 1 -type f -name "*.exe.sig" -printf "%f\n" | sort | head -n1)"
+          linux_asset="$(find . -maxdepth 1 -type f -name "*.AppImage" -printf "%f\n" | sort | head -n1)"
+          linux_sig="$(find . -maxdepth 1 -type f -name "*.AppImage.sig" -printf "%f\n" | sort | head -n1)"
+          mac_asset="$(find . -maxdepth 1 -type f -name "*.app.tar.gz" -printf "%f\n" | sort | head -n1)"
+          mac_sig="$(find . -maxdepth 1 -type f -name "*.app.tar.gz.sig" -printf "%f\n" | sort | head -n1)"
+          pub_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          export TAG="$tag" VERSION="$version" RELEASE_URL="$release_url" PUB_DATE="$pub_date"
+          export WINDOWS_ASSET="$windows_asset" WINDOWS_SIG="$windows_sig"
+          export LINUX_ASSET="$linux_asset" LINUX_SIG="$linux_sig"
+          export MAC_ASSET="$mac_asset" MAC_SIG="$mac_sig"
+
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          tag = os.environ["TAG"]
+          version = os.environ["VERSION"]
+          release_url = os.environ["RELEASE_URL"]
+          platforms = {}
+          candidates = {
+              "windows-x86_64": (os.environ.get("WINDOWS_ASSET"), os.environ.get("WINDOWS_SIG")),
+              "linux-x86_64": (os.environ.get("LINUX_ASSET"), os.environ.get("LINUX_SIG")),
+              "darwin-aarch64": (os.environ.get("MAC_ASSET"), os.environ.get("MAC_SIG")),
+          }
+          for target, (asset, sig) in candidates.items():
+              if not asset or not sig:
+                  continue
+              sig_path = pathlib.Path(sig)
+              platforms[target] = {
+                  "signature": sig_path.read_text(encoding="utf-8").strip(),
+                  "url": f"{release_url}/{asset}",
+              }
+          if not platforms:
+              raise SystemExit("No updater platforms found. Missing signed updater artifacts.")
+          pathlib.Path("latest.json").write_text(json.dumps({
+              "version": version,
+              "notes": f"JustHireMe {tag}: signed desktop update.",
+              "pub_date": os.environ["PUB_DATE"],
+              "platforms": platforms,
+          }, indent=2), encoding="utf-8")
+          PY
+
           cd ..
           {
             echo "## JustHireMe ${tag}"
@@ -388,6 +449,7 @@ jobs:
             echo "- Profile-aware graph and vector matching"
             echo "- Resume, cover letter, and outreach draft generation"
             echo "- Bundled backend sidecar and browser runtime"
+            echo "- Signed in-app updates for future releases"
             echo
             echo "---"
             echo "_This installer set was built by GitHub Actions from tag ${tag}. Having issues? [Open an issue](https://github.com/${GITHUB_REPOSITORY}/issues) or check the [README](https://github.com/${GITHUB_REPOSITORY}#readme)._"
