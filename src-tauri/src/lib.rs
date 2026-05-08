@@ -198,9 +198,11 @@ pub fn run() {
             #[cfg(not(debug_assertions))]
             let sidecar_cmd = {
                 eprintln!("[tauri] Using bundled backend sidecar");
+                // Tauri installs externalBin sidecars beside the app executable under
+                // the binary basename, so this resolves to backend.exe on Windows.
                 handle
                     .shell()
-                    .sidecar("resources/backend/backend")
+                    .sidecar("backend")
                     .expect("failed to create sidecar command")
             };
 
