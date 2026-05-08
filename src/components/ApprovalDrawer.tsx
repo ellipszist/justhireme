@@ -142,10 +142,12 @@ export function ApprovalDrawer({ j, api, onClose, onFired }: {
     setActiveDoc("resume");
     try {
       const r = await api(`/api/v1/leads/${j.job_id}/generate`, { method: "POST" });
-      if (!r.ok) throw new Error(`Server returned ${r.status}`);
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.detail || `Server returned ${r.status}`);
+      window.dispatchEvent(new CustomEvent("leads-refresh"));
       await loadVersions();
     } catch (err) {
-      setGenerateErr(String(err));
+      setGenerateErr(err instanceof Error ? err.message : String(err));
       setGenerating(false);
     }
   };

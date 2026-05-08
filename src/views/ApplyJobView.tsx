@@ -128,7 +128,10 @@ export function ApplyJobView({ port, api, leads, openDrawer, initialInput, autoF
       const created = await r.json();
       setLead(created);
       const gen = await api(`/api/v1/leads/${created.job_id}/generate`, { method: "POST" });
-      if (!gen.ok) throw new Error(`Generation returned ${gen.status}`);
+      const generated = await gen.json().catch(() => ({}));
+      if (!gen.ok) throw new Error(generated.detail || `Generation returned ${gen.status}`);
+      if (generated.lead) setLead(generated.lead);
+      window.dispatchEvent(new CustomEvent("leads-refresh"));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Application package failed");
       setBusy(false);
