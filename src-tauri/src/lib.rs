@@ -140,6 +140,8 @@ fn shutdown_sidecar(app: &AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
@@ -171,7 +173,9 @@ pub fn run() {
                 } else if let Some(ref py) = local_venv {
                     eprintln!("[tauri] Using backend virtualenv: {}", py.display());
                 } else {
-                    eprintln!("[tauri] No bundled or virtualenv runtime found - falling back to `uv`");
+                    eprintln!(
+                        "[tauri] No bundled or virtualenv runtime found - falling back to `uv`"
+                    );
                 }
 
                 if let Some(py) = bundled {

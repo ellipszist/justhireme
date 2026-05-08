@@ -2712,3 +2712,79 @@ button.profile-map-node {
   border-radius: 50%;
   animation: spin .7s linear infinite;
 }
+
+.update-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 120;
+  width: min(420px, calc(100vw - 36px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow-lg);
+  animation: pop .22s ease-out;
+}
+
+.update-toast strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 15px;
+}
+
+.update-toast p {
+  margin: 5px 0 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.update-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.update-progress {
+  position: relative;
+  height: 8px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--paper-3);
+}
+
+.update-progress div {
+  height: 100%;
+  min-width: 10%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width .18s ease;
+}
+
+.update-progress span {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.update-error {
+  color: var(--bad) !important;
+}
+
+@media (max-width: 680px) {
+  .update-toast {
+    grid-template-columns: 1fr;
+  }
+
+  .update-actions {
+    justify-content: flex-end;
+  }
+}
