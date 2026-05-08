@@ -35,6 +35,27 @@ function buildBody({ kind, name, email, rating, message, path, userAgent }) {
   return lines.join("\n");
 }
 
+async function addIssueLabels(repo, issueNumber, token, kind) {
+  const labels = ["website-feedback", kind === "review" ? "review" : "feedback"];
+
+  const response = await fetch(`https://api.github.com/repos/${repo}/issues/${issueNumber}/labels`, {
+    method: "POST",
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      "user-agent": "justhireme-website",
+    },
+    body: JSON.stringify({ labels }),
+  });
+
+  if (!response.ok) {
+    return false;
+  }
+
+  return true;
+}
+
 async function createGitHubIssue(payload) {
   const token = process.env.GITHUB_FEEDBACK_TOKEN || process.env.GITHUB_TOKEN;
   const repo = process.env.GITHUB_FEEDBACK_REPO || DEFAULT_REPO;
@@ -62,7 +83,8 @@ async function createGitHubIssue(payload) {
   }
 
   const issue = await response.json();
-  return { provider: "github", url: issue.html_url };
+  const labeled = await addIssueLabels(repo, issue.number, token, payload.kind).catch(() => false);
+  return { provider: "github", url: issue.html_url, labeled };
 }
 
 async function sendEmail(payload) {
