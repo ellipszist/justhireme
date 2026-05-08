@@ -1,0 +1,11 @@
+# Require maintainer review for every pull request when branch protection
+# enables "Require review from Code Owners".
+* @vasu-devs
+
+# Highest-risk surfaces.
+/.github/ @vasu-devs
+/backend/ @vasu-devs
+/src-tauri/ @vasu-devs
+/src/ @vasu-devs
+/website/ @vasu-devs
+/docs/ @vasu-devs
