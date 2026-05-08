@@ -4,7 +4,7 @@ import "./styles.css";
 
 const repoUrl = "https://github.com/vasu-devs/JustHireMe";
 
-const navItems = ["Workflow", "Why local", "Features", "Release"];
+const navItems = ["Workflow", "Why local", "Features", "Feedback", "Release"];
 
 const pipeline = [
   { status: "Leads", count: 128, tone: "blue" },
@@ -281,6 +281,123 @@ function useLatestRelease() {
   return release;
 }
 
+function useFeedbackForm(kind) {
+  const [state, setState] = React.useState({
+    name: "",
+    email: "",
+    rating: kind === "review" ? "5" : "",
+    message: "",
+    website: "",
+  });
+  const [status, setStatus] = React.useState({ type: "idle", message: "" });
+  const [submitting, setSubmitting] = React.useState(false);
+
+  const update = React.useCallback((event) => {
+    const { name, value } = event.target;
+    setState((current) => ({ ...current, [name]: value }));
+  }, []);
+
+  const submit = React.useCallback(async (event) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setStatus({ type: "idle", message: "" });
+
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...state,
+          kind,
+          path: window.location.pathname,
+          userAgent: navigator.userAgent,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not send yet");
+      }
+
+      if (payload.delivered) {
+        setStatus({ type: "success", message: "Sent. Thank you for making JustHireMe sharper." });
+        setState({ name: "", email: "", rating: kind === "review" ? "5" : "", message: "", website: "" });
+      } else {
+        setStatus({
+          type: "warning",
+          message: "Form works, but delivery needs GitHub or email environment variables on the deployment.",
+        });
+      }
+    } catch (error) {
+      setStatus({ type: "error", message: error.message || "Could not send yet." });
+    } finally {
+      setSubmitting(false);
+    }
+  }, [kind, state]);
+
+  return { state, status, submitting, update, submit };
+}
+
+function FeedbackCard({ kind, title, copy, tone }) {
+  const { state, status, submitting, update, submit } = useFeedbackForm(kind);
+  const isReview = kind === "review";
+
+  return (
+    <form className={`feedback-card tone-${tone}`} onSubmit={submit}>
+      <div className="feedback-card-head">
+        <span className="feature-icon"><Icon name={isReview ? "star" : "message"} /></span>
+        <div>
+          <h3>{title}</h3>
+          <p>{copy}</p>
+        </div>
+      </div>
+      <label>
+        <span>Name</span>
+        <input name="name" value={state.name} onChange={update} placeholder="Your name" autoComplete="name" />
+      </label>
+      <label>
+        <span>Email</span>
+        <input name="email" value={state.email} onChange={update} placeholder="you@example.com" type="email" autoComplete="email" />
+      </label>
+      {isReview && (
+        <label>
+          <span>Rating</span>
+          <select name="rating" value={state.rating} onChange={update}>
+            <option value="5">5 - Loved it</option>
+            <option value="4">4 - Useful</option>
+            <option value="3">3 - Promising</option>
+            <option value="2">2 - Needs work</option>
+            <option value="1">1 - Not there yet</option>
+          </select>
+        </label>
+      )}
+      <label className="span-full">
+        <span>{isReview ? "Review" : "Feedback"}</span>
+        <textarea
+          name="message"
+          value={state.message}
+          onChange={update}
+          placeholder={isReview ? "What worked, what did not, and who should try it?" : "Bug, idea, confusion, feature request, or anything else."}
+          required
+          rows="5"
+        />
+      </label>
+      <input className="hidden-field" name="website" value={state.website} onChange={update} tabIndex="-1" autoComplete="off" aria-hidden="true" />
+      <div className="feedback-actions">
+        <button className="button primary" type="submit" disabled={submitting}>
+          <Icon name={submitting ? "pulse" : "arrow"} />
+          {submitting ? "Sending" : "Send"}
+        </button>
+        <a className="button secondary" href={`${repoUrl}/issues/new`}>
+          <Icon name="github" />
+          GitHub issue
+        </a>
+      </div>
+      {status.message && <p className={`form-status ${status.type}`}>{status.message}</p>}
+    </form>
+  );
+}
+
 function Icon({ name }) {
   if (name === "logo") {
     return (
@@ -309,6 +426,7 @@ function Icon({ name }) {
     xlogo: "M4 4l16 16 M20 4L4 20",
     ban: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M5.6 5.6l12.8 12.8",
     laptop: "M4 5h16v10H4z M2 19h20 M8 19h8",
+    message: "M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z",
   };
 
   return (
@@ -601,6 +719,31 @@ function App() {
                 <span>{item}</span>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section id="feedback" className="section band paper-2">
+          <div className="section-head">
+            <span className="eyebrow">Feedback</span>
+            <h2>Tell me what to fix, polish, or keep exactly as it is.</h2>
+          </div>
+          <div className="feedback-grid">
+            <FeedbackCard
+              kind="feedback"
+              title="Feedback form"
+              copy="Share bugs, rough edges, missing sources, installer issues, or workflow ideas."
+              tone="blue"
+            />
+            <FeedbackCard
+              kind="review"
+              title="Review form"
+              copy="Leave a public-product-style review with a rating and practical notes."
+              tone="green"
+            />
+          </div>
+          <div className="feedback-routing">
+            <span><Icon name="github" /> Can create GitHub issues when a repo token is configured.</span>
+            <span><Icon name="message" /> Can email submissions when Resend is configured.</span>
           </div>
         </section>
 
