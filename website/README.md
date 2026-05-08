@@ -30,3 +30,26 @@ The platform download buttons are powered by `api/releases.js`, which reads the 
 - Linux: `.AppImage`, `.deb`, `.rpm`, or asset names containing `linux`
 
 If an asset is missing, that platform button stays disabled and says `Available soon`.
+
+## Feedback And Reviews
+
+The feedback and review forms post to `api/feedback.js`.
+
+To create GitHub issues from submissions, add:
+
+```txt
+GITHUB_FEEDBACK_TOKEN=...
+GITHUB_FEEDBACK_REPO=vasu-devs/JustHireMe
+```
+
+The token needs permission to create issues on the target repository. `GITHUB_FEEDBACK_REPO` is optional and defaults to `vasu-devs/JustHireMe`.
+
+To email submissions through Resend, add:
+
+```txt
+RESEND_API_KEY=...
+FEEDBACK_EMAIL_TO=you@example.com
+FEEDBACK_EMAIL_FROM=JustHireMe <feedback@your-domain.com>
+```
+
+At least one delivery path must be configured for submissions to reach you automatically. If neither GitHub nor email is configured, the endpoint returns `202` and the page tells the visitor that delivery setup is still needed.
