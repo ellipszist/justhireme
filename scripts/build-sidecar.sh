@@ -16,10 +16,10 @@ TRIPLE=$(rustc -vV | grep 'host:' | awk '{print $2}')
 
 if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "win"* ]]; then
   SRC="$TARGET_DIR/backend.exe"
-  DST="$TARGET_DIR/backend-${TRIPLE}.exe"
+  DST="$TARGET_DIR/jhm-sidecar-${TRIPLE}.exe"
 else
   SRC="$TARGET_DIR/backend"
-  DST="$TARGET_DIR/backend-${TRIPLE}"
+  DST="$TARGET_DIR/jhm-sidecar-${TRIPLE}"
 fi
 
 cp "$SRC" "$DST"

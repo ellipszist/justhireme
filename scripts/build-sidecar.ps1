@@ -21,7 +21,7 @@ if ($LASTEXITCODE -ne 0) {
   throw "rustc failed with exit code $LASTEXITCODE"
 }
 $src = "src-tauri\resources\backend\backend.exe"
-$dst = "src-tauri\resources\backend\backend-$triple.exe"
+$dst = "src-tauri\resources\backend\jhm-sidecar-$triple.exe"
 if (-not (Test-Path $src)) {
   throw "Expected sidecar was not created: $src"
 }
