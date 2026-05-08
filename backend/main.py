@@ -845,9 +845,9 @@ async def due_followups(limit: int = 25):
 
 
 @app.post("/api/v1/leads/{job_id}/generate")
-async def generate_for_lead(job_id: str, bt: BackgroundTasks):
-    bt.add_task(_generate_one, job_id)
-    return {"status": "generating", "job_id": job_id}
+async def generate_for_lead(job_id: str):
+    lead = await _generate_one(job_id)
+    return {"status": "ready", "job_id": job_id, "lead": lead}
 
 
 @app.post("/api/v1/leads/{job_id}/pipeline/run")
@@ -1832,7 +1832,7 @@ async def _generate_one(jid: str):
     lead = get_lead_by_id(jid)
     if not lead:
         await cm.broadcast({"type": "agent", "event": "gen_error", "msg": f"Lead {jid} not found"})
-        return
+        raise HTTPException(status_code=404, detail="Lead not found")
     template = get_setting("resume_template", "")
     await cm.broadcast({"type": "agent", "event": "gen_start",
                         "msg": f"Generating for {lead.get('title','?')} @ {lead.get('company','?')}"})
@@ -1883,9 +1883,11 @@ async def _generate_one(jid: str):
             **enriched_lead,
         }})
         await cm.broadcast({"type": "agent", "event": "gen_done", "msg": f"Resume and cover letter ready: {lead.get('title','?')}"})
+        return enriched_lead
     except Exception as exc:
         await cm.broadcast({"type": "agent", "event": "gen_error",
                             "msg": f"Generation failed for {lead.get('title','?')}: {exc}"})
+        raise HTTPException(status_code=500, detail=f"Generation failed: {exc}") from exc
 
 
 async def _actuate(jid: str):

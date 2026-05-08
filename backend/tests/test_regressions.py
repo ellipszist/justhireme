@@ -446,6 +446,37 @@ class RegressionTests(unittest.TestCase):
             except FileNotFoundError:
                 pass
 
+    def test_generator_uses_local_fallback_when_llm_is_unavailable(self):
+        import agents.generator as generator
+
+        lead = {
+            "job_id": "fallback-gen-001",
+            "title": "Applied AI Engineer",
+            "company": "Acme AI",
+            "description": "Build FastAPI, React, and LangGraph workflows.",
+            "match_points": ["FastAPI and React match"],
+        }
+        previous_assets = generator._assets
+        generator._assets = str(Path(__file__).resolve().parent)
+        try:
+            with (
+                mock.patch.object(generator, "get_profile", return_value=_sample_scoring_profile()),
+                mock.patch.object(generator, "_draft_package", side_effect=RuntimeError("provider offline")),
+            ):
+                package = generator.run_package(lead)
+
+            self.assertTrue(package["resume"].endswith("_v1.pdf"))
+            self.assertTrue(package["cover_letter"].endswith("_cl_v1.pdf"))
+            self.assertGreaterEqual(package["keyword_coverage"]["coverage_pct"], 0)
+            self.assertIn("Waldo", package["selected_projects"])
+        finally:
+            generator._assets = previous_assets
+            for name in ("fallback-gen-001_v1.pdf", "fallback-gen-001_cl_v1.pdf"):
+                try:
+                    (Path(__file__).resolve().parent / name).unlink()
+                except FileNotFoundError:
+                    pass
+
     def test_profile_update_bodies_accept_existing_item_ids(self):
         import main
 

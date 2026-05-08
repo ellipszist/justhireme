@@ -1168,10 +1168,14 @@ def run_package(lead: dict, template: str = "") -> dict:
     try:
         package = _draft_package(profile, proof, lead_with_ctx, template=template)
         package = _normalize_package(package, profile, lead_with_ctx, template=template)
-        keyword_coverage = _keyword_coverage(profile, lead_with_ctx, package.resume_markdown)
     except Exception as exc:
-        _log.error("LLM draft failed for %s: %s", lead.get("job_id", "?"), exc)
-        raise RuntimeError(f"Draft generation failed: {exc}") from exc
+        _log.warning(
+            "LLM draft failed for %s; using local fallback package: %s",
+            lead.get("job_id", "?"),
+            exc,
+        )
+        package = _fallback_package(profile, lead_with_ctx, template=template)
+    keyword_coverage = _keyword_coverage(profile, lead_with_ctx, package.resume_markdown)
 
     try:
         job_id = lead["job_id"]

@@ -317,6 +317,22 @@ class TestPipelineRunEndpoint(unittest.TestCase):
         self.assertEqual(resp.json().get("status"), "started")
 
 
+class TestGenerateEndpoint(unittest.TestCase):
+    def test_generate_waits_for_ready_package(self):
+        ready_lead = {
+            "job_id": "test-generate-001",
+            "resume_asset": "/tmp/resume.pdf",
+            "cover_letter_asset": "/tmp/cover.pdf",
+        }
+        with mock.patch.object(main, "_generate_one", new=mock.AsyncMock(return_value=ready_lead)):
+            resp = post("/api/v1/leads/test-generate-001/generate")
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["status"], "ready")
+        self.assertEqual(data["lead"], ready_lead)
+
+
 class TestIngestionEndpoints(unittest.TestCase):
     def test_linkedin_ingest_rejects_non_zip(self):
         resp = CLIENT.post(
