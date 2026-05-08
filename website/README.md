@@ -44,6 +44,19 @@ GITHUB_FEEDBACK_REPO=vasu-devs/JustHireMe
 
 The token needs permission to create issues on the target repository. `GITHUB_FEEDBACK_REPO` is optional and defaults to `vasu-devs/JustHireMe`.
 
+Create these labels in the repository for a cleaner feedback inbox:
+
+```txt
+website-feedback
+feedback
+review
+```
+
+Then use filtered issue pages:
+
+- Feedback inbox: `https://github.com/vasu-devs/JustHireMe/issues?q=is%3Aissue%20label%3Awebsite-feedback`
+- Reviews only: `https://github.com/vasu-devs/JustHireMe/issues?q=is%3Aissue%20label%3Areview`
+
 To email submissions through Resend, add:
 
 ```txt
