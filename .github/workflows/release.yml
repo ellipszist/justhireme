@@ -83,7 +83,7 @@ jobs:
 
           $triple = (rustc -vV | Select-String "host:").ToString().Split()[1].Trim()
           $src = "src-tauri\resources\backend\backend.exe"
-          $dst = "src-tauri\resources\backend\backend-$triple.exe"
+          $dst = "src-tauri\resources\backend\jhm-sidecar-$triple.exe"
 
           if (-not (Test-Path $src)) {
             throw "Expected sidecar was not created: $src"
@@ -103,7 +103,7 @@ jobs:
 
           triple="$(rustc -vV | awk '/host:/ {print $2}')"
           src="src-tauri/resources/backend/backend"
-          dst="src-tauri/resources/backend/backend-${triple}"
+          dst="src-tauri/resources/backend/jhm-sidecar-${triple}"
 
           if [ ! -f "$src" ]; then
             echo "Expected sidecar was not created: $src" >&2
@@ -230,7 +230,7 @@ jobs:
         shell: pwsh
         run: |
           $triple = (rustc -vV | Select-String "host:").ToString().Split()[1].Trim()
-          $sidecar = "src-tauri\resources\backend\backend-$triple.exe"
+          $sidecar = "src-tauri\resources\backend\jhm-sidecar-$triple.exe"
           if (-not (Test-Path $sidecar)) {
             throw "Sidecar not found at $sidecar"
           }
@@ -248,7 +248,7 @@ jobs:
         run: |
           set -euo pipefail
           triple="$(rustc -vV | awk '/host:/ {print $2}')"
-          sidecar="src-tauri/resources/backend/backend-${triple}"
+          sidecar="src-tauri/resources/backend/jhm-sidecar-${triple}"
           if [ ! -f "$sidecar" ]; then
             echo "Sidecar not found at $sidecar" >&2
             exit 1
@@ -269,7 +269,7 @@ jobs:
         run: |
           set -euo pipefail
           triple="$(rustc -vV | awk '/host:/ {print $2}')"
-          sidecar="src-tauri/resources/backend/backend-${triple}"
+          sidecar="src-tauri/resources/backend/jhm-sidecar-${triple}"
           chmod +x "$sidecar"
           xattr -cr src-tauri/resources/backend || true
           codesign --force --sign - "$sidecar"
