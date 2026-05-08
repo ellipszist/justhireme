@@ -184,32 +184,27 @@ function useDownloadCounter() {
   return { downloads, configured, trackDownload };
 }
 
-function PlatformDownload({ platform, asset, releaseTag, onDownload }) {
+function PlatformDownload({ platform, asset, releaseTag, releaseUrl, onDownload }) {
   const available = Boolean(asset?.url);
+  const fallbackUrl = releaseUrl || `${repoUrl}/releases`;
+  const href = available ? asset.url : fallbackUrl;
+  const title = available ? `Download ${asset.name}` : `Open all JustHireMe releases for ${platform.label}`;
   const content = (
     <>
-      <Icon name={available ? "download" : "ban"} />
+      <Icon name={available ? "download" : "external"} />
       <span>
         <strong>{platform.label}</strong>
-        <small>{available ? (releaseTag || "Latest release") : "Available soon"}</small>
+        <small>{available ? (releaseTag || "Latest release") : "View releases"}</small>
       </span>
     </>
   );
 
-  if (!available) {
-    return (
-      <button className={`platform-button tone-${platform.tone}`} disabled title={`${platform.label} download will be available soon`}>
-        {content}
-      </button>
-    );
-  }
-
   return (
     <a
       className={`platform-button tone-${platform.tone}`}
-      href={asset.url}
-      onClick={() => onDownload(platform.id)}
-      title={`Download ${asset.name}`}
+      href={href}
+      onClick={() => available && onDownload(platform.id)}
+      title={title}
     >
       {content}
     </a>
@@ -249,7 +244,8 @@ function useLatestRelease() {
   const [release, setRelease] = React.useState({
     available: false,
     tag: null,
-    url: repoUrl,
+    url: `${repoUrl}/releases`,
+    tagsUrl: `${repoUrl}/tags`,
     assets: { windows: null, mac: null, linux: null },
   });
 
@@ -264,6 +260,7 @@ function useLatestRelease() {
           available: Boolean(payload.available),
           tag: payload.tag || null,
           url: payload.url || `${repoUrl}/releases`,
+          tagsUrl: payload.tagsUrl || `${repoUrl}/tags`,
           assets: payload.assets || { windows: null, mac: null, linux: null },
         });
       }
@@ -425,6 +422,8 @@ function Icon({ name }) {
     globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M3 12h18 M12 3a14 14 0 0 1 0 18 M12 3a14 14 0 0 0 0 18",
     xlogo: "M4 4l16 16 M20 4L4 20",
     ban: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M5.6 5.6l12.8 12.8",
+    external: "M14 3h7v7 M21 3l-9 9 M19 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6",
+    tag: "M20.5 13.5l-7 7a2 2 0 0 1-2.8 0L3 12.8V3h9.8l7.7 7.7a2 2 0 0 1 0 2.8z M7.5 7.5h.1",
     laptop: "M4 5h16v10H4z M2 19h20 M8 19h8",
     message: "M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z",
   };
@@ -566,8 +565,8 @@ function App() {
   const { downloads, trackDownload } = useDownloadCounter();
   const github = useGitHubStars();
   const release = useLatestRelease();
-  const primaryInstallerUrl = release.assets.windows?.url || "";
-  const installerReady = Boolean(primaryInstallerUrl);
+  const primaryInstallerUrl = release.assets.windows?.url || release.url || `${repoUrl}/releases`;
+  const installerReady = Boolean(release.assets.windows?.url);
 
   const recordDownload = React.useCallback((platform) => {
     trackDownload(platform).catch(() => {});
@@ -601,17 +600,10 @@ function App() {
               <span>Desktop-first</span>
             </div>
             <div className="hero-actions">
-              {installerReady ? (
-                <a className="button primary" href={primaryInstallerUrl} onClick={() => recordDownload("windows")} title="Download the latest Windows release">
-                  <Icon name="download" />
-                  Download Windows
-                </a>
-              ) : (
-                <button className="button primary" disabled title="Public installer is being prepared">
-                  <Icon name="ban" />
-                  Available soon
-                </button>
-              )}
+              <a className="button primary" href={primaryInstallerUrl} onClick={() => installerReady && recordDownload("windows")} title={installerReady ? "Download the latest Windows release" : "Open all JustHireMe releases"}>
+                <Icon name={installerReady ? "download" : "external"} />
+                {installerReady ? "Download Windows" : "View releases"}
+              </a>
               <a className="button secondary" href={repoUrl}>
                 <Icon name="star" />
                 {github.stars == null ? "GitHub stars" : `${formatCount(github.stars)} stars`}
@@ -624,13 +616,14 @@ function App() {
                   platform={platform}
                   asset={release.assets?.[platform.id]}
                   releaseTag={release.tag}
+                  releaseUrl={release.url}
                   onDownload={recordDownload}
                 />
               ))}
             </div>
             <div className="wait-note">
               <span className="spinner" />
-              {release.available ? `Latest release: ${release.tag}` : "Installer coming soon. Source is live."}
+              {release.available ? `Latest release: ${release.tag}` : "Versions are available from GitHub releases and tags."}
             </div>
             <div className="live-counter" title={configured ? "Backed by the deployed view counter" : "Connect Upstash Redis on Vercel to persist this counter"}>
               <span className="live-dot" />
@@ -749,13 +742,13 @@ function App() {
 
         <section id="release" className="section final-cta band">
           <span className="eyebrow">Release status</span>
-          <h2>Alpha is public. One-click download is next.</h2>
+          <h2>Alpha is public. Releases stay versioned.</h2>
           <p>
-            Open source today. One-click desktop installer next.
+            Download the latest installer when an asset is available, or open the versioned release archive.
           </p>
           <div className="download-proof">
             <strong>{formatCount(downloads.total)}</strong>
-            <span>{release.available ? "verified release downloads" : "downloads start when release ships"}</span>
+            <span>{release.available ? "verified release downloads" : "version archive available on GitHub"}</span>
           </div>
           <div className="download-breakdown">
             {platformOptions.map((platform) => (
@@ -772,9 +765,11 @@ function App() {
                 platform={platform}
                 asset={release.assets?.[platform.id]}
                 releaseTag={release.tag}
+                releaseUrl={release.url}
                 onDownload={recordDownload}
               />
             ))}
+            <a className="button secondary" href={release.tagsUrl || `${repoUrl}/tags`}><Icon name="tag" /> Version tags</a>
             <a className="button secondary" href={repoUrl}><Icon name="github" /> View source</a>
           </div>
           <div className="creator-links" aria-label="Creator links">
