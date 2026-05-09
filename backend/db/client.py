@@ -3,8 +3,15 @@ import sqlite3 as _sq
 import json
 from datetime import UTC, datetime, timedelta
 import kuzu
-import lancedb
 from logger import get_logger
+
+try:
+    import lancedb
+except Exception as exc:
+    lancedb = None
+    _LANCEDB_IMPORT_ERROR = str(exc)
+else:
+    _LANCEDB_IMPORT_ERROR = ""
 
 _log = get_logger(__name__)
 
@@ -66,7 +73,9 @@ except Exception as exc:
     _log.warning("graph store disabled: %s", exc)
 
 try:
-    vec: lancedb.LanceDBConnection | _NullVectorStore = lancedb.connect(_v)
+    if lancedb is None:
+        raise RuntimeError(_LANCEDB_IMPORT_ERROR or "LanceDB is not available")
+    vec = lancedb.connect(_v)
 except Exception as exc:
     _log.warning("vector store disabled: %s", exc)
     vec = _NullVectorStore()
