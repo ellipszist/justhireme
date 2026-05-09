@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -1198,6 +1199,28 @@ class TestLeadQualityGate(unittest.TestCase):
         })
         self.assertFalse(quality["accepted"])
         self.assertIn("red flags", quality["reason"])
+
+
+class TestBrowserRuntimePackaging(unittest.TestCase):
+    def test_browser_runtime_asset_name_is_platform_specific(self):
+        from agents import browser_runtime
+
+        with mock.patch.object(browser_runtime, "sys_platform", return_value="windows"):
+            self.assertEqual(browser_runtime.browser_runtime_asset_name(), "JustHireMe-browser-runtime-windows.zip")
+        with mock.patch.object(browser_runtime, "sys_platform", return_value="darwin"):
+            self.assertEqual(browser_runtime.browser_runtime_asset_name(), "JustHireMe-browser-runtime-macos.zip")
+        with mock.patch.object(browser_runtime, "sys_platform", return_value="linux"):
+            self.assertEqual(browser_runtime.browser_runtime_asset_name(), "JustHireMe-browser-runtime-linux.zip")
+
+    def test_browser_runtime_ready_detects_chromium_payload(self):
+        from agents.browser_runtime import browser_runtime_ready
+
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp) / "ms-playwright"
+            runtime.mkdir()
+            self.assertFalse(browser_runtime_ready(runtime))
+            (runtime / "chromium-1200").mkdir()
+            self.assertTrue(browser_runtime_ready(runtime))
 
 
 if __name__ == "__main__":
