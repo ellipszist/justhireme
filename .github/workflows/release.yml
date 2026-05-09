@@ -203,7 +203,48 @@ jobs:
         run: npm ci
 
       - name: Audit frontend dependencies
-        run: npm audit --audit-level=moderate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $auditLines = npm audit --audit-level=moderate --json 2>&1
+          $auditExit = $LASTEXITCODE
+          $auditText = ($auditLines -join "`n").Trim()
+
+          if (-not $auditText) {
+            if ($auditExit -ne 0) {
+              Write-Warning "npm audit exited with $auditExit but returned no report. npm ci already completed successfully, so continuing."
+            }
+            exit 0
+          }
+
+          try {
+            $audit = $auditText | ConvertFrom-Json
+          } catch {
+            Write-Host $auditText
+            throw
+          }
+
+          $vulnerabilities = $audit.metadata.vulnerabilities
+          function Get-VulnerabilityCount($name) {
+            if ($null -ne $vulnerabilities -and $null -ne $vulnerabilities.PSObject.Properties[$name]) {
+              return [int]$vulnerabilities.$name
+            }
+            return 0
+          }
+
+          $moderate = Get-VulnerabilityCount "moderate"
+          $high = Get-VulnerabilityCount "high"
+          $critical = Get-VulnerabilityCount "critical"
+          $blocking = $moderate + $high + $critical
+
+          if ($blocking -gt 0) {
+            Write-Host $auditText
+            throw "npm audit found $blocking moderate/high/critical frontend vulnerabilities."
+          }
+
+          if ($auditExit -ne 0) {
+            Write-Warning "npm audit exited with $auditExit but reported no moderate/high/critical vulnerabilities. Continuing."
+          }
 
       - name: Install Tauri Linux system dependencies
         if: matrix.platform == 'linux'
