@@ -21,6 +21,7 @@ hidden = [
     "uvicorn.protocols.websockets.auto", "uvicorn.lifespan",
     "uvicorn.lifespan.on",
     "fastapi", "fastapi.middleware.cors",
+    "kuzu", "lancedb", "pyarrow",
     "anthropic", "openai", "instructor",
     "langgraph", "langgraph.graph",
     "apscheduler", "apscheduler.schedulers.asyncio",
@@ -35,9 +36,9 @@ hidden = [
     "graph",
     "db.client",
     "llm", "logger",
-] + collect_submodules("playwright")
+] + collect_submodules("playwright") + collect_submodules("lancedb") + collect_submodules("pyarrow")
 
-datas = collect_data_files("playwright")
+datas = collect_data_files("playwright") + collect_data_files("lancedb") + collect_data_files("pyarrow")
 
 a = Analysis(
     ["main.py"],
@@ -54,8 +55,6 @@ a = Analysis(
         "sentence_transformers", "transformers",
         "torch", "torch.distributed",
         "sklearn", "scipy",
-        "kuzu", "lancedb", "pyarrow",
-        "lance_namespace", "lance_namespace_urllib3_client",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
