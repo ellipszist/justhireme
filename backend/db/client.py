@@ -2,8 +2,15 @@ import os
 import sqlite3 as _sq
 import json
 from datetime import UTC, datetime, timedelta
-import kuzu
 from logger import get_logger
+
+try:
+    import kuzu
+except Exception as exc:
+    kuzu = None
+    _KUZU_IMPORT_ERROR = str(exc)
+else:
+    _KUZU_IMPORT_ERROR = ""
 
 try:
     import lancedb
@@ -64,6 +71,8 @@ _v = _ensure_dir(_v)
 
 _GRAPH_ERROR = ""
 try:
+    if kuzu is None:
+        raise RuntimeError(_KUZU_IMPORT_ERROR or "Kuzu is not available")
     db = kuzu.Database(_g)
     conn = kuzu.Connection(db)
 except Exception as exc:
