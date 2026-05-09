@@ -141,11 +141,28 @@ jobs:
           path: src-tauri/resources/backend/
           retention-days: 1
 
-      - name: Upload browser runtime artifact
+      - name: Package browser runtime OTA asset (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
+          Compress-Archive -Path src-tauri\resources\bin\ms-playwright -DestinationPath release-assets\JustHireMe-browser-runtime-windows.zip -Force
+
+      - name: Package browser runtime OTA asset (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cd src-tauri/resources/bin
+          zip -qr "../../../release-assets/JustHireMe-browser-runtime-${{ matrix.platform }}.zip" ms-playwright
+
+      - name: Upload browser runtime OTA asset
         uses: actions/upload-artifact@v7
         with:
-          name: browser-runtime-${{ matrix.platform }}
-          path: src-tauri/resources/bin/ms-playwright/
+          name: release-assets-browser-runtime-${{ matrix.platform }}
+          path: release-assets/
           retention-days: 1
 
   build-tauri:
@@ -219,12 +236,6 @@ jobs:
           name: backend-sidecar-${{ matrix.platform }}
           path: src-tauri/resources/backend/
 
-      - name: Download browser runtime
-        uses: actions/download-artifact@v8
-        with:
-          name: browser-runtime-${{ matrix.platform }}
-          path: src-tauri/resources/bin/ms-playwright/
-
       - name: Verify sidecar exists (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
@@ -234,13 +245,8 @@ jobs:
           if (-not (Test-Path $sidecar)) {
             throw "Sidecar not found at $sidecar"
           }
-          $browsers = "src-tauri\resources\bin\ms-playwright"
-          if (-not (Test-Path $browsers)) {
-            throw "Playwright browser runtime not found at $browsers"
-          }
-          $browserCount = (Get-ChildItem -Path $browsers -Recurse -File).Count
           Write-Host "Sidecar verified: $sidecar ($(( Get-Item $sidecar ).Length / 1MB) MB)"
-          Write-Host "Browser runtime verified: $browserCount files"
+          Write-Host "Browser runtime is shipped as an OTA asset, not bundled into the installer."
 
       - name: Verify sidecar exists (Unix)
         if: matrix.platform != 'windows'
@@ -254,14 +260,8 @@ jobs:
             exit 1
           fi
           chmod +x "$sidecar"
-          browsers="src-tauri/resources/bin/ms-playwright"
-          if [ ! -d "$browsers" ]; then
-            echo "Playwright browser runtime not found at $browsers" >&2
-            exit 1
-          fi
-          browser_count="$(find "$browsers" -type f | wc -l | tr -d ' ')"
           echo "Sidecar verified: $sidecar ($(du -h "$sidecar" | awk '{print $1}'))"
-          echo "Browser runtime verified: $browser_count files"
+          echo "Browser runtime is shipped as an OTA asset, not bundled into the installer."
 
       - name: Prepare macOS sidecar permissions
         if: matrix.platform == 'macos'
@@ -448,7 +448,8 @@ jobs:
             echo "- Built-in CRM for your job pipeline"
             echo "- Profile-aware graph and vector matching"
             echo "- Resume, cover letter, and outreach draft generation"
-            echo "- Bundled backend sidecar and browser runtime"
+            echo "- Bundled backend sidecar"
+            echo "- Optional Playwright Chromium runtime as an on-demand OTA download"
             echo "- Signed in-app updates for future releases"
             echo
             echo "---"

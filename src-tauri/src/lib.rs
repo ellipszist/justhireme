@@ -220,16 +220,30 @@ pub fn run() {
                     .env("JHM_APP_DATA_DIR", app_data);
             }
             if let Ok(resource_dir) = handle.path().resource_dir() {
-                let browsers_path = resource_dir
+                let bundled_browsers_path = resource_dir
                     .join("resources")
                     .join("bin")
                     .join("ms-playwright");
-                if browsers_path.exists() {
+                if bundled_browsers_path.exists() {
                     sidecar_cmd = sidecar_cmd.env(
                         "PLAYWRIGHT_BROWSERS_PATH",
-                        browsers_path.to_string_lossy().to_string(),
+                        bundled_browsers_path.to_string_lossy().to_string(),
                     );
                 }
+            }
+            if let Ok(app_data_dir) = handle.path().app_data_dir() {
+                let browser_cache = app_data_dir.join("browser-runtime").join("ms-playwright");
+                sidecar_cmd = sidecar_cmd.env(
+                    "JHM_BROWSER_RUNTIME_DIR",
+                    browser_cache.to_string_lossy().to_string(),
+                );
+                if !browser_cache.exists() {
+                    let _ = std::fs::create_dir_all(&browser_cache);
+                }
+                sidecar_cmd = sidecar_cmd.env(
+                    "PLAYWRIGHT_BROWSERS_PATH",
+                    browser_cache.to_string_lossy().to_string(),
+                );
             }
 
             let (mut rx, child) = match sidecar_cmd.spawn() {
