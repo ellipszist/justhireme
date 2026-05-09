@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: Personal Open Source" src="https://img.shields.io/badge/license-personal%20open%20source-2ea44f?style=for-the-badge"></a>
+  <a href="LICENSE"><img alt="License: Source-Available Non-Commercial" src="https://img.shields.io/badge/license-source--available%20non--commercial-2ea44f?style=for-the-badge"></a>
   <img alt="Status: Alpha" src="https://img.shields.io/badge/status-alpha-f59e0b?style=for-the-badge">
   <img alt="Local First" src="https://img.shields.io/badge/local--first-yes-0ea5e9?style=for-the-badge">
   <img alt="Desktop: Tauri" src="https://img.shields.io/badge/desktop-Tauri-24c8db?style=for-the-badge">
@@ -36,7 +36,7 @@
 
 ## The Short Version
 
-JustHireMe is an open-source desktop workbench for people who are tired of noisy job boards and black-box AI apply tools.
+JustHireMe is a source-available, non-commercial desktop workbench for people who are tired of noisy job boards and black-box AI apply tools.
 
 ## Maintainer And Sponsorship
 
@@ -44,7 +44,7 @@ JustHireMe has started receiving encouraging traction, and I am grateful to ever
 
 If you or someone in your network is hiring for those kinds of roles, I would be happy to connect. You can reach me at [siddhvasudev1402@gmail.com](mailto:siddhvasudev1402@gmail.com), on X/Twitter at [@vasu_devs](https://twitter.com/vasu_devs), or through my portfolio at [vasudev.live](https://vasudev.live).
 
-I am also open to thoughtful sponsorship for JustHireMe as an open-source project. Sponsorship helps keep the project active, improve source coverage, maintain the local-first architecture, and support the work needed to make job search tooling more transparent and useful.
+I am also open to thoughtful sponsorship for JustHireMe as a source-available, non-commercial project. Sponsorship helps keep the project active, improve source coverage, maintain the local-first architecture, and support the work needed to make job search tooling more transparent and useful.
 
 ## Current Status
 
@@ -600,7 +600,7 @@ Near-term priorities:
 
 ## License
 
-JustHireMe is released under the [JustHireMe Personal Open Source License](LICENSE).
+JustHireMe is released under the [JustHireMe Source-Available Non-Commercial License](LICENSE).
 
 Personal, educational, research, evaluation, and other non-commercial use are
 allowed. Any monetary use is prohibited without express prior written permission

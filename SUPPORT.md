@@ -32,4 +32,4 @@ Do not open public issues containing secrets or private user data. See [SECURITY
 
 ## Maintainer Expectations
 
-This is an open-source project with limited maintainer time. Clear reproduction steps, sanitized examples, and small PRs make it much easier to respond quickly.
+This is a source-available, non-commercial project with limited maintainer time. Clear reproduction steps, sanitized examples, and small PRs make it much easier to respond quickly.
