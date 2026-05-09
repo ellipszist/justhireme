@@ -1,10 +1,14 @@
 import hashlib
 import math
 import re
-import kuzu
 from db.client import vec
 from logger import get_logger
 from models.schema import C
+
+try:
+    import kuzu
+except Exception:
+    kuzu = None
 
 _log = get_logger(__name__)
 
@@ -57,6 +61,8 @@ def _hash_embedding(text: str, dims: int = 384) -> list[float]:
 def _conn():
     """Get a fresh Kuzu connection per call to avoid lock contention."""
     from db.client import db
+    if kuzu is None or db is None:
+        raise RuntimeError("Graph store is not available")
     return kuzu.Connection(db)
 
 
