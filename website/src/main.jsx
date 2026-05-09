@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 const repoUrl = "https://github.com/vasu-devs/JustHireMe";
+const coffeeUrl = "https://buymeacoffee.com/vasu.devs";
 
 const navItems = ["Workflow", "Why local", "Features", "Feedback", "Release"];
 
@@ -426,6 +427,7 @@ function Icon({ name }) {
     tag: "M20.5 13.5l-7 7a2 2 0 0 1-2.8 0L3 12.8V3h9.8l7.7 7.7a2 2 0 0 1 0 2.8z M7.5 7.5h.1",
     laptop: "M4 5h16v10H4z M2 19h20 M8 19h8",
     message: "M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z",
+    coffee: "M4 7h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V7z M17 9h1.5a2.5 2.5 0 0 1 0 5H17 M6 21h10 M8 3v2 M12 3v2 M16 3v2",
   };
 
   return (
@@ -582,6 +584,7 @@ function App() {
         <div className="header-actions">
           <a className="header-link hide-mobile" href="https://vasudev.live"><Icon name="globe" /> <span>Portfolio</span></a>
           <a className="header-link hide-mobile" href="https://x.com/vasu_devs"><Icon name="xlogo" /> <span>X</span></a>
+          <a className="header-link support-link" href={coffeeUrl}><Icon name="coffee" /> <span>Support</span></a>
           <a className="header-link" href={repoUrl}><Icon name="github" /> <span>GitHub</span></a>
         </div>
       </header>
@@ -738,6 +741,17 @@ function App() {
             <span><Icon name="github" /> Can create GitHub issues when a repo token is configured.</span>
             <span><Icon name="message" /> Can email submissions when Resend is configured.</span>
           </div>
+          <div className="support-callout">
+            <div>
+              <span className="eyebrow">Support the build</span>
+              <h3>Fuel the open-source roadmap.</h3>
+              <p>JustHireMe is built in public. Coffee helps keep releases, adapters, and docs moving.</p>
+            </div>
+            <a className="button primary" href={coffeeUrl}>
+              <Icon name="coffee" />
+              Buy me a coffee
+            </a>
+          </div>
         </section>
 
         <section id="release" className="section final-cta band">
@@ -775,13 +789,14 @@ function App() {
           <div className="creator-links" aria-label="Creator links">
             <a href="https://vasudev.live">vasudev.live</a>
             <a href="https://x.com/vasu_devs">@vasu_devs</a>
+            <a href={coffeeUrl}>Buy me a coffee</a>
           </div>
         </section>
       </main>
 
       <footer>
         <span>JustHireMe</span>
-        <span>By Vasudev - vasudev.live - @vasu_devs</span>
+        <span>By Vasudev - vasudev.live - @vasu_devs - buymeacoffee.com/vasu.devs</span>
       </footer>
     </>
   );
