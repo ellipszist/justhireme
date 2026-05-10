@@ -82,7 +82,7 @@ def step(n: int, label: str):
 
 
 def _audit_trail(jid: str):
-    from db.client import sql
+    from data.sqlite.connection import DEFAULT_DB_PATH as sql
     c = sqlite3.connect(sql)
     rows = c.execute(
         "SELECT ts, action FROM events WHERE job_id=? ORDER BY ts", (jid,)
@@ -121,13 +121,17 @@ def main():
     jid = _h(url)
 
     step(1, "Ingest candidate profile into graph DB")
-    from agents.ingestor import run as ingest
+    from profile.ingestor import run as ingest
     _log("Calling Claude to extract profile from resume text…")
     profile = ingest(raw=_RESUME)
     _log(f"Ingested: {profile.n} | skills={len(profile.skills)} exp={len(profile.exp)} projects={len(profile.projects)}")
 
     step(2, "Insert sandbox lead into SQLite")
-    from db.client import sql, save_lead, url_exists
+    from data.repository import create_repository
+    from data.sqlite.connection import DEFAULT_DB_PATH as sql
+    repo = create_repository()
+    save_lead = repo.leads.save_lead
+    url_exists = repo.leads.url_exists
     if url_exists(jid):
         _log(f"Lead {jid} already exists — reusing")
     else:
@@ -135,8 +139,8 @@ def main():
         _log(f"Inserted lead {jid}")
 
     step(3, "Evaluate lead (GraphRAG scoring)")
-    from agents.evaluator import score as ev_score
-    from db.client import update_lead_score
+    from ranking.evaluator import score as ev_score
+    update_lead_score = repo.leads.update_lead_score
     skills = [sk.n for sk in profile.skills]
     _log(f"Scoring against {len(skills)} skills…")
     result = ev_score(
@@ -153,7 +157,7 @@ def main():
     update_lead_score(jid, max(result["score"], 85), result["reason"])
 
     step(4, "Generate tailored PDF asset")
-    from agents.generator import run as gen
+    from generation.generator import run as gen
     lead_data = {
         "job_id":       jid,
         "title":        "Software Engineer (Live Fire Demo)",
@@ -168,12 +172,11 @@ def main():
     asset_path = gen(lead_data)
     _log(f"PDF saved: {asset_path}")
 
-    from db.client import save_asset_path
-    save_asset_path(jid, asset_path)
+    repo.leads.save_asset_path(jid, asset_path)
 
     step(5, f"Actuator — {'DRY RUN' if dry_run else 'LIVE SUBMIT'}")
     _log("Launching headed Chromium (500ms delay between fields)…")
-    from agents.actuator import run as act
+    from automation.actuator import run as act
     job_data = {**lead_data, **_IDENTITY}
     ok = act(job_data, asset_path, dry_run=dry_run)
 
@@ -182,8 +185,7 @@ def main():
         _log(f"Fields filled successfully: {ok}")
     else:
         if ok:
-            from db.client import mark_applied
-            mark_applied(jid)
+            repo.leads.mark_applied(jid)
             _log("Application SUBMITTED")
         else:
             _log("Submit button not found — application NOT submitted")

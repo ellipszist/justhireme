@@ -15,7 +15,7 @@ VIEW_COUNT_BASELINE=0
 DOWNLOAD_COUNT_BASELINE=0
 ```
 
-Each browser gets a local visitor id and the API counts it once with Redis `SET NX`. The frontend polls every 15 seconds so the displayed count updates while the page is open.
+Each browser gets a local visitor id and the API counts it once with Redis `SET NX`. Counter reads are cached by the API and CDN for five minutes, and the frontend refreshes visible counters every five minutes while the tab is active. This keeps the public page from burning through Upstash read commands.
 
 ## Download Counter
 
@@ -57,12 +57,4 @@ Then use filtered issue pages:
 - Feedback inbox: `https://github.com/vasu-devs/JustHireMe/issues?q=is%3Aissue%20label%3Awebsite-feedback`
 - Reviews only: `https://github.com/vasu-devs/JustHireMe/issues?q=is%3Aissue%20label%3Areview`
 
-To email submissions through Resend, add:
-
-```txt
-RESEND_API_KEY=...
-FEEDBACK_EMAIL_TO=you@example.com
-FEEDBACK_EMAIL_FROM=JustHireMe <feedback@your-domain.com>
-```
-
-At least one delivery path must be configured for submissions to reach you automatically. If neither GitHub nor email is configured, the endpoint returns `202` and the page tells the visitor that delivery setup is still needed.
+Feedback and review submissions are delivered through GitHub issues only. If GitHub issue delivery is not configured, the endpoint returns `202` and the page tells the visitor that delivery setup is still needed.

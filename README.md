@@ -54,7 +54,7 @@ JustHireMe is in alpha. The repository is public, hackable, and ready for source
 | --- | --- |
 | Frontend workbench | Active |
 | Python sidecar API | Active |
-| Scraper, ranking, vector matching, and customizer core | Supported OSS scope |
+| Scraper, ranking, vector matching, and customizer core | Supported source-available scope |
 | Windows desktop packaging | First release target |
 | Browser automation / auto-apply | Experimental lab, disabled by default |
 | API key storage | Local app settings for now; OS keychain planned |
@@ -71,7 +71,7 @@ It helps you:
 | Match | Use Kuzu graph data and LanceDB vectors to compare jobs against your profile context | Matching is profile-aware, not keyword-only |
 | Customize | Generate tailored resume PDF, cover letter PDF, and outreach drafts | You get a useful package, not just a list of links |
 
-> Browser automation and auto-apply code exists in the repository, but it is experimental and unsupported. The supported OSS core is scraper, ranker, vector matching, and customizer.
+> Browser automation and auto-apply code exists in the repository, but it is experimental and unsupported. The supported source-available core is scraper, ranker, vector matching, and customizer.
 
 ---
 
@@ -175,7 +175,7 @@ Less blind automation.
 | Contributor-friendly | Adding a source adapter should be approachable and testable |
 | Human-controlled | Generated materials are drafts for review, not magic submissions |
 | Honest fallback | If vectors, models, or source data fail, the app should say so |
-| Automation is experimental | Browser automation is a lab area, not the core OSS promise |
+| Automation is experimental | Browser automation is a lab area, not the core source-available promise |
 
 ---
 
@@ -572,8 +572,8 @@ The repository contains browser automation and auto-apply code for experimentati
 
 ```mermaid
 timeline
-    title JustHireMe OSS Roadmap
-    v0.1 : OSS readiness
+    title JustHireMe Source-Available Roadmap
+    v0.1 : Source-available readiness
          : Quality gate
          : Source adapter docs
     v0.2 : More ATS adapters

@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+from data.repository import Repository, create_repository
+from core.logging import get_logger
+
+from generation.generators.base import _DocPackage
+from generation.generators.cover_letter import (
+    _is_trivial_doc,
+    _normalize_package,
+    _split_cover_from_resume,
+    _strip_doc_heading,
+)
+from generation.generators.drafting import _draft, _draft_package
+from generation.generators.keywords import (
+    _compact_value,
+    _extract_jd_keywords,
+    _job_keyword_terms,
+    _keyword_coverage,
+    _profile_keyword_terms,
+)
+from generation.generators.outreach_email import _fallback_outreach
+from generation.generators.resume import (
+    _build_proof,
+    _categorize_skills,
+    _fallback_package,
+    _keywords,
+    _profile_payload,
+    _rank_projects,
+)
+import generation.pdf_renderer as _pdf
+
+_log = get_logger(__name__)
+_assets = _pdf._assets
+
+
+def get_profile(repo: Repository | None = None) -> dict:
+    active_repo = repo or create_repository()
+    return active_repo.profile.get_profile()
+
+
+def _clean(text: str) -> str:
+    return _pdf.clean(text)
+
+
+def _strip_inline(text: str) -> str:
+    return _pdf.strip_inline(text)
+
+
+def _render_resume_template(md_text: str, filename: str) -> str:
+    _pdf._assets = _assets
+    return _pdf.render_resume_template(md_text, filename)
+
+
+def _render(md_text: str, filename: str, kind: str = "resume") -> str:
+    _pdf._assets = _assets
+    return _pdf.render(md_text, filename, kind=kind)
+
+
+def run_package(lead: dict, template: str = "", repo: Repository | None = None) -> dict:
+    repo = repo or create_repository()
+    profile = get_profile(repo)
+    proof = _build_proof(profile)
+    lead_with_ctx = {**lead, "candidate_name": profile.get("n", "")}
+
+    try:
+        package = _draft_package(profile, proof, lead_with_ctx, template=template)
+        package = _normalize_package(package, profile, lead_with_ctx, template=template)
+    except Exception as exc:
+        _log.warning(
+            "LLM draft failed for %s; using local fallback package: %s",
+            lead.get("job_id", "?"),
+            exc,
+        )
+        package = _fallback_package(profile, lead_with_ctx, template=template)
+    keyword_coverage = _keyword_coverage(profile, lead_with_ctx, package.resume_markdown)
+
+    try:
+        job_id = lead["job_id"]
+        current_version = repo.leads.get_resume_version(job_id)
+        new_version = current_version + 1
+        resume_path = _render(package.resume_markdown, f"{job_id}_v{new_version}.pdf", kind="resume")
+        cover_letter_path = _render(package.cover_letter_markdown, f"{job_id}_cl_v{new_version}.pdf", kind="cover")
+        try:
+            repo.leads.save_generated_asset_version(job_id, resume_path, cover_letter_path, new_version)
+        except Exception as exc:
+            _log.warning("asset version persistence skipped for %s: %s", job_id, exc)
+    except Exception as exc:
+        _log.error("PDF render failed for %s: %s", lead.get("job_id", "?"), exc)
+        raise RuntimeError(f"PDF render failed: {exc}") from exc
+
+    return {
+        "resume": resume_path,
+        "cover_letter": cover_letter_path,
+        "selected_projects": package.selected_projects,
+        "founder_message": (package.founder_message or "").strip(),
+        "linkedin_note": (package.linkedin_note or "").strip(),
+        "cold_email": (package.cold_email or "").strip(),
+        "keyword_coverage": keyword_coverage,
+    }
+
+
+def run(lead: dict, template: str = "") -> str:
+    return run_package(lead, template=template)["resume"]

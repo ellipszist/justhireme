@@ -13,6 +13,23 @@ export default defineConfig(async () => ({
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          motion: ["framer-motion"],
+          tauri: [
+            "@tauri-apps/api",
+            "@tauri-apps/plugin-opener",
+            "@tauri-apps/plugin-process",
+            "@tauri-apps/plugin-shell",
+            "@tauri-apps/plugin-updater",
+          ],
+        },
+      },
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

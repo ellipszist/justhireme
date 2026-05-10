@@ -89,7 +89,41 @@ jobs:
           python-version: '3.13'
       - uses: astral-sh/setup-uv@v8.1.0
       - run: cd backend && uv sync --dev
-      - run: cd backend && uv run python -m pytest tests/test_regressions.py -v
+      - run: cd backend && uv run python -m pytest tests/test_import_boundaries.py -q
+      - run: cd backend && uv run python -m pytest tests -q
+
+  backend-domains:
+    name: Backend domain tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        domain:
+          - core
+          - data
+          - profile
+          - discovery
+          - ranking
+          - generation
+          - api
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: cd backend && uv sync --dev
+      - name: Run focused domain tests
+        run: |
+          cd backend
+          files=$(ls tests/test_${{ matrix.domain }}*.py 2>/dev/null || true)
+          if [ -n "$files" ]; then
+            uv run python -m pytest tests/test_import_boundaries.py $files -q
+          else
+            uv run python -m pytest tests/test_import_boundaries.py -q
+          fi
 
   rust:
     name: Rust check

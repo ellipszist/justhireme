@@ -77,6 +77,8 @@ scratch/
 # Generated artifacts and local analysis output
 .codex-temp-appdata/
 .codex-video-analysis/
+release-assets/
+release-assets-*/
 test_resume_output.pdf
 *.tmp
 *.bak

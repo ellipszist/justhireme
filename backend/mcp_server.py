@@ -11,8 +11,8 @@ import json
 import sys
 from typing import Any, Callable
 
-from agents.evaluator import score as score_fit
-from agents.lead_intel import (
+from ranking.evaluator import score as score_fit
+from discovery.lead_intel import (
     budget_from_text,
     company_from_text,
     location_from_text,
@@ -20,7 +20,7 @@ from agents.lead_intel import (
     tech_stack_from_text,
     urgency_from_text,
 )
-from agents.quality_gate import evaluate_lead_quality
+from discovery.quality_gate import evaluate_lead_quality
 
 
 Json = dict[str, Any]

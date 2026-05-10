@@ -1,4 +1,4 @@
-import { cleanId, json, redis, redisConfigured, redisPipeline, send } from "./_counter.js";
+import { cacheableJson, cleanId, createMemoryCache, json, redisConfigured, redisPipeline, send } from "./_counter.js";
 
 const TOTAL_KEY = "justhireme:downloads:total";
 const UNIQUE_PREFIX = "justhireme:downloads:visitor:";
@@ -7,6 +7,7 @@ const PLATFORM_KEYS = {
   mac: "justhireme:downloads:mac",
   linux: "justhireme:downloads:linux",
 };
+const COUNT_CACHE = createMemoryCache(5 * 60 * 1000);
 
 function cleanPlatform(value) {
   const platform = String(value || "").toLowerCase();
@@ -22,24 +23,30 @@ function countsFromResults(results, baseline) {
   };
 }
 
+async function getDownloadCounts(configured, baseline) {
+  if (!configured) {
+    return { configured: false, total: baseline, windows: 0, mac: 0, linux: 0 };
+  }
+
+  const cached = COUNT_CACHE.get();
+  if (cached) return cached;
+
+  const counts = countsFromResults(await redisPipeline([
+    ["GET", TOTAL_KEY],
+    ["GET", PLATFORM_KEYS.windows],
+    ["GET", PLATFORM_KEYS.mac],
+    ["GET", PLATFORM_KEYS.linux],
+  ]), baseline);
+  return COUNT_CACHE.set({ configured: true, ...counts });
+}
+
 export default async function handler(request, response) {
   try {
     const configured = redisConfigured();
     const baseline = Number.parseInt(process.env.DOWNLOAD_COUNT_BASELINE || "0", 10);
 
     if (request.method === "GET") {
-      const counts = configured
-        ? countsFromResults(await redisPipeline([
-          ["GET", TOTAL_KEY],
-          ["GET", PLATFORM_KEYS.windows],
-          ["GET", PLATFORM_KEYS.mac],
-          ["GET", PLATFORM_KEYS.linux],
-        ]), baseline)
-        : { total: baseline, windows: 0, mac: 0, linux: 0 };
-      return send(response, json({
-        configured,
-        ...counts,
-      }));
+      return send(response, cacheableJson(await getDownloadCounts(configured, baseline)));
     }
 
     if (request.method !== "POST") {
@@ -66,24 +73,26 @@ export default async function handler(request, response) {
     const [wasNew] = await redisPipeline([
       ["SET", visitorKey, "1", "NX"],
       ["SET", TOTAL_KEY, baseline, "NX"],
-      ["SET", PLATFORM_KEYS.windows, 0, "NX"],
-      ["SET", PLATFORM_KEYS.mac, 0, "NX"],
-      ["SET", PLATFORM_KEYS.linux, 0, "NX"],
     ]);
 
+    let counts;
     if (wasNew) {
-      await redisPipeline([
+      const [total, platformTotal] = await redisPipeline([
         ["INCR", TOTAL_KEY],
         ["INCR", PLATFORM_KEYS[platform]],
       ]);
+      const cached = COUNT_CACHE.get();
+      counts = COUNT_CACHE.set({
+        configured: true,
+        total: Number.parseInt(total || `${cached?.total || baseline}`, 10),
+        windows: cached?.windows || 0,
+        mac: cached?.mac || 0,
+        linux: cached?.linux || 0,
+        [platform]: Number.parseInt(platformTotal || `${cached?.[platform] || 0}`, 10),
+      });
+    } else {
+      counts = await getDownloadCounts(configured, baseline);
     }
-
-    const counts = countsFromResults(await redisPipeline([
-      ["GET", TOTAL_KEY],
-      ["GET", PLATFORM_KEYS.windows],
-      ["GET", PLATFORM_KEYS.mac],
-      ["GET", PLATFORM_KEYS.linux],
-    ]), baseline);
 
     return send(response, json({
       configured: true,
