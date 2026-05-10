@@ -7,11 +7,11 @@ export function send(response, payload) {
   response.status(payload.status).json(payload.body);
 }
 
-export function cacheableJson(body, seconds = 300, status = 200) {
+export function cacheableJson(body, seconds = 3600, status = 200) {
   return {
     body,
     status,
-    cacheControl: `public, max-age=30, s-maxage=${seconds}, stale-while-revalidate=${seconds * 6}`,
+    cacheControl: `public, max-age=300, s-maxage=${seconds}, stale-while-revalidate=${seconds * 24}`,
   };
 }
 

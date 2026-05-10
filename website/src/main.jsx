@@ -104,7 +104,7 @@ const platformOptions = [
   { id: "mac", label: "macOS", hint: "DMG / PKG", tone: "purple" },
   { id: "linux", label: "Linux", hint: "AppImage / package", tone: "green" },
 ];
-const COUNTER_REFRESH_MS = 5 * 60 * 1000;
+const SESSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 function formatCount(value) {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
@@ -120,6 +120,36 @@ function getVisitorId() {
   return next;
 }
 
+function readSessionCache(key) {
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(key) || "null");
+    if (cached && Date.now() - cached.savedAt < SESSION_CACHE_TTL_MS) {
+      return cached.value;
+    }
+  } catch {
+    sessionStorage.removeItem(key);
+  }
+  return null;
+}
+
+function writeSessionCache(key, value) {
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), value }));
+  } catch {
+    // Session storage can be unavailable in hardened browser modes.
+  }
+}
+
+async function cachedFetchJson(key, url, options) {
+  const cached = readSessionCache(key);
+  if (cached) return cached;
+
+  const response = await fetch(url, options);
+  const payload = await response.json();
+  writeSessionCache(key, payload);
+  return payload;
+}
+
 function useViewCounter() {
   const [views, setViews] = React.useState(0);
   const [configured, setConfigured] = React.useState(false);
@@ -127,29 +157,22 @@ function useViewCounter() {
   React.useEffect(() => {
     let cancelled = false;
 
-    const syncViews = async (method = "GET") => {
-      const response = await fetch("/api/views", {
-        method,
+    const syncViews = async () => {
+      const payload = await cachedFetchJson("justhireme.views", "/api/views", {
+        method: "POST",
         headers: { "content-type": "application/json" },
-        body: method === "POST" ? JSON.stringify({ visitorId: getVisitorId() }) : undefined,
+        body: JSON.stringify({ visitorId: getVisitorId() }),
       });
-      const payload = await response.json();
       if (!cancelled && typeof payload.total === "number") {
         setViews(payload.total);
         setConfigured(Boolean(payload.configured));
       }
     };
 
-    syncViews("POST").catch(() => {});
-    const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        syncViews("GET").catch(() => {});
-      }
-    }, COUNTER_REFRESH_MS);
+    syncViews().catch(() => {});
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
     };
   }, []);
 
@@ -161,12 +184,16 @@ function useDownloadCounter() {
   const [configured, setConfigured] = React.useState(false);
 
   const syncDownloads = React.useCallback(async (method = "GET", platform = null) => {
-    const response = await fetch("/api/downloads", {
+    const cacheKey = platform ? null : "justhireme.downloads";
+    const options = {
       method,
       headers: { "content-type": "application/json" },
       body: method === "POST" ? JSON.stringify({ visitorId: getVisitorId(), platform }) : undefined,
-    });
-    const payload = await response.json();
+    };
+    const payload = cacheKey
+      ? await cachedFetchJson(cacheKey, "/api/downloads", options)
+      : await fetch("/api/downloads", options).then((response) => response.json());
+
     if (typeof payload.total === "number") {
       setDownloads({
         total: payload.total,
@@ -175,18 +202,13 @@ function useDownloadCounter() {
         linux: payload.linux || 0,
       });
       setConfigured(Boolean(payload.configured));
+      writeSessionCache("justhireme.downloads", payload);
     }
     return payload;
   }, []);
 
   React.useEffect(() => {
     syncDownloads("GET").catch(() => {});
-    const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        syncDownloads("GET").catch(() => {});
-      }
-    }, COUNTER_REFRESH_MS);
-    return () => window.clearInterval(timer);
   }, [syncDownloads]);
 
   const trackDownload = React.useCallback((platform) => syncDownloads("POST", platform), [syncDownloads]);
@@ -228,8 +250,7 @@ function useGitHubStars() {
     let cancelled = false;
 
     const loadStars = async () => {
-      const response = await fetch("/api/github");
-      const payload = await response.json();
+      const payload = await cachedFetchJson("justhireme.github", "/api/github");
       if (!cancelled) {
         setGithub({
           stars: typeof payload.stars === "number" ? payload.stars : null,
@@ -239,11 +260,9 @@ function useGitHubStars() {
     };
 
     loadStars().catch(() => {});
-    const timer = window.setInterval(() => loadStars().catch(() => {}), 60000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
     };
   }, []);
 
@@ -263,8 +282,7 @@ function useLatestRelease() {
     let cancelled = false;
 
     const loadRelease = async () => {
-      const response = await fetch("/api/releases");
-      const payload = await response.json();
+      const payload = await cachedFetchJson("justhireme.release", "/api/releases");
       if (!cancelled) {
         setRelease({
           available: Boolean(payload.available),
@@ -277,11 +295,9 @@ function useLatestRelease() {
     };
 
     loadRelease().catch(() => {});
-    const timer = window.setInterval(() => loadRelease().catch(() => {}), 60000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
     };
   }, []);
 
