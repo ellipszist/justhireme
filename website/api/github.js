@@ -29,7 +29,7 @@ export default async function handler(request, response) {
     const repo = await repoRes.json();
     const prs = prsRes.ok ? await prsRes.json() : { total_count: 0 };
 
-    response.setHeader("cache-control", "s-maxage=60, stale-while-revalidate=300");
+    response.setHeader("cache-control", "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400");
     response.status(200).json({
       repo: REPO,
       stars: repo.stargazers_count,
@@ -39,7 +39,7 @@ export default async function handler(request, response) {
       url: repo.html_url,
     });
   } catch (error) {
-    response.setHeader("cache-control", "s-maxage=30");
+    response.setHeader("cache-control", "public, max-age=300, s-maxage=1800");
     response.status(200).json({
       repo: REPO,
       stars: null,
