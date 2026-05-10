@@ -36,3 +36,14 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"
+markers = [
+    "unit: fast tests with no external I/O",
+    "integration: tests that exercise storage, API wiring, or other cross-module behavior",
+    "regression: tests that protect previously fixed behavior",
+]
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+warn_unused_ignores = true
+no_strict_optional = false

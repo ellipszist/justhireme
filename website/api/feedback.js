@@ -87,38 +87,6 @@ async function createGitHubIssue(payload) {
   return { provider: "github", url: issue.html_url, labeled };
 }
 
-async function sendEmail(payload) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const to = process.env.FEEDBACK_EMAIL_TO;
-  const from = process.env.FEEDBACK_EMAIL_FROM || "JustHireMe <onboarding@resend.dev>";
-
-  if (!apiKey || !to) {
-    return null;
-  }
-
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      subject: issueTitle(payload.kind, payload.name, payload.rating),
-      text: buildBody(payload),
-      reply_to: payload.email || undefined,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Email delivery failed with ${response.status}`);
-  }
-
-  const email = await response.json();
-  return { provider: "email", id: email.id };
-}
-
 export default async function handler(request, response) {
   if (request.method !== "POST") {
     return send(response, json({ error: "Method not allowed" }, 405));
@@ -149,25 +117,26 @@ export default async function handler(request, response) {
       userAgent: cleanText(body.userAgent, 320),
     };
 
-    const results = await Promise.allSettled([
-      createGitHubIssue(payload),
-      sendEmail(payload),
-    ]);
-    const deliveries = results
-      .filter((result) => result.status === "fulfilled" && result.value)
-      .map((result) => result.value);
-    const failures = results.filter((result) => result.status === "rejected");
+    const issue = await createGitHubIssue(payload);
 
-    if (deliveries.length === 0 && failures.length > 0) {
-      return send(response, json({ error: "Feedback delivery is unavailable right now." }, 500));
+    if (!issue) {
+      return send(response, json({
+        delivered: false,
+        deliveries: [],
+        configured: false,
+      }, 202));
     }
 
     return send(response, json({
-      delivered: deliveries.length > 0,
-      deliveries,
-      configured: deliveries.length > 0,
-    }, deliveries.length > 0 ? 200 : 202));
+      delivered: true,
+      deliveries: [issue],
+      configured: true,
+    }));
   } catch (error) {
+    if (error.message?.startsWith("GitHub issue creation failed")) {
+      return send(response, json({ error: "Feedback delivery is unavailable right now." }, 500));
+    }
+
     return send(response, json({ error: "Feedback delivery is unavailable right now." }, 500));
   }
 }

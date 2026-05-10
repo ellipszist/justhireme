@@ -1,66 +1,50 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import SettingsModal from "./SettingsModal";
+import SettingsModal from "./features/settings/SettingsModal";
 import "./index.css";
-import type { ApiFetch, Lead, View } from "./types";
-import { ONBOARDING_KEY } from "./lib/leadUtils";
-import { useWS } from "./hooks/useWS";
-import { useLeads } from "./hooks/useLeads";
-import { useDueFollowups } from "./hooks/useDueFollowups";
-import { useGraphStats } from "./hooks/useGraphStats";
-import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { Sidebar } from "./components/Sidebar";
-import { Topbar } from "./components/Topbar";
-import ErrorBoundary from "./components/ErrorBoundary";
-import { DashboardView } from "./views/DashboardView";
-import { LeadInboxView } from "./views/LeadInboxView";
-import { ApplyJobView } from "./views/ApplyJobView";
-import { PipelineView } from "./views/PipelineView";
-import { GraphView } from "./views/GraphView";
-import { ActivityView } from "./views/ActivityView";
-import { ProfileView } from "./views/ProfileView";
-import { IngestionView } from "./views/IngestionView";
-import { ApprovalDrawer } from "./components/ApprovalDrawer";
-import { OnboardingWizard } from "./components/OnboardingWizard";
-import { HelpChat } from "./components/HelpChat";
-import { UpdatePrompt } from "./components/UpdatePrompt";
+import type { ApiFetch } from "./types";
+import { createApiFetch } from "./api/client";
+import { useAppShellState } from "./shared/context/AppContext";
+import { ONBOARDING_KEY } from "./shared/lib/leadUtils";
+import { useWS } from "./shared/hooks/useWS";
+import { useLeads } from "./shared/hooks/useLeads";
+import { useDueFollowups } from "./shared/hooks/useDueFollowups";
+import { useGraphStats } from "./shared/hooks/useGraphStats";
+import { useKeyboardShortcuts } from "./shared/hooks/useKeyboardShortcuts";
+import { Sidebar } from "./shared/components/Sidebar";
+import { Topbar } from "./shared/components/Topbar";
+import ErrorBoundary from "./shared/components/ErrorBoundary";
+import { DashboardView } from "./features/dashboard/DashboardView";
+import { LeadInboxView } from "./features/inbox/LeadInboxView";
+import { ApplyJobView } from "./features/apply/ApplyJobView";
+import { PipelineView } from "./features/pipeline/PipelineView";
+import { GraphView } from "./features/graph/GraphView";
+import { ActivityView } from "./features/activity/ActivityView";
+import { ProfileView } from "./features/profile/ProfileView";
+import { IngestionView } from "./features/profile/IngestionView";
+import { ApprovalDrawer } from "./features/pipeline/components/ApprovalDrawer";
+import { OnboardingWizard } from "./shared/components/OnboardingWizard";
+import { HelpChat } from "./shared/components/HelpChat";
+import { UpdatePrompt } from "./shared/components/UpdatePrompt";
 
 export default function App() {
   const { conn, port, apiToken, sidecarError, logs, beat, addLog: wsAddLog } = useWS();
   const api = useMemo<ApiFetch | null>(() => {
     if (!port || !apiToken) return null;
-    return (path, opts) => {
-      const headers = new Headers(opts?.headers);
-      headers.set("Authorization", `Bearer ${apiToken}`);
-      return fetch(`http://127.0.0.1:${port}${path}`, { ...opts, headers });
-    };
+    return createApiFetch(port, apiToken);
   }, [port, apiToken]);
   const { leads, setLeads, loading: leadsLoading, error: leadsError } = useLeads(api, wsAddLog);
   const dueFollowups = useDueFollowups(api);
   const stats  = useGraphStats(api);
-  const [view, setView]           = useState<View>("dashboard");
-  const [sel, setSel]             = useState<Lead | null>(null);
+  const {
+    view, setView, sel, setSel, showSettings, setShowSettings, showOnboarding,
+    setShowOnboarding, applyDraft, setApplyDraft, applyAutoFocus, setApplyAutoFocus,
+    scanning, setScanning, reevaluating, setReevaluating, cleaning, setCleaning,
+    scanErr, setScanErr, closeDrawer, focusApplyView, openSettings, openSetupGuide,
+  } = useAppShellState();
   // Always pass the live version of the selected lead so the drawer reflects real-time updates
   const liveSel = sel ? (leads.find(l => l.job_id === sel.job_id) ?? sel) : null;
-  const [showSettings, setShowSettings] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem(ONBOARDING_KEY) !== "done");
-  const [applyDraft, setApplyDraft] = useState("");
-  const [applyAutoFocus, setApplyAutoFocus] = useState(false);
-  const [scanning, setScanning]   = useState(false);
-  const [reevaluating, setReevaluating] = useState(false);
-  const [cleaning, setCleaning] = useState(false);
-  const [scanErr, setScanErr]     = useState<string | null>(null);
   const [startupSeconds, setStartupSeconds] = useState(0);
-  const closeDrawer = useCallback(() => setSel(null), []);
-  const focusApplyView = useCallback(() => {
-    setView("apply");
-    setApplyAutoFocus(true);
-  }, []);
-  const openSettings = useCallback(() => setShowSettings(true), []);
-  const openSetupGuide = useCallback(() => {
-    localStorage.removeItem(ONBOARDING_KEY);
-    setShowOnboarding(true);
-  }, []);
 
   useEffect(() => {
     const h = () => setScanning(false);
@@ -194,14 +178,14 @@ export default function App() {
       <div className="app-main">
         <Topbar view={view} />
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
-          {view === "apply"     && <ErrorBoundary label="Apply"><ApplyJobView port={port} api={api} leads={leads} openDrawer={setSel} initialInput={applyDraft} autoFocus={applyAutoFocus} /></ErrorBoundary>}
-          {view === "dashboard" && <ErrorBoundary label="Dashboard"><DashboardView leads={leads} dueFollowups={dueFollowups} logs={logs} setView={setView} openDrawer={setSel} scanning={scanning} reevaluating={reevaluating} cleaning={cleaning} onScan={onScan} onStopScan={onStopScan} onReevaluate={onReevaluateJobs} onStopReevaluate={onStopReevaluate} onCleanup={onCleanupLeads} scanErr={scanErr} /></ErrorBoundary>}
-          {view === "inbox"     && <ErrorBoundary label="Inbox"><LeadInboxView port={port} api={api} onCreated={setSel} /></ErrorBoundary>}
-          {view === "pipeline"  && <ErrorBoundary label="Pipeline"><PipelineView leads={leads} openDrawer={setSel} deleteLead={deleteLead} port={port} api={api} scanning={scanning} reevaluating={reevaluating} cleaning={cleaning} onReevaluate={onReevaluateJobs} onStopReevaluate={onStopReevaluate} onCleanup={onCleanupLeads} loading={leadsLoading || !port || !api} error={leadsError} /></ErrorBoundary>}
-          {view === "graph"     && <ErrorBoundary label="Graph"><GraphView stats={stats} /></ErrorBoundary>}
-          {view === "activity"  && <ErrorBoundary label="Activity"><ActivityView logs={logs} /></ErrorBoundary>}
-          {view === "profile"   && (api ? <ErrorBoundary label="Profile"><ProfileView api={api} setView={setView} /></ErrorBoundary> : <BackendUnavailable title="Profile" conn={conn} port={port} />)}
-          {view === "ingestion" && (api ? <ErrorBoundary label="Ingestion"><IngestionView api={api} /></ErrorBoundary> : <BackendUnavailable title="Add Context" conn={conn} port={port} />)}
+          {view === "apply"     && <ErrorBoundary label="Apply" api={api ?? undefined}><ApplyJobView port={port} api={api} leads={leads} openDrawer={setSel} initialInput={applyDraft} autoFocus={applyAutoFocus} /></ErrorBoundary>}
+          {view === "dashboard" && <ErrorBoundary label="Dashboard" api={api ?? undefined}><DashboardView leads={leads} dueFollowups={dueFollowups} logs={logs} setView={setView} openDrawer={setSel} scanning={scanning} reevaluating={reevaluating} cleaning={cleaning} onScan={onScan} onStopScan={onStopScan} onReevaluate={onReevaluateJobs} onStopReevaluate={onStopReevaluate} onCleanup={onCleanupLeads} scanErr={scanErr} /></ErrorBoundary>}
+          {view === "inbox"     && <ErrorBoundary label="Inbox" api={api ?? undefined}><LeadInboxView port={port} api={api} onCreated={setSel} /></ErrorBoundary>}
+          {view === "pipeline"  && <ErrorBoundary label="Pipeline" api={api ?? undefined}><PipelineView leads={leads} openDrawer={setSel} deleteLead={deleteLead} port={port} api={api} scanning={scanning} reevaluating={reevaluating} cleaning={cleaning} onReevaluate={onReevaluateJobs} onStopReevaluate={onStopReevaluate} onCleanup={onCleanupLeads} loading={leadsLoading || !port || !api} error={leadsError} /></ErrorBoundary>}
+          {view === "graph"     && <ErrorBoundary label="Graph" api={api ?? undefined}><GraphView stats={stats} /></ErrorBoundary>}
+          {view === "activity"  && <ErrorBoundary label="Activity" api={api ?? undefined}><ActivityView logs={logs} /></ErrorBoundary>}
+          {view === "profile"   && (api ? <ErrorBoundary label="Profile" api={api ?? undefined}><ProfileView api={api} setView={setView} /></ErrorBoundary> : <BackendUnavailable title="Profile" conn={conn} port={port} />)}
+          {view === "ingestion" && (api ? <ErrorBoundary label="Ingestion" api={api ?? undefined}><IngestionView api={api} /></ErrorBoundary> : <BackendUnavailable title="Add Context" conn={conn} port={port} />)}
         </div>
       </div>
 

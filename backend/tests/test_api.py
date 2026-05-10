@@ -58,6 +58,9 @@ class _FakeVectorStore:
 
 
 def _install_storage_fakes():
+    fake_sqlite = types.SimpleNamespace(
+        connect=lambda _path: _FakeSqlConnection()
+    )
     sys.modules.setdefault(
         "kuzu",
         types.SimpleNamespace(
@@ -65,9 +68,7 @@ def _install_storage_fakes():
             Connection=lambda _db: _FakeConnection(),
         ),
     )
-    sys.modules["sqlite3"] = types.SimpleNamespace(
-        connect=lambda _path: _FakeSqlConnection()
-    )
+    sys.modules["sqlite3"] = fake_sqlite
     sys.modules.setdefault(
         "lancedb",
         types.SimpleNamespace(
@@ -75,6 +76,8 @@ def _install_storage_fakes():
             connect=lambda _path: _FakeVectorStore(),
         ),
     )
+    if "data.sqlite.connection" in sys.modules:
+        sys.modules["data.sqlite.connection"].sqlite3 = fake_sqlite
 
 
 _install_storage_fakes()
@@ -197,10 +200,8 @@ class TestLeadsEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 404)
 
     def test_manual_lead_missing_fields(self):
-        # ManualLeadBody all fields have defaults → Pydantic passes
-        # handler raises 400 when both text and url are empty strings
         resp = post("/api/v1/leads/manual", json={})
-        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.status_code, 422)
 
     def test_manual_lead_text_too_long(self):
         resp = post("/api/v1/leads/manual", json={"text": "x" * 25000})
@@ -259,7 +260,7 @@ class TestFormReaderEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 404)
 
     def test_form_read_no_url(self):
-        from db import client as db_client
+        from api.dependencies import get_repository
 
         mock_lead = {
             "job_id": "test-form-001",
@@ -268,11 +269,19 @@ class TestFormReaderEndpoints(unittest.TestCase):
             "url": "",
             "kind": "job",
         }
-        with mock.patch.object(db_client, "get_lead_by_id", return_value=mock_lead):
+        fake_repo = types.SimpleNamespace(
+            leads=types.SimpleNamespace(get_lead_by_id=lambda _job_id: mock_lead),
+            profile=types.SimpleNamespace(get_profile=lambda: {}),
+            settings=types.SimpleNamespace(get_settings=lambda: {}),
+        )
+        app.dependency_overrides[get_repository] = lambda: fake_repo
+        try:
             resp = post(
                 "/api/v1/leads/test-form-001/form/read",
                 json={"url": ""},
             )
+        finally:
+            app.dependency_overrides.pop(get_repository, None)
         self.assertEqual(resp.status_code, 400)
 
     def test_identity_endpoint(self):
@@ -296,7 +305,7 @@ class TestPipelineRunEndpoint(unittest.TestCase):
         self.assertEqual(resp.status_code, 404)
 
     def test_pipeline_run_valid_id_accepted(self):
-        from db import client as db_client
+        from api.dependencies import get_repository
 
         mock_lead = {
             "job_id": "test-pipeline-001",
@@ -306,12 +315,16 @@ class TestPipelineRunEndpoint(unittest.TestCase):
             "description": "Python and FastAPI role.",
             "kind": "job",
         }
-        with (
-            mock.patch.object(db_client, "get_lead_by_id", return_value=mock_lead),
-            mock.patch.object(db_client, "get_profile", return_value={}),
-            mock.patch.object(db_client, "get_settings", return_value={}),
-        ):
+        fake_repo = types.SimpleNamespace(
+            leads=types.SimpleNamespace(get_lead_by_id=lambda _job_id: mock_lead),
+            profile=types.SimpleNamespace(get_profile=lambda: {}),
+            settings=types.SimpleNamespace(get_settings=lambda: {}),
+        )
+        app.dependency_overrides[get_repository] = lambda: fake_repo
+        try:
             resp = post("/api/v1/leads/test-pipeline-001/pipeline/run")
+        finally:
+            app.dependency_overrides.pop(get_repository, None)
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json().get("status"), "started")
@@ -319,12 +332,14 @@ class TestPipelineRunEndpoint(unittest.TestCase):
 
 class TestGenerateEndpoint(unittest.TestCase):
     def test_generate_waits_for_ready_package(self):
+        from api.routers import generation
+
         ready_lead = {
             "job_id": "test-generate-001",
             "resume_asset": "/tmp/resume.pdf",
             "cover_letter_asset": "/tmp/cover.pdf",
         }
-        with mock.patch.object(main, "_generate_one", new=mock.AsyncMock(return_value=ready_lead)):
+        with mock.patch.object(generation, "generate_one", new=mock.AsyncMock(return_value=ready_lead)):
             resp = post("/api/v1/leads/test-generate-001/generate")
 
         self.assertEqual(resp.status_code, 200)
@@ -372,7 +387,7 @@ class TestIngestionEndpoints(unittest.TestCase):
         self.assertGreaterEqual(data["stats"]["skills"], 2)
 
     def test_github_ingest_unknown_user(self):
-        import agents.github_ingestor as _gh_mod
+        import profile.github_ingestor as _gh_mod
 
         async def _fake_fetch(*args, **kwargs):
             return None
@@ -426,7 +441,7 @@ class TestIngestionEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_portfolio_ingest_valid_url_structure(self):
-        import agents.portfolio_ingestor as _portfolio_mod
+        import profile.portfolio_ingestor as _portfolio_mod
 
         async def _fake_ingest_portfolio_url(_url):
             return {

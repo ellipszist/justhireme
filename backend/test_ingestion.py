@@ -4,8 +4,7 @@ import os
 # Add backend to path
 sys.path.append(os.path.join(os.getcwd(), "backend"))
 
-from agents.ingestor import ingest
-from db.client import save_settings
+from profile.ingestor import ingest
 
 # Ensure we have a sample text to ingest
 test_text = """

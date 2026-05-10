@@ -1,0 +1,78 @@
+import { spawn } from "node:child_process";
+import process from "node:process";
+
+const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+
+const groups = {
+  "check:all": [
+    ["frontend tests", npm, ["test"]],
+    ["frontend build", npm, ["run", "build"]],
+    ["website build", npm, ["run", "build"], { cwd: "website" }],
+    ["backend tests", ".venv\\Scripts\\python.exe", ["-m", "pytest", "tests", "-q"], { cwd: "backend", fallback: ["python", ["-m", "pytest", "tests", "-q"]] }],
+    ["rust check", "cargo", ["check"], { cwd: "src-tauri" }],
+  ],
+  "build:all": [
+    ["frontend build", npm, ["run", "build"]],
+    ["website build", npm, ["run", "build"], { cwd: "website" }],
+    ["rust check", "cargo", ["check"], { cwd: "src-tauri" }],
+  ],
+};
+
+const groupName = process.argv[2];
+const tasks = groups[groupName];
+
+if (!tasks) {
+  console.error(`Unknown parallel task group: ${groupName || "(missing)"}`);
+  console.error(`Available groups: ${Object.keys(groups).join(", ")}`);
+  process.exit(1);
+}
+
+const colors = [36, 35, 34, 33, 32, 31];
+let failed = false;
+
+function prefixLine(name, index, chunk) {
+  const color = colors[index % colors.length];
+  const lines = chunk.toString().split(/\r?\n/);
+  for (const line of lines) {
+    if (line) {
+      process.stdout.write(`\x1b[${color}m[${name}]\x1b[0m ${line}\n`);
+    }
+  }
+}
+
+function startTask(task, index) {
+  const [name, command, args, options = {}] = task;
+  const cwd = options.cwd || ".";
+  const child = spawn(command, args, {
+    cwd,
+    shell: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  child.stdout.on("data", (chunk) => prefixLine(name, index, chunk));
+  child.stderr.on("data", (chunk) => prefixLine(name, index, chunk));
+
+  child.on("error", (error) => {
+    if (options.fallback) {
+      const [fallbackCommand, fallbackArgs] = options.fallback;
+      tasks[index] = [name, fallbackCommand, fallbackArgs, { cwd }];
+      startTask(tasks[index], index).then(() => {}, () => {});
+      return;
+    }
+    failed = true;
+    console.error(`[${name}] failed to start: ${error.message}`);
+  });
+
+  return new Promise((resolve) => {
+    child.on("close", (code) => {
+      if (code !== 0) {
+        failed = true;
+        console.error(`[${name}] exited with code ${code}`);
+      }
+      resolve();
+    });
+  });
+}
+
+await Promise.all(tasks.map(startTask));
+process.exit(failed ? 1 : 0);

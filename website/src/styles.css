@@ -1066,27 +1066,6 @@ p {
   color: #b4452c;
 }
 
-.feedback-routing {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.feedback-routing span {
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 11px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(255,255,255,0.62);
-  color: var(--ink-2);
-  font-size: 12px;
-  font-weight: 750;
-}
-
 .support-callout {
   margin-top: 18px;
   display: flex;

@@ -104,6 +104,7 @@ const platformOptions = [
   { id: "mac", label: "macOS", hint: "DMG / PKG", tone: "purple" },
   { id: "linux", label: "Linux", hint: "AppImage / package", tone: "green" },
 ];
+const COUNTER_REFRESH_MS = 5 * 60 * 1000;
 
 function formatCount(value) {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
@@ -140,7 +141,11 @@ function useViewCounter() {
     };
 
     syncViews("POST").catch(() => {});
-    const timer = window.setInterval(() => syncViews("GET").catch(() => {}), 15000);
+    const timer = window.setInterval(() => {
+      if (!document.hidden) {
+        syncViews("GET").catch(() => {});
+      }
+    }, COUNTER_REFRESH_MS);
 
     return () => {
       cancelled = true;
@@ -176,7 +181,11 @@ function useDownloadCounter() {
 
   React.useEffect(() => {
     syncDownloads("GET").catch(() => {});
-    const timer = window.setInterval(() => syncDownloads("GET").catch(() => {}), 15000);
+    const timer = window.setInterval(() => {
+      if (!document.hidden) {
+        syncDownloads("GET").catch(() => {});
+      }
+    }, COUNTER_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [syncDownloads]);
 
@@ -531,7 +540,7 @@ function MiniApp() {
           {[
             ["Founding Engineer", "Remote - Product infra - 94%"],
             ["AI Tools Engineer", "Hybrid - TypeScript - 88%"],
-            ["Full-stack Builder", "Remote - OSS-friendly - 82%"],
+            ["Full-stack Builder", "Remote - public-build friendly - 82%"],
           ].map(([title, meta], index) => (
             <div className="job-row" key={title}>
               <span className={`job-mark tone-${["green", "purple", "orange"][index]}`}>{title[0]}</span>
@@ -736,10 +745,6 @@ function App() {
               copy="Leave a public-product-style review with a rating and practical notes."
               tone="green"
             />
-          </div>
-          <div className="feedback-routing">
-            <span><Icon name="github" /> Can create GitHub issues when a repo token is configured.</span>
-            <span><Icon name="message" /> Can email submissions when Resend is configured.</span>
           </div>
           <div className="support-callout">
             <div>

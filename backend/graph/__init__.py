@@ -1,10 +1,23 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, TypedDict
+
+try:
+    from langchain_core._api.deprecation import LangChainPendingDeprecationWarning
+
+    warnings.filterwarnings(
+        "ignore",
+        message=r"The default value of `allowed_objects` will change in a future version.*",
+        category=LangChainPendingDeprecationWarning,
+        module=r"langgraph\.cache\.base",
+    )
+except Exception:
+    pass
 
 from langgraph.graph import END, StateGraph
 
-from logger import get_logger
+from core.logging import get_logger
 
 _log = get_logger(__name__)
 
@@ -35,7 +48,7 @@ def _job_eval_document(lead: dict) -> str:
 
 def evaluate_node(state: PipelineState) -> dict:
     try:
-        from agents.evaluator import score
+        from ranking.evaluator import score
 
         result = score(_job_eval_document(state["lead"]), state["profile"])
         return {
@@ -61,7 +74,7 @@ def generate_node(state: PipelineState) -> dict:
     if int(state.get("score") or 0) < threshold:
         return {"asset_path": "", "cover_letter_path": "", "error": None}
     try:
-        from agents.generator import run_package
+        from generation.generator import run_package
 
         template = str(state.get("cfg", {}).get("resume_template") or "")
         package = run_package({**state["lead"], **state}, template=template)
@@ -76,21 +89,26 @@ def generate_node(state: PipelineState) -> dict:
 
 
 def persist_node(state: PipelineState) -> dict:
-    from db.client import save_asset_package, update_lead_score
+    from data.repository import create_repository
 
-    update_lead_score(
-        state["job_id"],
-        int(state.get("score") or 0),
-        state.get("reason") or "",
-        state.get("match_points") or [],
-        state.get("gaps") or [],
-    )
-    if state.get("asset_path") or state.get("cover_letter_path"):
-        save_asset_package(
+    repo = create_repository()
+
+    try:
+        repo.leads.update_lead_score(
             state["job_id"],
-            state.get("asset_path") or "",
-            state.get("cover_letter_path") or "",
+            int(state.get("score") or 0),
+            state.get("reason") or "",
+            state.get("match_points") or [],
+            state.get("gaps") or [],
         )
+        if state.get("asset_path") or state.get("cover_letter_path"):
+            repo.leads.save_asset_package(
+                state["job_id"],
+                state.get("asset_path") or "",
+                state.get("cover_letter_path") or "",
+            )
+    except Exception as exc:
+        _log.warning("pipeline persistence skipped for %s: %s", state.get("job_id", "?"), exc)
     return {}
 
 

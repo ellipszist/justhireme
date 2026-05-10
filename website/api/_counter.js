@@ -3,8 +3,16 @@ export function json(body, status = 200) {
 }
 
 export function send(response, payload) {
-  response.setHeader("cache-control", "no-store");
+  response.setHeader("cache-control", payload.cacheControl || "no-store");
   response.status(payload.status).json(payload.body);
+}
+
+export function cacheableJson(body, seconds = 300, status = 200) {
+  return {
+    body,
+    status,
+    cacheControl: `public, max-age=30, s-maxage=${seconds}, stale-while-revalidate=${seconds * 6}`,
+  };
 }
 
 export function redisConfigured() {
@@ -70,4 +78,25 @@ export async function redisPipeline(commands) {
 
 export function cleanId(value) {
   return String(value || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
+}
+
+export function createMemoryCache(ttlMs) {
+  let value = null;
+  let expiresAt = 0;
+
+  return {
+    get() {
+      return Date.now() < expiresAt ? value : null;
+    },
+    set(nextValue) {
+      value = nextValue;
+      expiresAt = Date.now() + ttlMs;
+      return value;
+    },
+    update(updater) {
+      const current = this.get();
+      if (!current) return null;
+      return this.set(updater(current));
+    },
+  };
 }

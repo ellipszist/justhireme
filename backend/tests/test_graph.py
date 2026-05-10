@@ -115,10 +115,10 @@ class TestGraphInvoke(unittest.TestCase):
     def setUp(self):
         self.patches = []
 
-        p_eval = mock.patch("agents.evaluator.score", return_value=_EVAL_RESULT)
-        p_gen = mock.patch("agents.generator.run_package", return_value=_GEN_RESULT)
-        p_update = mock.patch("db.client.update_lead_score")
-        p_save = mock.patch("db.client.save_asset_package")
+        p_eval = mock.patch("ranking.evaluator.score", return_value=_EVAL_RESULT)
+        p_gen = mock.patch("generation.generator.run_package", return_value=_GEN_RESULT)
+        p_update = mock.patch("data.sqlite.leads.update_lead_score")
+        p_save = mock.patch("data.sqlite.leads.save_asset_package")
 
         for p in (p_eval, p_gen, p_update, p_save):
             self.patches.append(p)
@@ -192,8 +192,8 @@ class TestGraphInvoke(unittest.TestCase):
         }
 
         # Re-patch evaluator inside this test with a lower score.
-        with mock.patch("agents.evaluator.score", return_value=low_eval) as _eval_mock, \
-             mock.patch("agents.generator.run_package") as gen_mock:
+        with mock.patch("ranking.evaluator.score", return_value=low_eval) as _eval_mock, \
+             mock.patch("generation.generator.run_package") as gen_mock:
             graph = build_eval_graph()
             result = graph.invoke(self._make_state())
             gen_mock.assert_not_called()

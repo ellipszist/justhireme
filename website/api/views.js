@@ -1,7 +1,23 @@
-import { cleanId, json, redis, redisConfigured, redisPipeline, send } from "./_counter.js";
+import { cacheableJson, cleanId, createMemoryCache, json, redis, redisConfigured, redisPipeline, send } from "./_counter.js";
 
 const TOTAL_KEY = "justhireme:views:total";
 const UNIQUE_PREFIX = "justhireme:views:visitor:";
+const COUNT_CACHE = createMemoryCache(5 * 60 * 1000);
+
+async function getViewCount(configured, baseline) {
+  if (!configured) {
+    return { configured: false, total: baseline };
+  }
+
+  const cached = COUNT_CACHE.get();
+  if (cached) return cached;
+
+  const total = await redis(["GET", TOTAL_KEY]);
+  return COUNT_CACHE.set({
+    configured: true,
+    total: Number.parseInt(total || `${baseline}`, 10),
+  });
+}
 
 export default async function handler(request, response) {
   try {
@@ -9,11 +25,7 @@ export default async function handler(request, response) {
     const baseline = Number.parseInt(process.env.VIEW_COUNT_BASELINE || "0", 10);
 
     if (request.method === "GET") {
-      const total = configured ? await redis(["GET", TOTAL_KEY]) : null;
-      return send(response, json({
-        configured,
-        total: Number.parseInt(total || `${baseline}`, 10),
-      }));
+      return send(response, cacheableJson(await getViewCount(configured, baseline)));
     }
 
     if (request.method !== "POST") {
@@ -37,14 +49,18 @@ export default async function handler(request, response) {
       ["SET", TOTAL_KEY, baseline, "NX"],
     ]);
 
-    const total = wasNew
-      ? await redis(["INCR", TOTAL_KEY])
-      : await redis(["GET", TOTAL_KEY]);
+    let total;
+    if (wasNew) {
+      total = Number.parseInt(await redis(["INCR", TOTAL_KEY]) || `${baseline}`, 10);
+      COUNT_CACHE.set({ configured: true, total });
+    } else {
+      total = (await getViewCount(configured, baseline)).total;
+    }
 
     return send(response, json({
       configured: true,
       counted: Boolean(wasNew),
-      total: Number.parseInt(total || `${baseline}`, 10),
+      total,
     }));
   } catch (error) {
     return send(response, json({

@@ -26,7 +26,12 @@ def banner():
 
 
 def check_settings():
-    from db.client import get_setting, get_settings, save_settings
+    from data.repository import create_repository
+
+    repo = create_repository()
+    get_setting = repo.settings.get_setting
+    get_settings = repo.settings.get_settings
+    save_settings = repo.settings.save_settings
 
     log("CONFIG", "Loading settings from SQLite...", C)
     cfg = get_settings()
@@ -73,7 +78,7 @@ def check_settings():
 
 
 def run_scout(urls):
-    from agents.scout import run as _scout
+    from automation.scout import run as _scout
 
     log("SCOUT", f"Launching Playwright (headed) for {len(urls)} URLs...", M)
     http = [u for u in urls if u.startswith("http")]
@@ -96,8 +101,14 @@ def run_scout(urls):
 
 
 def run_evaluator():
-    from db.client import get_discovered_leads, update_lead_score, get_setting, get_profile
-    from agents.evaluator import score as _score
+    from data.repository import create_repository
+    from ranking.evaluator import score as _score
+
+    repo = create_repository()
+    get_discovered_leads = repo.leads.get_discovered_leads
+    update_lead_score = repo.leads.update_lead_score
+    get_setting = repo.settings.get_setting
+    get_profile = repo.profile.get_profile
 
     discovered = get_discovered_leads()
     profile = get_profile()
