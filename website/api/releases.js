@@ -9,19 +9,25 @@ function classifyAsset(asset) {
   const url = asset.browser_download_url;
   const size = asset.size || 0;
 
-  if (name.includes("sha256") || name.includes("checksum")) {
+  if (
+    name.endsWith(".sig") ||
+    name === "latest.json" ||
+    name.includes("sha256") ||
+    name.includes("checksum") ||
+    name.includes("browser-runtime")
+  ) {
     return [null, null];
   }
 
-  if (/\.(exe|msi|msix)$/.test(name) || name.includes("windows") || name.includes("win32") || name.includes("win64")) {
+  if (/\.(exe|msi|msix)$/.test(name)) {
     return ["windows", { name: asset.name, url, size }];
   }
 
-  if (/\.(dmg|pkg)$/.test(name) || name.includes("mac") || name.includes("darwin") || name.includes("aarch64-apple") || name.includes("x64-apple")) {
+  if (/\.(dmg|pkg)$/.test(name) || name.endsWith(".app.tar.gz")) {
     return ["mac", { name: asset.name, url, size }];
   }
 
-  if (/\.(appimage|deb|rpm)$/.test(name) || name.includes("linux") || name.includes("x86_64-unknown-linux")) {
+  if (/\.(appimage|deb|rpm)$/.test(name)) {
     return ["linux", { name: asset.name, url, size }];
   }
 
