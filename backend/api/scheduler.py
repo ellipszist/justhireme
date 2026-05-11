@@ -11,6 +11,7 @@ from api.routers.automation import fire_blocker
 from api.routers.discovery import run_free_source_scan, run_x_signal_scan
 from discovery.targets import free_sources_enabled, has_x_token, job_targets, profile_for_discovery
 from api.startup_validation import log_startup_warnings
+from data.sqlite.connection import init_sql
 
 
 def create_scheduler() -> AsyncIOScheduler:
@@ -145,6 +146,7 @@ def create_ghost_tick(manager):
 def create_lifespan(scheduler: AsyncIOScheduler, ghost_tick, logger):
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        init_sql()
         ensure_ghost_job(scheduler, ghost_tick)
         log_startup_warnings(get_repository(), logger)
         scheduler.start()

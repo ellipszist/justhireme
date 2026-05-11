@@ -203,10 +203,10 @@ pub fn run() {
             let sidecar_cmd = {
                 eprintln!("[tauri] Using bundled backend sidecar");
                 // Tauri installs externalBin sidecars beside the app executable under
-                // the binary basename, so this resolves to jhm-sidecar.exe on Windows.
+                // the binary basename, so this resolves to jhm-sidecar-next.exe on Windows.
                 handle
                     .shell()
-                    .sidecar("jhm-sidecar")
+                    .sidecar("jhm-sidecar-next")
                     .expect("failed to create sidecar command")
             };
 

@@ -8,6 +8,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const backendDir = join(repoRoot, "backend");
 const resourcesDir = join(repoRoot, "src-tauri", "resources");
 const sidecarDir = join(resourcesDir, "backend");
+const sidecarInternalDir = join(resourcesDir, "sidecar-internal");
 const distDir = join(repoRoot, ".codex-temp-sidecar");
 const builtSidecarDir = join(distDir, "backend");
 const workPath = join(backendDir, "build_cache");
@@ -40,6 +41,25 @@ function run(command, args, options = {}) {
       }
     });
   });
+}
+
+function sleep(ms) {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+async function rmWithRetries(path, options = {}, attempts = 6) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      rmSync(path, options);
+      return;
+    } catch (error) {
+      const retryable = ["EBUSY", "EPERM", "ENOTEMPTY"].includes(error?.code);
+      if (!retryable || attempt === attempts) {
+        throw error;
+      }
+      await sleep(750 * attempt);
+    }
+  }
 }
 
 async function getRustTriple() {
@@ -85,23 +105,23 @@ if (!existsSync(python)) {
   throw new Error(`Python virtual environment not found: ${python}`);
 }
 
-rmSync(distDir, { recursive: true, force: true });
-rmSync(join(workPath, "backend", "backend.pkg"), { force: true });
+await rmWithRetries(distDir, { recursive: true, force: true });
+await rmWithRetries(join(workPath, "backend", "backend.pkg"), { force: true });
 mkdirSync(distDir, { recursive: true });
 await run(python, pyinstallerArgs, { cwd: backendDir });
 
 const triple = await getRustTriple();
 const extension = process.platform === "win32" ? ".exe" : "";
 const source = join(builtSidecarDir, `backend${extension}`);
-const target = join(sidecarDir, `jhm-sidecar-${triple}${extension}`);
+const sidecarName = "jhm-sidecar-next";
+const target = join(sidecarDir, `${sidecarName}-${triple}${extension}`);
 
 if (!existsSync(source)) {
   throw new Error(`Expected PyInstaller sidecar was not created: ${source}`);
 }
 
 mkdirSync(sidecarDir, { recursive: true });
-rmSync(join(sidecarDir, "_internal"), { recursive: true, force: true });
-cpSync(join(builtSidecarDir, "_internal"), join(sidecarDir, "_internal"), { recursive: true });
-copyFileSync(source, join(sidecarDir, `backend${extension}`));
+await rmWithRetries(sidecarInternalDir, { recursive: true, force: true });
+cpSync(join(builtSidecarDir, "_internal"), sidecarInternalDir, { recursive: true });
 copyFileSync(source, target);
 console.log(`Sidecar ready: ${target}`);
