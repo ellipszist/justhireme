@@ -27,11 +27,11 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "externalBin": [
-      "resources/backend/jhm-sidecar"
+      "resources/backend/jhm-sidecar-next"
     ],
-    "resources": [
-      "resources/backend/_internal"
-    ],
+    "resources": {
+      "resources/sidecar-internal": "_internal"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

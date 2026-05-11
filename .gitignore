@@ -65,6 +65,7 @@ src-tauri/resources/bin/ms-playwright/
 src-tauri/resources/backend/
 src-tauri/resources/backend-*/
 src-tauri/resources/backend-*
+src-tauri/resources/sidecar-internal/
 
 # Local data / DBs
 *.db

@@ -16,14 +16,14 @@ else:
     _KUZU_IMPORT_ERROR = ""
 
 BASE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe")
-GRAPH_DIR = os.path.join(BASE_DIR, "graph")
+GRAPH_PATH = os.path.join(BASE_DIR, "graph.kuzu")
 
 _GRAPH_ERROR = ""
 _GRAPH_DIR_READY = False
 _graph_lock = threading.Lock()
 
 try:
-    os.makedirs(GRAPH_DIR, exist_ok=True)
+    os.makedirs(BASE_DIR, exist_ok=True)
     _GRAPH_DIR_READY = True
 except Exception as exc:
     _GRAPH_ERROR = str(exc)
@@ -34,7 +34,7 @@ try:
         raise RuntimeError(_GRAPH_ERROR or "Graph directory is not available")
     if kuzu is None:
         raise RuntimeError(_KUZU_IMPORT_ERROR or "Kuzu is not available")
-    db = kuzu.Database(GRAPH_DIR)
+    db = kuzu.Database(GRAPH_PATH)
     conn = kuzu.Connection(db)
 except Exception as exc:
     db = None
