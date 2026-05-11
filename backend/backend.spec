@@ -28,15 +28,16 @@ hidden = [
     "fpdf",
     "pypdf", "markdown",
     "tenacity",
-    "agents.ingestor", "agents.evaluator", "agents.generator",
-    "agents.actuator", "agents.scout", "agents.free_scout",
-    "agents.scoring_engine", "agents.semantic", "agents.contact_lookup",
-    "agents.lead_intel", "agents.feedback_ranker", "agents.query_gen",
-    "agents.x_scout", "agents.feedback_ranker", "agents.browser_runtime",
     "graph",
     "db.client",
     "llm", "logger",
-] + collect_submodules("playwright") + collect_submodules("lancedb") + collect_submodules("pyarrow")
+] + collect_submodules("playwright") + collect_submodules(
+    "lancedb",
+    filter=lambda name: ".tests" not in name and not name.endswith(".conftest"),
+) + collect_submodules(
+    "pyarrow",
+    filter=lambda name: ".tests" not in name and not name.endswith(".conftest"),
+)
 
 datas = collect_data_files("playwright") + collect_data_files("lancedb") + collect_data_files("pyarrow")
 
@@ -50,6 +51,10 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        "IPython", "notebook", "jupyter", "docutils", "sphinx",
+        "setuptools", "pip", "wheel", "pkg_resources",
+        "unittest", "pydoc", "xmlrpc", "lib2to3",
+        "pyarrow.tests", "lancedb.tests",
         "tkinter", "matplotlib", "PIL", "cv2",
         "pytest", "tensorboard",
         "sentence_transformers", "transformers",
@@ -65,13 +70,23 @@ a = Analysis(
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
-    pyz, a.scripts, a.binaries, a.zipfiles, a.datas,
+    pyz, a.scripts,
     [],
-    exclude_binaries=False,
+    exclude_binaries=True,
     name="backend",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=True,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="backend",
 )
