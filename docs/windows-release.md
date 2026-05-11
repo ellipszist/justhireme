@@ -9,11 +9,10 @@ npm install
 cd backend
 uv sync --dev
 cd ..
-.\scripts\build-sidecar.ps1
-npm run package:windows
+npm run release
 ```
 
-The standard Windows release build now produces only the NSIS installer. This keeps local release testing fast enough to use regularly.
+The standard Windows release build runs the frontend, Rust release compile, and Python sidecar build in parallel, then produces the NSIS installer.
 
 | Artifact | Use |
 | --- | --- |
@@ -23,7 +22,7 @@ The standard Windows release build now produces only the NSIS installer. This ke
 For the fastest release smoke test, skip installer generation:
 
 ```powershell
-npm run package:fast
+npm run release:fast
 .\src-tauri\target\release\justhireme.exe
 ```
 

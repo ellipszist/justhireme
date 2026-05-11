@@ -16,6 +16,11 @@ const groups = {
     ["website build", npm, ["run", "build"], { cwd: "website" }],
     ["rust check", "cargo", ["check"], { cwd: "src-tauri" }],
   ],
+  "release": [
+    ["frontend build", npm, ["run", "build"]],
+    ["sidecar build", npm, ["run", "build:sidecar"]],
+    ["rust build", "cargo", ["build", "--release"], { cwd: "src-tauri" }],
+  ],
 };
 
 const groupName = process.argv[2];

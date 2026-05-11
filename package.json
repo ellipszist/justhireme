@@ -1,7 +1,7 @@
 {
   "name": "justhireme",
   "private": true,
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "Local-first AI job intelligence workbench for scraping, ranking, and tailoring applications.",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -18,11 +18,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "node scripts/build-frontend.mjs",
+    "build:sidecar": "node scripts/build-sidecar.mjs",
     "build:all": "node scripts/run-parallel.mjs build:all",
     "check": "npm run check:all",
     "check:all": "node scripts/run-parallel.mjs check:all",
     "preview": "vite preview",
     "tauri": "tauri",
+    "release:fast": "node scripts/prepare-sidecar-placeholder.mjs && node scripts/run-parallel.mjs release && cd src-tauri && cargo build --release",
+    "release": "npm run release:fast && npm run tauri -- build --bundles nsis",
     "package:fast": "tauri build --no-bundle",
     "package:windows": "tauri build --bundles nsis",
     "package:windows:all": "tauri build --bundles nsis msi",

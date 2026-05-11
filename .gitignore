@@ -47,6 +47,8 @@ ENV/
 .mypy_cache/
 .ruff_cache/
 backend/.hf-cache/
+backend/.pyinstaller-cache/
+backend/build_cache/
 backend/tests/tmp*/
 
 # Rust / Tauri
@@ -76,6 +78,7 @@ scratch/
 
 # Generated artifacts and local analysis output
 .codex-temp-appdata/
+.codex-temp-sidecar/
 .codex-video-analysis/
 release-assets/
 release-assets-*/
