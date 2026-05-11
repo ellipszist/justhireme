@@ -83,11 +83,18 @@ jobs:
 
           $triple = (rustc -vV | Select-String "host:").ToString().Split()[1].Trim()
           $src = "src-tauri\resources\backend\backend.exe"
-          $dst = "src-tauri\resources\backend\jhm-sidecar-$triple.exe"
+          $dst = "src-tauri\resources\backend\jhm-sidecar-next-$triple.exe"
+          $internalSrc = "src-tauri\resources\backend\_internal"
+          $internalDst = "src-tauri\resources\sidecar-internal"
 
           if (-not (Test-Path $src)) {
             throw "Expected sidecar was not created: $src"
           }
+          if (-not (Test-Path $internalSrc)) {
+            throw "Expected sidecar runtime was not created: $internalSrc"
+          }
+          Remove-Item -Path $internalDst -Recurse -Force -ErrorAction SilentlyContinue
+          Move-Item -Path $internalSrc -Destination $internalDst -Force
           Copy-Item $src $dst -Force
           Write-Host "Sidecar ready: $dst"
 
@@ -103,12 +110,20 @@ jobs:
 
           triple="$(rustc -vV | awk '/host:/ {print $2}')"
           src="src-tauri/resources/backend/backend"
-          dst="src-tauri/resources/backend/jhm-sidecar-${triple}"
+          dst="src-tauri/resources/backend/jhm-sidecar-next-${triple}"
+          internal_src="src-tauri/resources/backend/_internal"
+          internal_dst="src-tauri/resources/sidecar-internal"
 
           if [ ! -f "$src" ]; then
             echo "Expected sidecar was not created: $src" >&2
             exit 1
           fi
+          if [ ! -d "$internal_src" ]; then
+            echo "Expected sidecar runtime was not created: $internal_src" >&2
+            exit 1
+          fi
+          rm -rf "$internal_dst"
+          mv "$internal_src" "$internal_dst"
           cp "$src" "$dst"
           chmod +x "$dst"
           echo "Sidecar ready: $dst"
@@ -138,7 +153,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: backend-sidecar-${{ matrix.platform }}
-          path: src-tauri/resources/backend/
+          path: |
+            src-tauri/resources/backend/
+            src-tauri/resources/sidecar-internal/
           retention-days: 1
 
       - name: Package browser runtime OTA asset (Windows)
@@ -275,16 +292,20 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: backend-sidecar-${{ matrix.platform }}
-          path: src-tauri/resources/backend/
+          path: src-tauri/resources/
 
       - name: Verify sidecar exists (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           $triple = (rustc -vV | Select-String "host:").ToString().Split()[1].Trim()
-          $sidecar = "src-tauri\resources\backend\jhm-sidecar-$triple.exe"
+          $sidecar = "src-tauri\resources\backend\jhm-sidecar-next-$triple.exe"
+          $runtime = "src-tauri\resources\sidecar-internal\python313.dll"
           if (-not (Test-Path $sidecar)) {
             throw "Sidecar not found at $sidecar"
+          }
+          if (-not (Test-Path $runtime)) {
+            throw "Sidecar runtime not found at $runtime"
           }
           Write-Host "Sidecar verified: $sidecar ($(( Get-Item $sidecar ).Length / 1MB) MB)"
           Write-Host "Browser runtime is shipped as an OTA asset, not bundled into the installer."
@@ -295,9 +316,14 @@ jobs:
         run: |
           set -euo pipefail
           triple="$(rustc -vV | awk '/host:/ {print $2}')"
-          sidecar="src-tauri/resources/backend/jhm-sidecar-${triple}"
+          sidecar="src-tauri/resources/backend/jhm-sidecar-next-${triple}"
+          runtime="src-tauri/resources/sidecar-internal/base_library.zip"
           if [ ! -f "$sidecar" ]; then
             echo "Sidecar not found at $sidecar" >&2
+            exit 1
+          fi
+          if [ ! -f "$runtime" ]; then
+            echo "Sidecar runtime not found at $runtime" >&2
             exit 1
           fi
           chmod +x "$sidecar"
@@ -310,9 +336,9 @@ jobs:
         run: |
           set -euo pipefail
           triple="$(rustc -vV | awk '/host:/ {print $2}')"
-          sidecar="src-tauri/resources/backend/jhm-sidecar-${triple}"
+          sidecar="src-tauri/resources/backend/jhm-sidecar-next-${triple}"
           chmod +x "$sidecar"
-          xattr -cr src-tauri/resources/backend || true
+          xattr -cr src-tauri/resources/backend src-tauri/resources/sidecar-internal || true
           codesign --force --sign - "$sidecar"
 
       - name: Verify updater signing secrets

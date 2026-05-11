@@ -156,8 +156,8 @@ jobs:
       - run: |
           triple=$(rustc -vV | grep 'host:' | awk '{print $2}')
           mkdir -p src-tauri/resources/backend
-          touch "src-tauri/resources/backend/jhm-sidecar-${triple}"
-          mkdir -p src-tauri/resources/backend/_internal
-          touch src-tauri/resources/backend/_internal/.ci-placeholder
-          chmod +x "src-tauri/resources/backend/jhm-sidecar-${triple}"
+          touch "src-tauri/resources/backend/jhm-sidecar-next-${triple}"
+          mkdir -p src-tauri/resources/sidecar-internal
+          touch src-tauri/resources/sidecar-internal/.ci-placeholder
+          chmod +x "src-tauri/resources/backend/jhm-sidecar-next-${triple}"
       - run: cd src-tauri && cargo check
