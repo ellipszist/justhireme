@@ -82,9 +82,9 @@ jobs:
           cd ..
 
           $triple = (rustc -vV | Select-String "host:").ToString().Split()[1].Trim()
-          $src = "src-tauri\resources\backend\backend.exe"
+          $src = "src-tauri\resources\backend\backend\backend.exe"
           $dst = "src-tauri\resources\backend\jhm-sidecar-next-$triple.exe"
-          $internalSrc = "src-tauri\resources\backend\_internal"
+          $internalSrc = "src-tauri\resources\backend\backend\_internal"
           $internalDst = "src-tauri\resources\sidecar-internal"
 
           if (-not (Test-Path $src)) {
@@ -109,9 +109,9 @@ jobs:
           cd ..
 
           triple="$(rustc -vV | awk '/host:/ {print $2}')"
-          src="src-tauri/resources/backend/backend"
+          src="src-tauri/resources/backend/backend/backend"
           dst="src-tauri/resources/backend/jhm-sidecar-next-${triple}"
-          internal_src="src-tauri/resources/backend/_internal"
+          internal_src="src-tauri/resources/backend/backend/_internal"
           internal_dst="src-tauri/resources/sidecar-internal"
 
           if [ ! -f "$src" ]; then
