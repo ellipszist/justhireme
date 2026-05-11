@@ -39,7 +39,12 @@ hidden = [
     filter=lambda name: ".tests" not in name and not name.endswith(".conftest"),
 )
 
-datas = collect_data_files("playwright") + collect_data_files("lancedb") + collect_data_files("pyarrow")
+datas = (
+    collect_data_files("playwright")
+    + collect_data_files("lancedb")
+    + collect_data_files("pyarrow")
+    + [(str(backend_root / "data" / "sqlite" / "migrations"), "data/sqlite/migrations")]
+)
 
 a = Analysis(
     ["main.py"],
