@@ -22,7 +22,7 @@ if (!triple) {
 }
 
 const extension = process.platform === "win32" ? ".exe" : "";
-const sidecar = join(sidecarDir, `jhm-sidecar-${triple}${extension}`);
+const sidecar = join(sidecarDir, `jhm-sidecar-next-${triple}${extension}`);
 
 mkdirSync(sidecarDir, { recursive: true });
 if (!existsSync(sidecar)) {
