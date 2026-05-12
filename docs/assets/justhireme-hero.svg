@@ -1,147 +1,126 @@
 <svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">JustHireMe README banner</title>
-  <desc id="desc">A typography-first JustHireMe banner with cohesive local-first job intelligence UI components.</desc>
+  <title id="title">JustHireMe hand drawn banner</title>
+  <desc id="desc">A matte hand-drawn JustHireMe banner with sketched local-first job intelligence components.</desc>
   <defs>
-    <linearGradient id="paper" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FAF6EE"/>
-      <stop offset="0.55" stop-color="#F4F3EE"/>
-      <stop offset="1" stop-color="#EDE7DC"/>
-    </linearGradient>
-    <linearGradient id="wordmark" x1="256" y1="405" x2="1350" y2="492" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#1F1A14"/>
-      <stop offset="0.52" stop-color="#1F1A14"/>
-      <stop offset="0.72" stop-color="#C96442"/>
-      <stop offset="0.88" stop-color="#5A9DA8"/>
-      <stop offset="1" stop-color="#8B7BB8"/>
-    </linearGradient>
-    <linearGradient id="ribbon" x1="330" y1="552" x2="1270" y2="552" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#C96442"/>
-      <stop offset="0.28" stop-color="#D17847"/>
-      <stop offset="0.58" stop-color="#5A9DA8"/>
-      <stop offset="1" stop-color="#8B7BB8"/>
-    </linearGradient>
-    <filter id="mainShadow" x="-10%" y="-20%" width="120%" height="150%" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="26" stdDeviation="28" flood-color="#1F1A14" flood-opacity="0.10"/>
-      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#1F1A14" flood-opacity="0.08"/>
+    <filter id="paperNoise" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.78" numOctaves="4" seed="28" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.075"/>
+      </feComponentTransfer>
     </filter>
-    <filter id="cardShadow" x="-20%" y="-25%" width="140%" height="155%" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#1F1A14" flood-opacity="0.08"/>
+    <filter id="inkWobble" x="-4%" y="-8%" width="108%" height="116%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="9" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="2.4" xChannelSelector="R" yChannelSelector="G"/>
     </filter>
-    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
-      <path d="M32 0H0V32" stroke="#1F1A14" stroke-opacity="0.035"/>
-      <circle cx="0" cy="0" r="1.3" fill="#1F1A14" opacity="0.07"/>
-    </pattern>
     <style>
-      .display { font-family: Fraunces, "Instrument Serif", Georgia, ui-serif, serif; }
+      .paper { fill: #F3EFE4; }
+      .ink { stroke: #211B15; }
+      .mutedInk { stroke: #5F574E; }
+      .coral { stroke: #C96442; }
+      .teal { stroke: #5A9DA8; }
+      .green { stroke: #6A9068; }
+      .purple { stroke: #8B7BB8; }
+      .ochre { stroke: #C49840; }
+      .washCoral { fill: #F6CDBF; }
+      .washTeal { fill: #CFE4DF; }
+      .washGreen { fill: #DCEAD4; }
+      .washPurple { fill: #E7DDF1; }
+      .washOchre { fill: #F2DF9F; }
       .sans { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .hand { font-family: "Segoe Print", "Bradley Hand ITC", "Comic Sans MS", ui-rounded, cursive; }
       .mono { font-family: "JetBrains Mono", Consolas, ui-monospace, monospace; }
-      .panel { fill: rgba(255,255,255,0.72); stroke: rgba(31,26,20,0.10); }
-      .softPanel { fill: rgba(255,255,255,0.52); stroke: rgba(201,100,66,0.18); }
-      .ink { fill: #1F1A14; }
-      .muted { fill: #6F675C; }
-      .micro { font-size: 17px; font-weight: 800; letter-spacing: 0; }
-      .tiny { font-size: 13px; font-weight: 750; letter-spacing: 0; }
+      .label { font-size: 23px; font-weight: 800; letter-spacing: 0; fill: #211B15; }
+      .tiny { font-size: 17px; font-weight: 750; letter-spacing: 0; fill: #5F574E; }
+      .line { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .thin { stroke-width: 3; }
+      .med { stroke-width: 5; }
+      .fat { stroke-width: 8; }
     </style>
   </defs>
 
-  <rect width="1600" height="900" fill="url(#paper)"/>
-  <rect width="1600" height="900" fill="url(#grid)" opacity="0.9"/>
-  <path d="M0 166C154 74 330 42 525 72C712 100 822 174 1007 134C1210 90 1372 54 1600 128V0H0V166Z" fill="#FCE0C8" opacity="0.48"/>
-  <path d="M0 744C170 678 324 686 463 738C642 804 793 845 981 794C1195 736 1382 728 1600 808V900H0V744Z" fill="#CFE4DF" opacity="0.42"/>
+  <rect width="1600" height="900" class="paper"/>
+  <rect width="1600" height="900" filter="url(#paperNoise)" opacity="0.72"/>
 
-  <g transform="translate(92 68)">
-    <rect width="1416" height="764" rx="42" fill="rgba(255,255,255,0.30)" stroke="rgba(31,26,20,0.08)"/>
-    <rect x="28" y="28" width="1360" height="708" rx="34" fill="rgba(244,243,238,0.62)" stroke="rgba(31,26,20,0.07)"/>
+  <g opacity="0.22">
+    <path d="M52 142C245 70 379 110 520 93C704 71 821 4 1039 54C1218 95 1361 72 1548 31" class="line coral fat"/>
+    <path d="M21 781C196 709 378 743 520 800C694 870 858 816 1033 762C1195 712 1357 733 1582 818" class="line teal fat"/>
+    <path d="M96 238C293 185 469 222 639 205C825 187 961 126 1159 171C1307 204 1424 192 1518 162" class="line ochre med"/>
   </g>
 
-  <g filter="url(#cardShadow)">
-    <rect x="150" y="156" width="265" height="122" rx="16" class="panel"/>
-    <text x="178" y="194" class="sans micro ink">Sources</text>
-    <text x="178" y="232" class="mono" font-size="38" font-weight="850" fill="#1F1A14">12</text>
-    <circle cx="293" cy="222" r="7" fill="#6A9068"/>
-    <circle cx="318" cy="222" r="7" fill="#6A9068"/>
-    <circle cx="343" cy="222" r="7" fill="#D17847"/>
-    <circle cx="368" cy="222" r="7" fill="#5A9DA8"/>
-
-    <rect x="462" y="116" width="300" height="116" rx="16" class="softPanel"/>
-    <text x="490" y="154" class="sans micro ink">Quality gate</text>
-    <rect x="490" y="178" width="218" height="14" rx="7" fill="#EDEBE3"/>
-    <rect x="490" y="178" width="168" height="14" rx="7" fill="#6A9068"/>
-    <text x="666" y="197" class="mono" font-size="30" font-weight="850" fill="#2D4A2E">89%</text>
-
-    <rect x="838" y="116" width="300" height="116" rx="16" class="softPanel"/>
-    <text x="866" y="154" class="sans micro ink">Fit ranking</text>
-    <path d="M870 194C900 176 922 185 944 168C971 147 995 177 1018 156C1042 134 1066 162 1094 142" stroke="#C96442" stroke-width="5" stroke-linecap="round"/>
-    <circle cx="1094" cy="142" r="7" fill="#C96442"/>
-
-    <rect x="1186" y="156" width="265" height="122" rx="16" class="panel"/>
-    <text x="1214" y="194" class="sans micro ink">Materials</text>
-    <rect x="1214" y="214" width="72" height="14" rx="7" fill="#B5AFA3"/>
-    <rect x="1214" y="240" width="148" height="14" rx="7" fill="#DCEAD4"/>
-    <circle cx="1390" cy="234" r="20" fill="#DCEAD4" stroke="#6A9068" stroke-width="3"/>
-    <path d="M1382 234L1388 240L1399 226" stroke="#2D4A2E" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <g filter="url(#inkWobble)">
+    <path d="M124 108C505 84 917 83 1479 111C1510 113 1518 131 1516 163C1506 311 1513 557 1489 789C1485 824 1460 836 1428 835C1055 824 604 817 147 831C114 832 89 812 91 778C100 587 84 367 104 151C107 120 94 110 124 108Z" fill="#F8F4EA" stroke="#211B15" stroke-width="4.2" stroke-linejoin="round"/>
+    <path d="M140 126C481 107 929 107 1458 130" class="line mutedInk thin" opacity="0.5"/>
+    <path d="M116 760C432 731 1060 746 1487 771" class="line mutedInk thin" opacity="0.35"/>
   </g>
 
-  <g filter="url(#mainShadow)">
-    <text x="800" y="488" text-anchor="middle" class="display" font-size="202" font-weight="720" letter-spacing="-2" fill="url(#wordmark)">JustHireMe</text>
-    <text x="800" y="488" text-anchor="middle" class="display" font-size="202" font-weight="720" letter-spacing="-2" fill="none" stroke="rgba(31,26,20,0.13)" stroke-width="1.2">JustHireMe</text>
+  <g filter="url(#inkWobble)">
+    <path d="M290 338C392 308 485 292 603 302C709 311 769 335 868 321C998 303 1114 295 1284 326" class="line coral fat" opacity="0.18"/>
+    <text x="800" y="476" text-anchor="middle" class="hand" font-size="194" font-weight="900" letter-spacing="-6" fill="#211B15">JustHireMe</text>
+    <text x="803" y="479" text-anchor="middle" class="hand" font-size="194" font-weight="900" letter-spacing="-6" fill="none" stroke="#211B15" stroke-width="1.8" opacity="0.55">JustHireMe</text>
+    <path d="M314 520C518 546 765 548 1006 536C1130 530 1233 518 1300 525" class="line coral fat"/>
+    <path d="M345 545C535 563 745 565 936 558C1092 553 1195 539 1261 545" class="line teal med" opacity="0.86"/>
+    <text x="800" y="610" text-anchor="middle" class="hand" font-size="36" font-weight="800" fill="#4A463E">local-first job intelligence, drawn for signal over noise</text>
   </g>
 
-  <g>
-    <rect x="330" y="548" width="940" height="10" rx="5" fill="url(#ribbon)"/>
-    <rect x="480" y="575" width="640" height="48" rx="8" fill="rgba(255,255,255,0.62)" stroke="rgba(31,26,20,0.08)"/>
-    <text x="800" y="606" text-anchor="middle" class="sans" font-size="22" font-weight="760" letter-spacing="0" fill="#4A463E">local-first job intelligence for people who want signal, not noise</text>
+  <g filter="url(#inkWobble)">
+    <path d="M168 181C238 171 318 171 401 182C414 184 422 193 421 206C417 252 419 286 412 333C410 347 400 354 386 353C310 348 230 348 154 357C139 359 129 350 130 335C136 287 136 240 141 197C143 187 153 183 168 181Z" class="washCoral" opacity="0.66"/>
+    <path d="M168 181C238 171 318 171 401 182C414 184 422 193 421 206C417 252 419 286 412 333C410 347 400 354 386 353C310 348 230 348 154 357C139 359 129 350 130 335C136 287 136 240 141 197C143 187 153 183 168 181Z" class="line ink thin"/>
+    <text x="164" y="223" class="sans label">sources</text>
+    <circle cx="175" cy="259" r="8" fill="#6A9068"/>
+    <circle cx="203" cy="259" r="8" fill="#6A9068"/>
+    <circle cx="231" cy="259" r="8" fill="#C49840"/>
+    <circle cx="259" cy="259" r="8" fill="#5A9DA8"/>
+    <path d="M166 296C211 285 255 286 303 296C335 302 361 301 394 292" class="line ink thin" opacity="0.68"/>
+    <text x="164" y="323" class="mono tiny">boards / feeds / APIs</text>
+
+    <path d="M497 147C580 136 670 138 753 153C765 155 772 164 770 177C765 223 767 257 761 300C759 313 751 321 737 320C656 312 584 315 504 324C490 326 480 318 482 303C488 252 485 207 490 164C491 155 486 150 497 147Z" class="washGreen" opacity="0.7"/>
+    <path d="M497 147C580 136 670 138 753 153C765 155 772 164 770 177C765 223 767 257 761 300C759 313 751 321 737 320C656 312 584 315 504 324C490 326 480 318 482 303C488 252 485 207 490 164C491 155 486 150 497 147Z" class="line ink thin"/>
+    <text x="518" y="190" class="sans label">quality gate</text>
+    <path d="M520 227C570 221 626 221 690 226" class="line mutedInk med"/>
+    <path d="M520 252C581 245 633 247 718 253" class="line green fat"/>
+    <text x="520" y="288" class="mono tiny">reject stale noise</text>
+
+    <path d="M861 150C939 142 1048 145 1130 158C1144 160 1152 169 1150 183C1144 226 1144 260 1138 305C1136 318 1127 326 1113 325C1026 317 945 316 860 325C845 327 836 318 838 303C845 251 840 206 847 166C849 157 849 152 861 150Z" class="washOchre" opacity="0.63"/>
+    <path d="M861 150C939 142 1048 145 1130 158C1144 160 1152 169 1150 183C1144 226 1144 260 1138 305C1136 318 1127 326 1113 325C1026 317 945 316 860 325C845 327 836 318 838 303C845 251 840 206 847 166C849 157 849 152 861 150Z" class="line ink thin"/>
+    <text x="880" y="192" class="sans label">fit ranking</text>
+    <path d="M878 263C910 236 934 247 958 222C986 192 1012 240 1041 210C1062 188 1084 203 1110 182" class="line coral med"/>
+    <circle cx="1110" cy="182" r="9" fill="#C96442"/>
+    <text x="880" y="292" class="mono tiny">score with reasons</text>
+
+    <path d="M1217 188C1286 178 1365 179 1441 190C1454 192 1461 201 1460 214C1455 260 1456 297 1449 340C1447 354 1438 362 1424 361C1350 355 1281 356 1205 364C1190 366 1181 357 1183 342C1190 291 1185 246 1192 204C1194 194 1203 190 1217 188Z" class="washPurple" opacity="0.66"/>
+    <path d="M1217 188C1286 178 1365 179 1441 190C1454 192 1461 201 1460 214C1455 260 1456 297 1449 340C1447 354 1438 362 1424 361C1350 355 1281 356 1205 364C1190 366 1181 357 1183 342C1190 291 1185 246 1192 204C1194 194 1203 190 1217 188Z" class="line ink thin"/>
+    <text x="1216" y="230" class="sans label">tailor</text>
+    <path d="M1222 266C1262 258 1303 261 1346 266" class="line mutedInk med"/>
+    <path d="M1222 292C1280 285 1333 286 1418 294" class="line purple med"/>
+    <path d="M1222 318C1260 313 1308 313 1368 319" class="line green med"/>
   </g>
 
-  <g filter="url(#cardShadow)">
-    <rect x="164" y="610" width="338" height="134" rx="16" class="panel"/>
-    <text x="192" y="648" class="sans micro ink">Lead pipeline</text>
-    <g transform="translate(192 674)">
-      <circle cx="8" cy="8" r="8" fill="#C96442"/>
-      <rect x="28" y="2" width="98" height="12" rx="6" fill="#8A847A" opacity="0.55"/>
-      <rect x="154" y="2" width="66" height="12" rx="6" fill="#FCE0C8"/>
-      <circle cx="264" cy="8" r="8" fill="#6A9068"/>
-      <circle cx="290" cy="8" r="8" fill="#6A9068"/>
-      <circle cx="316" cy="8" r="8" fill="#D8D4C7"/>
-    </g>
-    <g transform="translate(192 710)">
-      <circle cx="8" cy="8" r="8" fill="#5A9DA8"/>
-      <rect x="28" y="2" width="126" height="12" rx="6" fill="#8A847A" opacity="0.55"/>
-      <rect x="178" y="2" width="72" height="12" rx="6" fill="#DCEAD4"/>
-      <circle cx="264" cy="8" r="8" fill="#D17847"/>
-      <circle cx="290" cy="8" r="8" fill="#D8D4C7"/>
-      <circle cx="316" cy="8" r="8" fill="#D8D4C7"/>
-    </g>
+  <g filter="url(#inkWobble)">
+    <path d="M206 643C310 623 425 625 535 645C549 648 558 657 556 672C551 724 552 754 546 782C543 797 532 804 517 802C415 790 308 791 202 805C186 807 176 798 178 781C185 729 181 693 190 660C193 649 190 646 206 643Z" fill="#FFF9EF" opacity="0.9"/>
+    <path d="M206 643C310 623 425 625 535 645C549 648 558 657 556 672C551 724 552 754 546 782C543 797 532 804 517 802C415 790 308 791 202 805C186 807 176 798 178 781C185 729 181 693 190 660C193 649 190 646 206 643Z" class="line ink thin"/>
+    <text x="214" y="683" class="sans label">pipeline</text>
+    <path d="M214 718C278 707 335 708 398 718" class="line mutedInk med"/>
+    <path d="M214 750C304 741 401 743 510 752" class="line teal med"/>
+    <circle cx="474" cy="718" r="13" fill="#DCEAD4" stroke="#6A9068" stroke-width="4"/>
+    <path d="M467 718L473 724L484 710" class="line green thin"/>
 
-    <rect x="630" y="642" width="340" height="132" rx="16" fill="#1F1A14" opacity="0.94"/>
-    <text x="658" y="680" class="sans micro" fill="#F4F3EE">Local profile graph</text>
-    <g transform="translate(670 702)">
-      <path d="M76 28L28 8M76 28L34 66M76 28L138 10M76 28L156 64M138 10L202 38" stroke="#B5AFA3" stroke-opacity="0.45" stroke-width="2"/>
-      <circle cx="76" cy="28" r="16" fill="#6A9068"/>
-      <circle cx="28" cy="8" r="8" fill="#5A9DA8"/>
-      <circle cx="34" cy="66" r="8" fill="#D17847"/>
-      <circle cx="138" cy="10" r="8" fill="#8B7BB8"/>
-      <circle cx="156" cy="64" r="8" fill="#C28098"/>
-      <circle cx="202" cy="38" r="8" fill="#D9A33F"/>
-    </g>
+    <path d="M690 646C781 631 888 635 968 652C981 655 988 665 985 678C978 719 979 756 970 789C967 801 957 808 944 806C861 796 776 797 688 807C673 809 664 800 667 785C676 741 671 698 678 663C680 653 678 648 690 646Z" fill="#211B15" opacity="0.94"/>
+    <path d="M690 646C781 631 888 635 968 652C981 655 988 665 985 678C978 719 979 756 970 789C967 801 957 808 944 806C861 796 776 797 688 807C673 809 664 800 667 785C676 741 671 698 678 663C680 653 678 648 690 646Z" class="line ink thin"/>
+    <text x="710" y="687" class="sans" font-size="23" font-weight="850" fill="#F3EFE4">local graph</text>
+    <path d="M748 745L710 718M748 745L718 779M748 745L819 704M748 745L867 775M819 704L920 728" stroke="#B5AFA3" stroke-opacity="0.58" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="748" cy="745" r="17" fill="#6A9068"/>
+    <circle cx="710" cy="718" r="9" fill="#5A9DA8"/>
+    <circle cx="718" cy="779" r="9" fill="#D17847"/>
+    <circle cx="819" cy="704" r="9" fill="#8B7BB8"/>
+    <circle cx="867" cy="775" r="9" fill="#C28098"/>
+    <circle cx="920" cy="728" r="9" fill="#C49840"/>
 
-    <rect x="1098" y="610" width="338" height="134" rx="16" class="panel"/>
-    <text x="1126" y="648" class="sans micro ink">Tailored package</text>
-    <rect x="1126" y="672" width="64" height="48" rx="8" fill="#FFFDF8" stroke="rgba(31,26,20,0.10)"/>
-    <rect x="1206" y="672" width="64" height="48" rx="8" fill="#FFFDF8" stroke="rgba(31,26,20,0.10)"/>
-    <rect x="1286" y="672" width="64" height="48" rx="8" fill="#FFFDF8" stroke="rgba(31,26,20,0.10)"/>
-    <path d="M1144 692H1172M1144 704H1164" stroke="#C96442" stroke-width="5" stroke-linecap="round"/>
-    <path d="M1224 692H1252M1224 704H1244" stroke="#5A9DA8" stroke-width="5" stroke-linecap="round"/>
-    <path d="M1304 692H1332M1304 704H1324" stroke="#8B7BB8" stroke-width="5" stroke-linecap="round"/>
-    <circle cx="1388" cy="696" r="21" fill="#DCEAD4" stroke="#6A9068" stroke-width="3"/>
-    <path d="M1379 696L1386 703L1398 688" stroke="#2D4A2E" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
-
-  <g class="mono" font-size="16" font-weight="800" fill="#6F675C">
-    <text x="258" y="806" text-anchor="middle">SOURCES</text>
-    <text x="506" y="806" text-anchor="middle">QUALITY</text>
-    <text x="800" y="806" text-anchor="middle">MATCHING</text>
-    <text x="1094" y="806" text-anchor="middle">TAILORING</text>
-    <text x="1340" y="806" text-anchor="middle">CONTROL</text>
+    <path d="M1086 644C1193 624 1307 628 1416 646C1430 648 1438 658 1436 672C1431 724 1431 755 1424 785C1421 799 1411 806 1396 804C1292 792 1191 792 1083 805C1068 807 1058 798 1061 781C1069 729 1064 693 1074 660C1077 650 1071 647 1086 644Z" fill="#FFF9EF" opacity="0.9"/>
+    <path d="M1086 644C1193 624 1307 628 1416 646C1430 648 1438 658 1436 672C1431 724 1431 755 1424 785C1421 799 1411 806 1396 804C1292 792 1191 792 1083 805C1068 807 1058 798 1061 781C1069 729 1064 693 1074 660C1077 650 1071 647 1086 644Z" class="line ink thin"/>
+    <text x="1100" y="683" class="sans label">documents</text>
+    <path d="M1110 716C1166 707 1215 709 1272 717" class="line coral med"/>
+    <path d="M1110 746C1204 736 1294 739 1382 748" class="line purple med"/>
+    <path d="M1110 774C1180 765 1248 768 1320 776" class="line green med"/>
   </g>
 </svg>
