@@ -194,9 +194,6 @@ export function DashboardView({
               <SecondaryButton onClick={() => setView("apply")} disabled={busy}>
                 <Icon name="spark" size={13} /> Customize job
               </SecondaryButton>
-              <SecondaryButton onClick={() => setView("inbox")}>
-                <Icon name="layers" size={13} /> Leads
-              </SecondaryButton>
               <SecondaryButton onClick={() => setView("pipeline")}>
                 Pipeline <Icon name="arrow-right" size={13} />
               </SecondaryButton>
@@ -243,9 +240,9 @@ export function DashboardView({
           <div className="row" style={{ justifyContent: "space-between", marginBottom: 12, gap: 12 }}>
             <div>
               <h3>Best leads to open</h3>
-              <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>Top 4 only; everything else lives in Leads.</div>
+              <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>Top 4 only; everything else lives in the pipeline.</div>
             </div>
-            <button className="btn btn-ghost" onClick={() => setView("inbox")} style={{ fontSize: 12 }}>All leads <Icon name="arrow-right" size={12} /></button>
+            <button className="btn btn-ghost" onClick={() => setView("pipeline")} style={{ fontSize: 12 }}>Open pipeline <Icon name="arrow-right" size={12} /></button>
           </div>
           <div className="col gap-2">
             {queue.length === 0 ? (

@@ -59,6 +59,7 @@ class ProfileService:
 
         result = await asyncio.to_thread(ingest, raw, pdf_path)
         await asyncio.to_thread(self.refresh_profile_snapshot)
+        await asyncio.to_thread(graph_profile.sync_vectors_from_graph)
         return result
 
     async def ingest_linkedin(self, zip_bytes: bytes) -> dict:
@@ -257,4 +258,3 @@ def _entry_title(value: Any) -> str:
     if isinstance(value, str):
         return value
     return str(_as_dict(value).get("title", ""))
-

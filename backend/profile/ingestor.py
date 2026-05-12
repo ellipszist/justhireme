@@ -52,8 +52,10 @@ def _put_rel(a: str, aid: str, b: str, bid: str, rel: str):
 def _put_vec(name: str, rows: list):
     if not rows:
         return
+    from data.graph.profile import vec_table_names
+
     ids = [str(row.get("id") or "") for row in rows if row.get("id")]
-    if name in vec.list_tables():
+    if name in vec_table_names():
         table = vec.open_table(name)
         if ids:
             quoted = ["'" + item.replace("'", "''") + "'" for item in ids]
@@ -73,6 +75,7 @@ def _graph(p: C):
     for sk in p.skills:
         sid = _h(sk.n)
         _put_node("Skill", {"id": sid, "n": sk.n, "cat": sk.cat})
+        _put_rel("Candidate", cid, "Skill", sid, "HAS_SKILL")
 
     for e in p.exp:
         eid = _h(e.role + e.co)

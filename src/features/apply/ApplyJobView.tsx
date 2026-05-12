@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import Icon from "../../shared/components/Icon";
 import type { ApiFetch, ContactLookup, KeywordCoverage, Lead } from "../../types";
+import { GENERATION_TIMEOUT_MS } from "../../api/generation";
 import { roleFromLead } from "../../shared/lib/leadUtils";
 
 export function ApplyJobView({ port, api, leads, openDrawer, initialInput, autoFocus }: { port: number | null; api: ApiFetch | null; leads: Lead[]; openDrawer: (l: Lead) => void; initialInput?: string; autoFocus?: boolean }) {
@@ -135,7 +136,7 @@ export function ApplyJobView({ port, api, leads, openDrawer, initialInput, autoF
       }
       const created = await r.json();
       setLead(created);
-      const gen = await api(`/api/v1/leads/${created.job_id}/generate`, { method: "POST", signal: controller.signal });
+      const gen = await api(`/api/v1/leads/${created.job_id}/generate`, { method: "POST", signal: controller.signal, timeoutMs: GENERATION_TIMEOUT_MS });
       const generated = await gen.json().catch(() => ({}));
       if (!gen.ok) throw new Error(generated.detail || `Generation returned ${gen.status}`);
       if (generated.lead) setLead(generated.lead);

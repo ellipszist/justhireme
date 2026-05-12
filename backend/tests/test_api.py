@@ -140,6 +140,131 @@ class TestAuthGate(unittest.TestCase):
         resp = get("/api/v1/leads")
         self.assertNotEqual(resp.status_code, 401)
 
+
+class TestGraphEndpoint(unittest.TestCase):
+    def test_graph_endpoint_reads_snapshot_without_blocking_on_repairs(self):
+        from api.routers.misc import graph_stats
+
+        class Leads:
+            def get_all_leads(self):
+                raise AssertionError("default graph read must not load every lead")
+
+        class Graph:
+            def __init__(self):
+                self.synced = None
+
+            def sync_job_leads(self, leads):
+                raise AssertionError("default graph read must not sync leads")
+
+            def graph_counts(self):
+                return {"candidate": 1, "skill": 2, "project": 3, "experience": 4, "joblead": 1}
+
+            def graph_snapshot(self):
+                return {
+                    "nodes": [{"id": "candidate:default", "label": "Candidate", "type": "Candidate"}],
+                    "edges": [],
+                    "available": True,
+                    "error": "",
+                }
+
+            def graph_available(self):
+                return True
+
+            def graph_error(self):
+                return ""
+
+        repo = types.SimpleNamespace(
+            leads=Leads(),
+            graph=Graph(),
+            vector=types.SimpleNamespace(vec=types.SimpleNamespace(list_tables=lambda: [])),
+        )
+        data = __import__("asyncio").run(graph_stats(repo))
+
+        self.assertIsNone(repo.graph.synced)
+        self.assertEqual(data["joblead"], 1)
+        self.assertEqual(data["status"], "live")
+        self.assertTrue(data["graph"]["available"])
+        self.assertEqual(data["sync"]["status"], "skipped")
+
+    def test_graph_endpoint_can_run_repair_when_requested(self):
+        from api.routers.misc import graph_stats
+
+        class Leads:
+            def get_all_leads(self):
+                return [{"job_id": "job-1", "title": "Engineer", "kind": "job"}]
+
+        class Graph:
+            def __init__(self):
+                self.synced = None
+
+            def sync_job_leads(self, leads):
+                self.synced = leads
+                return {"status": "ok", "synced": len(leads), "refreshed_at": "now"}
+
+            def sync_profile_relationships(self):
+                return {"status": "ok"}
+
+            def graph_counts(self):
+                return {"candidate": 1, "skill": 2, "project": 3, "experience": 4, "joblead": 1}
+
+            def graph_snapshot(self):
+                return {"nodes": [], "edges": [], "available": True, "error": ""}
+
+            def graph_available(self):
+                return True
+
+            def graph_error(self):
+                return ""
+
+        repo = types.SimpleNamespace(
+            leads=Leads(),
+            graph=Graph(),
+            vector=types.SimpleNamespace(vec=types.SimpleNamespace(list_tables=lambda: [])),
+        )
+        data = __import__("asyncio").run(graph_stats(repo, repair=True))
+
+        self.assertEqual(repo.graph.synced[0]["job_id"], "job-1")
+        self.assertEqual(data["sync"]["status"], "ok")
+
+    def test_graph_endpoint_returns_safe_payload_when_graph_steps_fail(self):
+        from api.routers.misc import graph_stats
+
+        class Leads:
+            def get_all_leads(self):
+                raise RuntimeError("sqlite unavailable")
+
+        class Graph:
+            def sync_job_leads(self, _leads):
+                raise RuntimeError("sync should not run")
+
+            def sync_profile_relationships(self):
+                raise RuntimeError("profile graph unavailable")
+
+            def graph_counts(self):
+                raise RuntimeError("count failed")
+
+            def graph_snapshot(self):
+                raise RuntimeError("snapshot failed")
+
+            def graph_available(self):
+                return False
+
+            def graph_error(self):
+                return "Kuzu locked"
+
+        repo = types.SimpleNamespace(
+            leads=Leads(),
+            graph=Graph(),
+            vector=types.SimpleNamespace(vec=types.SimpleNamespace(list_tables=lambda: [])),
+        )
+        data = __import__("asyncio").run(graph_stats(repo))
+
+        self.assertEqual(data["status"], "degraded")
+        self.assertEqual(data["graph"]["nodes"], [])
+        self.assertEqual(data["graph"]["edges"], [])
+        self.assertEqual(data["sync"]["status"], "skipped")
+        self.assertIn("Kuzu locked", data["error"])
+
     def test_websocket_valid_token_connects(self):
         with CLIENT.websocket_connect("/ws?token=test-token-abc123") as ws:
             msg = ws.receive_json()

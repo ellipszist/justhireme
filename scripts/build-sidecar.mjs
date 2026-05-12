@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
@@ -41,6 +41,58 @@ function run(command, args, options = {}) {
       }
     });
   });
+}
+
+function capture(command, args, options = {}) {
+  return new Promise((resolveCapture, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd || repoRoot,
+      env: {
+        ...process.env,
+        PYTHONNOUSERSITE: "1",
+      },
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let output = "";
+    let errorOutput = "";
+    child.stdout.on("data", (chunk) => {
+      output += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      errorOutput += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolveCapture(output.trim() || errorOutput.trim());
+      } else {
+        reject(new Error(`${command} ${args.join(" ")} exited with code ${code}: ${errorOutput.trim()}`));
+      }
+    });
+  });
+}
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function readTomlVersion(path) {
+  const match = readFileSync(path, "utf8").match(/^version\s*=\s*"([^"]+)"/m);
+  return match?.[1] || "unknown";
+}
+
+function bytes(path) {
+  if (!existsSync(path)) return 0;
+  const stat = statSync(path);
+  if (stat.isFile()) return stat.size;
+  if (!stat.isDirectory()) return 0;
+  return readdirSync(path).reduce((total, entry) => total + bytes(join(path, entry)), 0);
+}
+
+function formatMb(value) {
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function sleep(ms) {
@@ -115,13 +167,41 @@ const extension = process.platform === "win32" ? ".exe" : "";
 const source = join(builtSidecarDir, `backend${extension}`);
 const sidecarName = "jhm-sidecar-next";
 const target = join(sidecarDir, `${sidecarName}-${triple}${extension}`);
+const internalSource = join(builtSidecarDir, "_internal");
+const manifestTarget = join(sidecarDir, "sidecar-manifest.json");
 
 if (!existsSync(source)) {
   throw new Error(`Expected PyInstaller sidecar was not created: ${source}`);
 }
+if (!existsSync(internalSource)) {
+  throw new Error(`Expected PyInstaller runtime directory was not created: ${internalSource}`);
+}
 
 mkdirSync(sidecarDir, { recursive: true });
 await rmWithRetries(sidecarInternalDir, { recursive: true, force: true });
-cpSync(join(builtSidecarDir, "_internal"), sidecarInternalDir, { recursive: true });
+cpSync(internalSource, sidecarInternalDir, { recursive: true });
 copyFileSync(source, target);
+if (process.platform !== "win32") {
+  chmodSync(target, 0o755);
+}
+
+const packageJson = readJson(join(repoRoot, "package.json"));
+const backendVersion = readTomlVersion(join(backendDir, "pyproject.toml"));
+const pythonVersion = await capture(python, ["--version"], { cwd: backendDir });
+const manifest = {
+  appVersion: packageJson.version,
+  backendVersion,
+  platformTriple: triple,
+  pythonVersion,
+  builtAt: new Date().toISOString(),
+  sidecarBinary: `${sidecarName}-${triple}${extension}`,
+  sidecarBinaryBytes: bytes(target),
+  sidecarInternalBytes: bytes(sidecarInternalDir),
+};
+
+writeFileSync(manifestTarget, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
 console.log(`Sidecar ready: ${target}`);
+console.log(`Sidecar binary size: ${formatMb(manifest.sidecarBinaryBytes)}`);
+console.log(`Sidecar runtime size: ${formatMb(manifest.sidecarInternalBytes)}`);
+console.log(`Sidecar manifest: ${manifestTarget}`);

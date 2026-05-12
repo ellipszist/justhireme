@@ -3,9 +3,8 @@ import type { View } from "../../types";
 
 export function Topbar({ view }: { view: View }) {
   const titles: Record<View, string> = {
-    apply:     "Customize Package",
+    apply:     "Customize One Job",
     dashboard: "Command Center",
-    inbox:     "Leads",
     pipeline:  "Job Pipeline",
     graph:     "Knowledge Graph",
     activity:  "Live Activity",
@@ -13,9 +12,8 @@ export function Topbar({ view }: { view: View }) {
     ingestion: "Add Context",
   };
   const subtitles: Record<View, string> = {
-    apply: "Generate resume, cover letter, and outreach from one job",
+    apply: "Tailor resume, cover letter, and outreach for one selected role",
     dashboard: "Scan, review, and move the next best roles forward",
-    inbox: "Quality-gated leads ready for review",
     pipeline: "Track applications and follow-ups",
     graph: "Local profile context used by matching",
     activity: "Backend events and agent logs",

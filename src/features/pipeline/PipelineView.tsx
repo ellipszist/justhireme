@@ -48,7 +48,7 @@ export function PipelineView({ leads, openDrawer, deleteLead, port, api, scannin
       { id: "found",     label: "New",       tone: "blue",   leads: apply(leads.filter(l => l.status === "discovered")) },
       { id: "evaluated", label: "Rated",     tone: "yellow", leads: apply(leads.filter(l => l.score > 0 || (l.signal_score || 0) > 0)) },
       { id: "generated", label: "Ready",     tone: "purple", leads: apply(leads.filter(l => l.status === "tailoring" || l.status === "approved")) },
-      { id: "applied",   label: "Active",    tone: "orange", leads: apply(leads.filter(l => ["applied", "interviewing", "accepted", "rejected"].includes(l.status))) },
+      { id: "applied",   label: "Applied",   tone: "orange", leads: apply(leads.filter(l => l.status === "applied")) },
       { id: "discarded", label: "Discarded", tone: "bad",    leads: apply(leads.filter(l => l.status === "discarded")) },
     ];
     return tabItems;
@@ -59,14 +59,14 @@ export function PipelineView({ leads, openDrawer, deleteLead, port, api, scannin
   const hasFilters = Boolean(search || platform || minSignal || minMatch || budgetOnly || learningOnly || seniority !== "all");
   const hotCount = leads.filter(l => (l.signal_score || 0) >= 80 || (l.score || 0) >= 85).length;
   const readyCount = leads.filter(l => l.status === "tailoring" || l.status === "approved").length;
-  const activeCount = leads.filter(l => ["applied", "interviewing", "accepted", "rejected"].includes(l.status)).length;
+  const appliedCount = leads.filter(l => l.status === "applied").length;
   const busyLabel = scanning ? "Scanning for new leads" : reevaluating ? "Re-evaluating fit scores" : cleaning ? "Cleaning bad data" : "";
   const metrics = [
     { label: "Total", value: leads.length, tone: "blue", icon: "layers" },
     { label: "Hot", value: hotCount, tone: "orange", icon: "spark" },
     { label: "New", value: leads.filter(l => l.status === "discovered").length, tone: "teal", icon: "search" },
     { label: "Ready", value: readyCount, tone: "purple", icon: "file" },
-    { label: "Active", value: activeCount, tone: "green", icon: "fire" },
+    { label: "Applied", value: appliedCount, tone: "orange", icon: "check" },
     { label: "Discarded", value: leads.filter(l => l.status === "discarded").length, tone: "bad", icon: "trash" },
   ];
   const toneSoft = (tone: string) => tone === "bad" ? "var(--bad-soft)" : `var(--${tone}-soft)`;
@@ -87,6 +87,22 @@ export function PipelineView({ leads, openDrawer, deleteLead, port, api, scannin
     const results = await Promise.allSettled([...selected].map(id => Promise.resolve(deleteLead(id))));
     const failed = results.filter(r => r.status === "rejected").length;
     if (failed > 0) alert(`${failed} of ${count} deletions failed. Refreshing list.`);
+    setSelected(new Set());
+    setBulkSelecting(false);
+    window.dispatchEvent(new CustomEvent("leads-refresh"));
+  };
+
+  const bulkMarkApplied = async () => {
+    if (!api || selected.size === 0) return;
+    const ids = [...selected];
+    const results = await Promise.allSettled(ids.map(id => api(`/api/v1/leads/${id}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "applied" }),
+    })));
+    const failed = results.filter(r => r.status === "rejected" || (r.status === "fulfilled" && !r.value.ok)).length;
+    if (failed > 0) alert(`${failed} of ${ids.length} jobs could not be marked as applied.`);
+    ids.forEach(job_id => window.dispatchEvent(new CustomEvent("lead-updated", { detail: { job_id, status: "applied" } })));
     setSelected(new Set());
     setBulkSelecting(false);
     window.dispatchEvent(new CustomEvent("leads-refresh"));
@@ -124,7 +140,7 @@ export function PipelineView({ leads, openDrawer, deleteLead, port, api, scannin
               key={metric.label}
               className="pipeline-metric"
               onClick={() => {
-                const nextTab = metric.label === "Hot" ? "hot" : metric.label === "New" ? "found" : metric.label === "Ready" ? "generated" : metric.label === "Active" ? "applied" : metric.label === "Discarded" ? "discarded" : "all";
+                const nextTab = metric.label === "Hot" ? "hot" : metric.label === "New" ? "found" : metric.label === "Ready" ? "generated" : metric.label === "Applied" ? "applied" : metric.label === "Discarded" ? "discarded" : "all";
                 setTab(nextTab as PipelineTab);
                 setBulkSelecting(false);
                 setSelected(new Set());
@@ -166,6 +182,18 @@ export function PipelineView({ leads, openDrawer, deleteLead, port, api, scannin
             <button className="btn" onClick={exportCsv} disabled={!api || exporting || loading}>
               {exporting ? "Exporting..." : "Export CSV"}
             </button>
+            {bulkSelecting ? (
+              <>
+                <button className="btn" onClick={bulkMarkApplied} disabled={!api || selected.size === 0 || loading}>
+                  <Icon name="check" size={13} /> Mark applied {selected.size}
+                </button>
+                <button className="btn" onClick={() => { setBulkSelecting(false); setSelected(new Set()); }}>Cancel</button>
+              </>
+            ) : (
+              <button className="btn" onClick={() => setBulkSelecting(true)} disabled={activeTab.leads.length === 0 || loading}>
+                <Icon name="check" size={13} /> Select jobs
+              </button>
+            )}
             {reevaluating ? (
               <button className="btn danger" onClick={onStopReevaluate}>
                 <Icon name="x" size={13} /> Stop re-eval
@@ -182,7 +210,6 @@ export function PipelineView({ leads, openDrawer, deleteLead, port, api, scannin
               bulkSelecting ? (
                 <>
                   <button className="btn danger" onClick={bulkDelete} disabled={selected.size === 0}>Delete {selected.size}</button>
-                  <button className="btn" onClick={() => { setBulkSelecting(false); setSelected(new Set()); }}>Cancel</button>
                 </>
               ) : (
                 <button className="btn" onClick={() => setBulkSelecting(true)} disabled={activeTab.leads.length === 0}>Bulk delete</button>
@@ -221,7 +248,11 @@ export function PipelineView({ leads, openDrawer, deleteLead, port, api, scannin
             <h3>{activeTab.label}</h3>
             <p>{hasFilters ? "Filtered results" : "All matching leads"} - showing {Math.min(visibleCount, activeTab.leads.length)} of {activeTab.leads.length}</p>
           </div>
-          {bulkSelecting && tab === "discarded" && <span className="pipeline-selected mono">{selected.size} selected</span>}
+          {bulkSelecting && (
+            <span className={`pipeline-selected mono ${tab === "discarded" ? "danger" : "applied"}`}>
+              {selected.size} selected
+            </span>
+          )}
         </div>
         {loading ? (
           <PipelineSkeleton />
@@ -229,17 +260,20 @@ export function PipelineView({ leads, openDrawer, deleteLead, port, api, scannin
           <div className="pipeline-empty">
             <Icon name={hasFilters ? "filter" : "search"} size={18} />
             <h3>{hasFilters ? "No leads match these filters" : `No ${activeTab.label.toLowerCase()} jobs yet`}</h3>
-            <p>{hasFilters ? "Clear filters or lower the score thresholds." : "Run a scan or paste a lead from the inbox to start filling this lane."}</p>
+            <p>{hasFilters ? "Clear filters or lower the score thresholds." : "Run a scan from the dashboard or customize a pasted job to start filling this lane."}</p>
           </div>
         ) : (
           <div className="pipeline-list">
             {visibleLeads.map(lead => (
               <div key={lead.job_id} className="pipeline-list-item">
-                {bulkSelecting && tab === "discarded" && (
+                {bulkSelecting && (
                   <div
                     className="pipeline-select-box"
                     onClick={() => toggleSelect(lead.job_id)}
-                    style={{ borderColor: selected.has(lead.job_id) ? "var(--bad)" : "var(--line)", background: selected.has(lead.job_id) ? "var(--bad)" : "var(--paper)" }}
+                    style={{
+                      borderColor: selected.has(lead.job_id) ? (tab === "discarded" ? "var(--bad)" : "var(--orange)") : "var(--line)",
+                      background: selected.has(lead.job_id) ? (tab === "discarded" ? "var(--bad)" : "var(--orange)") : "var(--paper)",
+                    }}
                   >
                     {selected.has(lead.job_id) && <Icon name="check" size={11} color="#fff" />}
                   </div>

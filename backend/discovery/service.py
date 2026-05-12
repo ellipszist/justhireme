@@ -38,8 +38,9 @@ class DiscoveryService:
         *,
         kind_filter: str | None = None,
         profile: dict | None = None,
+        force: bool = False,
     ) -> DiscoveryRunResult:
-        if not free_sources_enabled(cfg):
+        if not force and not free_sources_enabled(cfg):
             return DiscoveryRunResult()
 
         from automation.source_adapters import run_free_scout

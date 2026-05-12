@@ -2,13 +2,14 @@
 // Copyright (C) 2026 Vasudev Siddh and vasu-devs
 
 #[cfg(debug_assertions)]
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -16,6 +17,7 @@ struct SidecarPort(Mutex<Option<u16>>);
 struct ApiTokenState(Mutex<Option<String>>);
 struct SidecarChild(Mutex<Option<CommandChild>>);
 struct SidecarError(Mutex<Option<String>>);
+struct SidecarStopping(Mutex<bool>);
 
 #[tauri::command]
 fn get_sidecar_port(state: State<SidecarPort>) -> Result<u16, String> {
@@ -97,6 +99,44 @@ fn local_venv_python_path(backend_dir: &Path) -> Option<PathBuf> {
         .find(|path| path.exists())
 }
 
+#[cfg(debug_assertions)]
+fn debug_backend_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|p| p.join("backend"))
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("backend"))
+}
+
+#[cfg(all(debug_assertions, windows))]
+fn ps_single_quoted_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\'', "''")
+}
+
+#[cfg(all(debug_assertions, windows))]
+fn cleanup_debug_python_sidecars(backend_dir: &Path) {
+    let Some(python_path) = local_venv_python_path(backend_dir) else {
+        return;
+    };
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let exe = ps_single_quoted_path(&python_path);
+    let backend = ps_single_quoted_path(backend_dir);
+    let script = format!(
+        "$exe='{exe}'; $backend='{backend}'; \
+         Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | \
+         Where-Object {{ $_.ExecutablePath -eq $exe -and $_.CommandLine -like ('*' + $backend + '*') }} | \
+         ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+    );
+
+    let _ = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+}
+
+#[cfg(all(debug_assertions, not(windows)))]
+fn cleanup_debug_python_sidecars(_backend_dir: &Path) {}
+
 fn kill_process_tree(pid: u32) {
     #[cfg(windows)]
     {
@@ -116,7 +156,45 @@ fn kill_process_tree(pid: u32) {
     }
 }
 
+fn sidecar_pid_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|dir| dir.join("sidecar.pid"))
+}
+
+fn cleanup_stale_sidecar(app: &AppHandle) {
+    let Some(pid_path) = sidecar_pid_path(app) else {
+        return;
+    };
+    let Ok(raw_pid) = std::fs::read_to_string(&pid_path) else {
+        return;
+    };
+    let Ok(pid) = raw_pid.trim().parse::<u32>() else {
+        let _ = std::fs::remove_file(pid_path);
+        return;
+    };
+    if pid == 0 {
+        let _ = std::fs::remove_file(pid_path);
+        return;
+    }
+    eprintln!("[tauri] Cleaning stale sidecar process tree from pid file: {pid}");
+    kill_process_tree(pid);
+    let _ = std::fs::remove_file(pid_path);
+}
+
+fn remember_sidecar_pid(app: &AppHandle, pid: u32) {
+    let Some(pid_path) = sidecar_pid_path(app) else {
+        return;
+    };
+    if let Some(parent) = pid_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(pid_path, pid.to_string());
+}
+
 fn shutdown_sidecar(app: &AppHandle) {
+    if let Ok(mut stopping) = app.state::<SidecarStopping>().0.lock() {
+        *stopping = true;
+    }
+
     let child = app
         .state::<SidecarChild>()
         .0
@@ -138,6 +216,13 @@ fn shutdown_sidecar(app: &AppHandle) {
     if let Ok(mut token) = app.state::<ApiTokenState>().0.lock() {
         *token = None;
     }
+
+    if let Some(pid_path) = sidecar_pid_path(app) {
+        let _ = std::fs::remove_file(pid_path);
+    }
+
+    #[cfg(debug_assertions)]
+    cleanup_debug_python_sidecars(&debug_backend_dir());
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -152,6 +237,7 @@ pub fn run() {
         .manage(ApiTokenState(Mutex::new(None)))
         .manage(SidecarChild(Mutex::new(None)))
         .manage(SidecarError(Mutex::new(None)))
+        .manage(SidecarStopping(Mutex::new(false)))
         .invoke_handler(tauri::generate_handler![
             get_sidecar_port,
             get_api_token,
@@ -160,14 +246,16 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            cleanup_stale_sidecar(&handle);
+
+            #[cfg(debug_assertions)]
+            let backend_dir = debug_backend_dir();
+
+            #[cfg(debug_assertions)]
+            cleanup_debug_python_sidecars(&backend_dir);
 
             #[cfg(debug_assertions)]
             let sidecar_cmd = {
-                let backend_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .parent()
-                    .map(|p| p.join("backend"))
-                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("backend"));
-
                 let bundled = bundled_python_path(&handle);
                 let local_venv = local_venv_python_path(&backend_dir);
 
@@ -264,6 +352,10 @@ pub fn run() {
 
             let sidecar_pid = child.pid();
             eprintln!("[tauri] Sidecar PID: {sidecar_pid}");
+            remember_sidecar_pid(&handle, sidecar_pid);
+            if let Ok(mut stopping) = handle.state::<SidecarStopping>().0.lock() {
+                *stopping = false;
+            }
 
             if let Ok(mut guard) = handle.state::<SidecarChild>().0.lock() {
                 *guard = Some(child);
@@ -302,6 +394,15 @@ pub fn run() {
                         }
                         CommandEvent::Terminated(s) => {
                             eprintln!("[tauri] Sidecar terminated: {:?}", s.code);
+                            let intentional_shutdown = app_handle
+                                .state::<SidecarStopping>()
+                                .0
+                                .lock()
+                                .map(|guard| *guard)
+                                .unwrap_or(false);
+                            if intentional_shutdown {
+                                continue;
+                            }
                             let msg = format!("Sidecar terminated before startup: {:?}", s.code);
                             if let Ok(mut guard) = app_handle.state::<SidecarError>().0.lock() {
                                 *guard = Some(msg.clone());
@@ -322,6 +423,9 @@ pub fn run() {
     app.run(|app_handle, event| match event {
         RunEvent::WindowEvent { label, event, .. } => {
             eprintln!("[tauri] Window event on {label}: {event:?}");
+            if matches!(event, WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed) {
+                shutdown_sidecar(app_handle);
+            }
         }
         RunEvent::ExitRequested { code, .. } => {
             eprintln!("[tauri] Exit requested: {code:?}");

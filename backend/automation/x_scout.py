@@ -14,10 +14,10 @@ from discovery.lead_intel import (
     urgency_from_text as _urgency_from_text,
 )
 from data.repository import create_repository
+from automation.lead_store import save_lead_compat as save_lead
 
 _repo = create_repository()
 rank_lead_by_feedback = _repo.feedback.rank_lead_by_feedback
-save_lead = _repo.leads.save_lead
 url_exists = _repo.leads.url_exists
 
 

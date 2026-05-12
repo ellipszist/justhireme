@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import Icon from "../../../shared/components/Icon";
 import type { ApiFetch, Lead } from "../../../types";
+import { GENERATION_TIMEOUT_MS } from "../../../api/generation";
 import { getMark, getTone, leadDisplayHeading, leadSeniority, seniorityLabel, seniorityTone } from "../../../shared/lib/leadUtils";
 
 export function JobCard({ lead, onOpen, onDelete, showScore = false, showGenerate = false, port, api }: {
@@ -31,7 +32,7 @@ export function JobCard({ lead, onOpen, onDelete, showScore = false, showGenerat
     const controller = new AbortController();
     requestRef.current = controller;
     try {
-      const response = await api(`/api/v1/leads/${lead.job_id}/generate`, { method: "POST", signal: controller.signal });
+      const response = await api(`/api/v1/leads/${lead.job_id}/generate`, { method: "POST", signal: controller.signal, timeoutMs: GENERATION_TIMEOUT_MS });
       if (!response.ok) throw new Error(`Generation returned ${response.status}`);
       window.dispatchEvent(new CustomEvent("leads-refresh"));
     } catch (error) {
@@ -202,7 +203,7 @@ export function PipelineJobCard({ lead, onOpen, onDelete, showGenerate = false, 
     const controller = new AbortController();
     requestRef.current = controller;
     try {
-      const response = await api(`/api/v1/leads/${lead.job_id}/generate`, { method: "POST", signal: controller.signal });
+      const response = await api(`/api/v1/leads/${lead.job_id}/generate`, { method: "POST", signal: controller.signal, timeoutMs: GENERATION_TIMEOUT_MS });
       if (!response.ok) throw new Error(`Generation returned ${response.status}`);
       window.dispatchEvent(new CustomEvent("leads-refresh"));
     } catch (error) {
@@ -216,7 +217,7 @@ export function PipelineJobCard({ lead, onOpen, onDelete, showGenerate = false, 
   useEffect(() => () => requestRef.current?.abort(), []);
 
   return (
-    <div className="pipeline-job-card lift" onClick={() => onOpen(lead)}>
+    <div className="pipeline-job-card lift" data-status={lead.status || "discovered"} onClick={() => onOpen(lead)}>
       <div className="pipeline-job-mark" style={{ background: `var(--${statusTone}-soft)`, color: `var(--${statusTone}-ink)`, borderColor: `var(--${statusTone})` }}>
         {getMark(lead.company)}
       </div>

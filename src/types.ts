@@ -1,5 +1,5 @@
 export type ConnSt = "disconnected" | "connecting" | "connected";
-export type View = "apply" | "dashboard" | "inbox" | "pipeline" | "graph" | "activity" | "profile" | "ingestion";
+export type View = "apply" | "dashboard" | "pipeline" | "graph" | "activity" | "profile" | "ingestion";
 export type PipelineTab = "all" | "hot" | "found" | "evaluated" | "generated" | "applied" | "discarded";
 export type LeadSort = "recommended" | "newest" | "signal" | "match" | "company";
 export type SeniorityFilter = "all" | "beginner" | "fresher" | "junior" | "mid" | "senior" | "unknown";
@@ -57,13 +57,31 @@ export interface Lead {
 export interface GraphStats {
   candidate: number; skill: number; project: number;
   experience: number; joblead: number;
+  available?: boolean; status?: "live" | "degraded"; error?: string;
+  loading?: boolean; loaded?: boolean; request_error?: string;
+  sync?: { status?: string; synced?: number; refreshed_at?: string; error?: string };
+  graph?: {
+    nodes: { id: string; label: string; type: string; subtitle?: string }[];
+    edges: { source: string; target: string; type: string }[];
+    available?: boolean;
+    error?: string;
+  };
+  embedding?: {
+    available?: boolean;
+    points: { id: string; label: string; type: string; x: number; y: number; z?: number }[];
+    error?: string;
+  };
 }
 export interface LogLine {
   id: number; ts: string; msg: string; src: string;
   kind: "heartbeat" | "agent" | "system";
 }
 
-export type ApiFetch = (path: string, opts?: RequestInit) => Promise<Response>;
+export type ApiFetchOptions = RequestInit & {
+  timeoutMs?: number;
+};
+
+export type ApiFetch = (path: string, opts?: ApiFetchOptions) => Promise<Response>;
 
 export interface FormField {
   type: string;

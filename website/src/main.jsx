@@ -7,6 +7,10 @@ import "./styles.css";
 
 const repoUrl = "https://github.com/vasu-devs/JustHireMe";
 const coffeeUrl = "https://buymeacoffee.com/vasu.devs";
+const releaseNotice = {
+  title: "A new JustHireMe version is releasing soon.",
+  copy: "The current public build has a few known issues, so I am holding downloads while the next version is polished. Please bookmark this page and come back soon, or leave feedback with your email and I will send a note when the new version drops.",
+};
 
 const navItems = ["Workflow", "Why local", "Features", "Feedback", "Release"];
 
@@ -278,6 +282,22 @@ function PlatformDownload({ platform, asset, releaseTag, releaseUrl, onDownload 
     >
       {content}
     </a>
+  );
+}
+
+function ReleaseNoticeBanner({ compact = false }) {
+  return (
+    <div className={`release-notice ${compact ? "compact" : ""}`} role="status" aria-live="polite">
+      <span className="release-notice-icon"><Icon name="pulse" /></span>
+      <div>
+        <strong>{releaseNotice.title}</strong>
+        <p>{releaseNotice.copy}</p>
+      </div>
+      <a className="button primary" href="#feedback">
+        <Icon name="message" />
+        Leave feedback
+      </a>
+    </div>
   );
 }
 
@@ -627,15 +647,7 @@ function MiniApp() {
 
 function App() {
   const { views, configured } = useViewCounter();
-  const { downloads, trackDownload } = useDownloadCounter();
   const github = useGitHubStars();
-  const release = useLatestRelease();
-  const primaryInstallerUrl = release.assets.windows?.url || release.url || `${repoUrl}/releases`;
-  const installerReady = Boolean(release.assets.windows?.url);
-
-  const recordDownload = React.useCallback((platform) => {
-    trackDownload(platform).catch(() => {});
-  }, [trackDownload]);
 
   return (
     <>
@@ -666,31 +678,16 @@ function App() {
               <span>Desktop-first</span>
             </div>
             <div className="hero-actions">
-              <a className="button primary" href={primaryInstallerUrl} onClick={() => installerReady && recordDownload("windows")} title={installerReady ? "Download the latest Windows release" : "Open all JustHireMe releases"}>
-                <Icon name={installerReady ? "download" : "external"} />
-                {installerReady ? "Download Windows" : "View releases"}
+              <a className="button primary" href="#feedback" title="Leave feedback and your email for the next release note">
+                <Icon name="message" />
+                Notify me
               </a>
               <a className="button secondary" href={repoUrl}>
                 <Icon name="star" />
                 {github.stars == null ? "GitHub stars" : `${formatCount(github.stars)} stars`}
               </a>
             </div>
-            <div className="hero-downloads" aria-label="Latest release downloads">
-              {platformOptions.map((platform) => (
-                <PlatformDownload
-                  key={platform.id}
-                  platform={platform}
-                  asset={release.assets?.[platform.id]}
-                  releaseTag={release.tag}
-                  releaseUrl={release.url}
-                  onDownload={recordDownload}
-                />
-              ))}
-            </div>
-            <div className="wait-note">
-              <span className="spinner" />
-              {release.available ? `Latest release: ${release.tag}` : "Versions are available from GitHub releases and tags."}
-            </div>
+            <ReleaseNoticeBanner compact />
             <div className="live-counter" title={configured ? "Backed by the deployed view counter" : "Connect Upstash Redis on Vercel to persist this counter"}>
               <span className="live-dot" />
               <strong>{formatCount(views)}</strong>
@@ -815,34 +812,13 @@ function App() {
 
         <section id="release" className="section final-cta band">
           <span className="eyebrow">Release status</span>
-          <h2>Alpha is public. Releases stay versioned.</h2>
+          <h2>New build coming soon.</h2>
           <p>
-            Download the latest installer when an asset is available, or open the versioned release archive.
+            The current public version has known issues, so downloads are paused until the next cleaner release is ready.
           </p>
-          <div className="download-proof">
-            <strong>{formatCount(downloads.total)}</strong>
-            <span>{release.available ? "verified release downloads" : "version archive available on GitHub"}</span>
-          </div>
-          <div className="download-breakdown">
-            {platformOptions.map((platform) => (
-              <span className={`tone-${platform.tone}`} key={platform.id}>
-                <strong>{formatCount(downloads[platform.id])}</strong>
-                {platform.label}
-              </span>
-            ))}
-          </div>
+          <ReleaseNoticeBanner />
           <div className="hero-actions centered">
-            {platformOptions.map((platform) => (
-              <PlatformDownload
-                key={platform.id}
-                platform={platform}
-                asset={release.assets?.[platform.id]}
-                releaseTag={release.tag}
-                releaseUrl={release.url}
-                onDownload={recordDownload}
-              />
-            ))}
-            <a className="button secondary" href={release.tagsUrl || `${repoUrl}/tags`}><Icon name="tag" /> Version tags</a>
+            <a className="button primary" href="#feedback"><Icon name="message" /> Drop feedback</a>
             <a className="button secondary" href={repoUrl}><Icon name="github" /> View source</a>
           </div>
           <div className="creator-links" aria-label="Creator links">
