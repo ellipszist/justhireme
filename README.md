@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/justhireme-hero.svg" alt="JustHireMe local-first job intelligence workbench hero" width="100%" />
+  <img src="docs/assets/justhireme-hero.png" alt="JustHireMe local-first job intelligence workbench hero" width="100%" />
 </p>
 
 <h1 align="center">JustHireMe</h1>
