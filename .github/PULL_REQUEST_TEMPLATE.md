@@ -31,6 +31,10 @@ Commands run:
 - [ ] User-facing behavior is clear about what is core vs experimental.
 - [ ] Ranking/filtering changes include explanations or tests where relevant.
 
+## Licensing
+
+- [ ] I have read `CLA.md` and understand this contribution may be distributed under AGPL-3.0-only and separate commercial licenses.
+
 ## Notes For Reviewers
 
 Mention any tradeoffs, follow-up work, or areas that deserve extra scrutiny.

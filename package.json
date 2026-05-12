@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.28",
   "description": "Local-first AI job intelligence workbench for scraping, ranking, and tailoring applications.",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/vasu-devs/JustHireMe.git"

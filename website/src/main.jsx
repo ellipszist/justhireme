@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Vasudev Siddh and vasu-devs
+
 import React from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
@@ -800,7 +803,7 @@ function App() {
           <div className="support-callout">
             <div>
               <span className="eyebrow">Support the build</span>
-              <h3>Fuel the source-available roadmap.</h3>
+              <h3>Fuel the open-source roadmap.</h3>
               <p>JustHireMe is built in public. Coffee helps keep releases, adapters, and docs moving.</p>
             </div>
             <a className="button primary" href={coffeeUrl}>
