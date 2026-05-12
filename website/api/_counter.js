@@ -7,12 +7,21 @@ export function send(response, payload) {
   response.status(payload.status).json(payload.body);
 }
 
-export function cacheableJson(body, seconds = 3600, status = 200) {
+export function envInt(name, fallback) {
+  const parsed = Number.parseInt(process.env[name] || "", 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+export function cacheableJson(body, seconds = envInt("COUNTER_CDN_CACHE_SECONDS", 21600), status = 200) {
   return {
     body,
     status,
-    cacheControl: `public, max-age=300, s-maxage=${seconds}, stale-while-revalidate=${seconds * 24}`,
+    cacheControl: `public, max-age=600, s-maxage=${seconds}, stale-while-revalidate=${seconds * 24}`,
   };
+}
+
+export function countersWritable() {
+  return process.env.COUNTER_WRITES_ENABLED !== "false";
 }
 
 export function redisConfigured() {
@@ -74,6 +83,10 @@ export async function redisPipeline(commands) {
     throw new Error(error.error);
   }
   return payload.map((item) => item?.result);
+}
+
+export async function redisScript(script, keys = [], args = []) {
+  return redis(["EVAL", script, keys.length, ...keys, ...args]);
 }
 
 export function cleanId(value) {

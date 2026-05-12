@@ -104,7 +104,9 @@ const platformOptions = [
   { id: "mac", label: "macOS", hint: "DMG / PKG", tone: "purple" },
   { id: "linux", label: "Linux", hint: "AppImage / package", tone: "green" },
 ];
-const SESSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const BROWSER_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const VIEW_COUNTED_KEY = "justhireme.views.counted";
+const DOWNLOAD_COUNTED_PREFIX = "justhireme.downloads.counted.";
 
 function formatCount(value) {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
@@ -120,34 +122,50 @@ function getVisitorId() {
   return next;
 }
 
-function readSessionCache(key) {
+function readBrowserCache(key) {
   try {
-    const cached = JSON.parse(sessionStorage.getItem(key) || "null");
-    if (cached && Date.now() - cached.savedAt < SESSION_CACHE_TTL_MS) {
+    const cached = JSON.parse(localStorage.getItem(key) || "null");
+    if (cached && Date.now() - cached.savedAt < BROWSER_CACHE_TTL_MS) {
       return cached.value;
     }
   } catch {
-    sessionStorage.removeItem(key);
+    localStorage.removeItem(key);
   }
   return null;
 }
 
-function writeSessionCache(key, value) {
+function writeBrowserCache(key, value) {
   try {
-    sessionStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), value }));
+    localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), value }));
   } catch {
-    // Session storage can be unavailable in hardened browser modes.
+    // Storage can be unavailable in hardened browser modes.
   }
 }
 
 async function cachedFetchJson(key, url, options) {
-  const cached = readSessionCache(key);
+  const cached = readBrowserCache(key);
   if (cached) return cached;
 
   const response = await fetch(url, options);
   const payload = await response.json();
-  writeSessionCache(key, payload);
+  writeBrowserCache(key, payload);
   return payload;
+}
+
+function hasLocalFlag(key) {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setLocalFlag(key) {
+  try {
+    localStorage.setItem(key, "1");
+  } catch {
+    // Storage can be unavailable in hardened browser modes.
+  }
 }
 
 function useViewCounter() {
@@ -158,14 +176,20 @@ function useViewCounter() {
     let cancelled = false;
 
     const syncViews = async () => {
-      const payload = await cachedFetchJson("justhireme.views", "/api/views", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ visitorId: getVisitorId() }),
-      });
+      const countedLocally = hasLocalFlag(VIEW_COUNTED_KEY);
+      const payload = countedLocally
+        ? await cachedFetchJson("justhireme.views", "/api/views", { method: "GET" })
+        : await cachedFetchJson("justhireme.views", "/api/views", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ visitorId: getVisitorId() }),
+          });
       if (!cancelled && typeof payload.total === "number") {
         setViews(payload.total);
         setConfigured(Boolean(payload.configured));
+        if (payload.configured && payload.writable !== false && !payload.error) {
+          setLocalFlag(VIEW_COUNTED_KEY);
+        }
       }
     };
 
@@ -202,7 +226,7 @@ function useDownloadCounter() {
         linux: payload.linux || 0,
       });
       setConfigured(Boolean(payload.configured));
-      writeSessionCache("justhireme.downloads", payload);
+      writeBrowserCache("justhireme.downloads", payload);
     }
     return payload;
   }, []);
@@ -211,7 +235,18 @@ function useDownloadCounter() {
     syncDownloads("GET").catch(() => {});
   }, [syncDownloads]);
 
-  const trackDownload = React.useCallback((platform) => syncDownloads("POST", platform), [syncDownloads]);
+  const trackDownload = React.useCallback(async (platform) => {
+    const countedKey = `${DOWNLOAD_COUNTED_PREFIX}${platform}`;
+    if (hasLocalFlag(countedKey)) {
+      return syncDownloads("GET");
+    }
+
+    const payload = await syncDownloads("POST", platform);
+    if (payload.configured && payload.writable !== false && !payload.error) {
+      setLocalFlag(countedKey);
+    }
+    return payload;
+  }, [syncDownloads]);
 
   return { downloads, configured, trackDownload };
 }

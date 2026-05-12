@@ -15,11 +15,34 @@ VIEW_COUNT_BASELINE=0
 DOWNLOAD_COUNT_BASELINE=0
 ```
 
-Each browser gets a local visitor id and the API counts it once with Redis `SET NX`. Counter reads are cached by the API and CDN for five minutes, and the frontend refreshes visible counters every five minutes while the tab is active. This keeps the public page from burning through Upstash read commands.
+Each browser gets a local visitor id and the API counts it once with Redis `SET NX`. Counter reads are cached by the API and CDN, and the frontend keeps a six-hour browser cache for visible counters. This keeps the public page from burning through Upstash read commands.
+
+The browser also stores a persistent `justhireme.views.counted` flag, so returning visitors do not keep spending Redis write commands after opening a new tab or browser session. Server-side count reads are cached for 30 minutes by default and CDN responses are cacheable for six hours by default.
+
+Useful safety knobs:
+
+```txt
+COUNTER_WRITES_ENABLED=false
+COUNTER_SERVER_CACHE_SECONDS=1800
+COUNTER_CDN_CACHE_SECONDS=21600
+COUNTER_VISITOR_TTL_DAYS=400
+```
+
+Set `COUNTER_WRITES_ENABLED=false` as an emergency brake if the Upstash command count starts rising too fast. The page will keep showing the configured baseline or cached count while new writes are paused.
 
 ## Download Counter
 
 The download counter is implemented in `api/downloads.js`. It uses the same visitor id and Redis `SET NX` pattern so one browser is counted once per platform when a real installer asset is clicked. It tracks total downloads plus individual Windows, macOS, and Linux counts. Set `DOWNLOAD_COUNT_BASELINE=0` for a fresh public launch.
+
+When moving to a new Upstash database, set `VIEW_COUNT_BASELINE` and `DOWNLOAD_COUNT_BASELINE` to the totals you want to preserve before deploying. You can also seed Redis directly with:
+
+```txt
+SET justhireme:views:total <view-total>
+SET justhireme:downloads:total <download-total>
+SET justhireme:downloads:windows <windows-total>
+SET justhireme:downloads:mac <mac-total>
+SET justhireme:downloads:linux <linux-total>
+```
 
 ## Release Downloads
 
