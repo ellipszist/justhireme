@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Vasudev Siddh and vasu-devs
+
 #[cfg(debug_assertions)]
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

@@ -4,7 +4,7 @@ version = "0.1.25"
 description = "FastAPI sidecar for JustHireMe's local-first job intelligence workbench"
 readme = "README.md"
 requires-python = ">=3.13"
-license = "MIT"
+license = "AGPL-3.0-only"
 dependencies = [
     "fastapi>=0.136.1",
     "uvicorn[standard]>=0.46.0",

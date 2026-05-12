@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: Source-Available Non-Commercial" src="https://img.shields.io/badge/license-source--available%20non--commercial-2ea44f?style=for-the-badge"></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-2ea44f?style=for-the-badge"></a>
   <img alt="Status: Alpha" src="https://img.shields.io/badge/status-alpha-f59e0b?style=for-the-badge">
   <img alt="Local First" src="https://img.shields.io/badge/local--first-yes-0ea5e9?style=for-the-badge">
   <img alt="Desktop: Tauri" src="https://img.shields.io/badge/desktop-Tauri-24c8db?style=for-the-badge">
@@ -36,7 +36,7 @@
 
 ## The Short Version
 
-JustHireMe is a source-available, non-commercial desktop workbench for people who are tired of noisy job boards and black-box AI apply tools.
+JustHireMe is an AGPL-licensed, local-first desktop workbench for people who are tired of noisy job boards and black-box AI apply tools.
 
 ## Maintainer And Sponsorship
 
@@ -44,7 +44,7 @@ JustHireMe has started receiving encouraging traction, and I am grateful to ever
 
 If you or someone in your network is hiring for those kinds of roles, I would be happy to connect. You can reach me at [siddhvasudev1402@gmail.com](mailto:siddhvasudev1402@gmail.com), on X/Twitter at [@vasu_devs](https://twitter.com/vasu_devs), or through my portfolio at [vasudev.live](https://vasudev.live).
 
-I am also open to thoughtful sponsorship for JustHireMe as a source-available, non-commercial project. Sponsorship helps keep the project active, improve source coverage, maintain the local-first architecture, and support the work needed to make job search tooling more transparent and useful.
+I am also open to thoughtful sponsorship for JustHireMe as an open-source project. Sponsorship helps keep the project active, improve source coverage, maintain the local-first architecture, and support the work needed to make job search tooling more transparent and useful.
 
 ## Current Status
 
@@ -54,7 +54,7 @@ JustHireMe is in alpha. The repository is public, hackable, and ready for source
 | --- | --- |
 | Frontend workbench | Active |
 | Python sidecar API | Active |
-| Scraper, ranking, vector matching, and customizer core | Supported source-available scope |
+| Scraper, ranking, vector matching, and customizer core | Supported open-source scope |
 | Windows desktop packaging | First release target |
 | Browser automation / auto-apply | Experimental lab, disabled by default |
 | API key storage | Local app settings for now; OS keychain planned |
@@ -71,7 +71,7 @@ It helps you:
 | Match | Use Kuzu graph data and LanceDB vectors to compare jobs against your profile context | Matching is profile-aware, not keyword-only |
 | Customize | Generate tailored resume PDF, cover letter PDF, and outreach drafts | You get a useful package, not just a list of links |
 
-> Browser automation and auto-apply code exists in the repository, but it is experimental and unsupported. The supported source-available core is scraper, ranker, vector matching, and customizer.
+> Browser automation and auto-apply code exists in the repository, but it is experimental and unsupported. The supported open-source core is scraper, ranker, vector matching, and customizer.
 
 ---
 
@@ -175,7 +175,7 @@ Less blind automation.
 | Contributor-friendly | Adding a source adapter should be approachable and testable |
 | Human-controlled | Generated materials are drafts for review, not magic submissions |
 | Honest fallback | If vectors, models, or source data fail, the app should say so |
-| Automation is experimental | Browser automation is a lab area, not the core source-available promise |
+| Automation is experimental | Browser automation is a lab area, not the core open-source promise |
 
 ---
 
@@ -571,8 +571,8 @@ The repository contains browser automation and auto-apply code for experimentati
 
 ```mermaid
 timeline
-    title JustHireMe Source-Available Roadmap
-    v0.1 : Source-available readiness
+    title JustHireMe Open-Source Roadmap
+    v0.1 : Open-source readiness
          : Quality gate
          : Source adapter docs
     v0.2 : More ATS adapters
@@ -599,16 +599,18 @@ Near-term priorities:
 
 ## License
 
-JustHireMe is released under the [JustHireMe Source-Available Non-Commercial License](LICENSE).
+JustHireMe is open source under the [GNU Affero General Public License v3.0 only](LICENSE).
 
-Personal, educational, research, evaluation, and other non-commercial use are
-allowed. Any monetary use is prohibited without express prior written permission
-from Vasudev Siddh or vasu-devs.
+You may self-host, modify, and use JustHireMe, including with your own API
+keys, under the terms of the AGPL-3.0 license. If you modify JustHireMe and
+make it available over a network, the AGPL requires you to provide the
+corresponding source code for that modified version to users of the network
+service.
 
-Commercial use includes selling, paid services, hosted services, client work,
-business operations, advertising or subscription revenue, commissions, lead
-generation, paid integrations, or any other direct or indirect financial benefit.
-Approved commercial use requires a separate written royalty agreement.
+Commercial licenses are available for organizations that want to use
+JustHireMe outside the AGPL terms, including private forks, proprietary
+modifications, embedding, white-labeling, or managed deployments. See
+[COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) for the commercial path.
 
 ---
 

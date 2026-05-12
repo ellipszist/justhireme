@@ -34,6 +34,15 @@ Contributors are expected to follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). In
 - Do not pressure maintainers for unpaid urgency.
 - Do not post private user data, secrets, cookies, or resumes.
 
+## License And CLA
+
+JustHireMe is licensed under [AGPL-3.0-only](LICENSE). By contributing, you
+agree that your contribution may be distributed under AGPL-3.0-only and under
+separate commercial licenses offered by Vasudev Siddh / vasu-devs.
+
+Read [CLA.md](CLA.md) before submitting a pull request. Maintainers may require
+CLA assistant or another signoff workflow before merging.
+
 ## How To Contribute
 
 ### 1. Pick An Issue
@@ -151,6 +160,7 @@ Before opening a PR:
 - [ ] I did not commit local app data, databases, generated PDFs, API keys, cookies, or resumes.
 - [ ] I made experimental automation changes opt-in and clearly labeled.
 - [ ] I explained the user impact in the PR description.
+- [ ] I understand contributions are covered by [CLA.md](CLA.md).
 
 ## Testing Expectations
 
