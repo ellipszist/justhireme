@@ -44,10 +44,6 @@ JustHireMe is built and maintained by Vasudev Siddh - full-stack AI engineer, op
 
 **Sponsor the project** - Sponsorship keeps JustHireMe actively maintained, funds source adapter coverage, and supports the local-first architecture that makes this different from every cloud-first alternative.
 
-**Work with me** - I work best at the intersection of applied AI and product. If you're building something ambitious at a funded AI startup and need someone who ships, reach out.
-
-[vasudev.live](https://vasudev.live) | [@vasu_devs](https://twitter.com/vasu_devs) | [siddhvasudev1402@gmail.com](mailto:siddhvasudev1402@gmail.com)
-
 ## Current Status
 
 JustHireMe is in alpha. The repository is public, hackable, and ready for source-adapter, ranking, docs, and Windows packaging contributions, but it is not a polished one-click consumer product yet.
