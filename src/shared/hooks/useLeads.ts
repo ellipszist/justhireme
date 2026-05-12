@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { isAbortLikeError } from "../../api/client";
 import type { ApiFetch, Lead, LogLine } from "../../types";
 
 export function useLeads(api: ApiFetch | null, addLog?: (msg: string, kind: LogLine["kind"], src?: string) => void) {
@@ -23,6 +24,7 @@ export function useLeads(api: ApiFetch | null, addLog?: (msg: string, kind: LogL
     if (!api) {
       setLoading(true);
       setLoaded(false);
+      setError(null);
       initialLoadDone.current = false;
       return;
     }
@@ -43,6 +45,7 @@ export function useLeads(api: ApiFetch | null, addLog?: (msg: string, kind: LogL
         setError(null);
       } catch (e) {
         if (!alive) return;
+        if (controller.signal.aborted || isAbortLikeError(e)) return;
         setError(e instanceof Error ? e.message : "Lead load failed");
       } finally {
         if (alive) {
@@ -52,6 +55,7 @@ export function useLeads(api: ApiFetch | null, addLog?: (msg: string, kind: LogL
       }
     };
     load(false);
+    const retryTimer = window.setTimeout(() => load(true), 900);
 
     // Keep leads fresh when backend broadcasts LEAD_UPDATED over WS
     const onLeadUpdated = (e: Event) => {
@@ -88,6 +92,7 @@ export function useLeads(api: ApiFetch | null, addLog?: (msg: string, kind: LogL
     return () => {
       alive = false;
       controller.abort();
+      window.clearTimeout(retryTimer);
       window.removeEventListener("lead-updated", onLeadUpdated);
       window.removeEventListener("leads-refresh", onRefresh);
     };

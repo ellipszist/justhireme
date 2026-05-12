@@ -67,9 +67,9 @@ def rank_lead_by_feedback(lead: dict) -> dict:
 
 
 def save_lead(*args, **kwargs):
-    from data.repository import create_repository
+    from automation.lead_store import save_lead_compat
 
-    return create_repository().leads.save_lead(*args, **kwargs)
+    return save_lead_compat(*args, **kwargs)
 
 
 def url_exists(job_id: str) -> bool:

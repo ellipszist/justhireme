@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from collections.abc import Iterable
 
 from core.logging import get_logger
 from data.graph.connection import execute_query
@@ -175,6 +177,71 @@ def refresh_profile_snapshot(db_path: str | None = None) -> None:
         pass
 
 
+def sync_vectors_from_graph() -> dict:
+    candidates = []
+    skills = []
+    projects = []
+    experiences = []
+    credentials = []
+    try:
+        result = execute_query("MATCH (c:Candidate) RETURN c.id, c.n, c.s")
+        while result and result.has_next():
+            candidates.append(result.get_next())
+        result = execute_query("MATCH (s:Skill) RETURN s.id, s.n, s.cat")
+        while result and result.has_next():
+            skills.append(result.get_next())
+        result = execute_query("MATCH (p:Project) RETURN p.id, p.title, p.stack, p.impact")
+        while result and result.has_next():
+            projects.append(result.get_next())
+        result = execute_query("MATCH (e:Experience) RETURN e.id, e.role, e.co, e.period, e.d")
+        while result and result.has_next():
+            experiences.append(result.get_next())
+        for label in ["Certification", "Education", "Achievement"]:
+            result = execute_query(f"MATCH (n:{label}) RETURN n.id, n.title")
+            while result and result.has_next():
+                row = result.get_next()
+                credentials.append([row[0], row[1], label])
+    except Exception as exc:
+        return {"status": "error", "synced": 0, "error": str(exc)}
+
+    synced = 0
+    profile_parts: list[str] = []
+    for candidate_id, name, summary in candidates:
+        if not (str(name or "").strip() or str(summary or "").strip()):
+            continue
+        add_candidate_vec(str(candidate_id), str(name or ""), str(summary or ""))
+        profile_parts.append(profile_text(name, summary))
+        synced += 1
+    for skill_id, name, category in skills:
+        if not str(name or "").strip():
+            continue
+        add_skill_vec(str(skill_id), str(name), str(category or "general"))
+        profile_parts.append(skill_text(name, category))
+        synced += 1
+    for project_id, title, stack, impact in projects:
+        if not str(title or "").strip():
+            continue
+        add_project_vec(str(project_id), str(title), str(stack or ""), str(impact or ""))
+        profile_parts.append(project_text(title, stack, impact))
+        synced += 1
+    for experience_id, role, company, period, description in experiences:
+        if not (str(role or "").strip() or str(company or "").strip()):
+            continue
+        add_experience_vec(str(experience_id), str(role or ""), str(company or ""), str(period or ""), str(description or ""))
+        profile_parts.append(experience_text(role, company, period, description))
+        synced += 1
+    for credential_id, title, kind in credentials:
+        if not str(title or "").strip():
+            continue
+        add_credential_vec(str(credential_id), str(title), str(kind))
+        profile_parts.append(credential_text(title, kind))
+        synced += 1
+    if profile_parts:
+        add_profile_vec("profile:default", "Complete profile", "\n".join(profile_parts))
+        synced += 1
+    return {"status": "ok", "synced": synced}
+
+
 def _candidate_id() -> str | None:
     try:
         result = execute_query("MATCH (c:Candidate) RETURN c.id LIMIT 1")
@@ -196,12 +263,67 @@ def _link_to_candidate(label: str, node_id: str, rel: str) -> None:
         pass
 
 
+def _unlink_outgoing(label: str, node_id: str, rel: str) -> None:
+    try:
+        execute_query(f"MATCH (n:{label} {{id: $id}})-[r:{rel}]->() DELETE r", {"id": node_id})
+    except Exception:
+        pass
+
+
+def _skill_rows_by_name() -> dict[str, str]:
+    rows: dict[str, str] = {}
+    try:
+        result = execute_query("MATCH (s:Skill) RETURN s.id, s.n")
+        while result and result.has_next():
+            row = result.get_next()
+            name = str(row[1] or "").strip().lower()
+            if name:
+                rows[name] = str(row[0] or "")
+    except Exception:
+        pass
+    return rows
+
+
+def _link_project_skills(project_id: str, stack: str, db_path: str | None = None, replace: bool = False) -> None:
+    if replace:
+        _unlink_outgoing("Project", project_id, "PROJ_UTILIZES")
+    for skill_name in stack_list(stack):
+        skill = add_skill(skill_name, "project_stack", db_path)
+        try:
+            execute_query(
+                "MATCH (p:Project {id: $project_id}), (s:Skill {id: $skill_id}) MERGE (p)-[:PROJ_UTILIZES]->(s)",
+                {"project_id": project_id, "skill_id": skill["id"]},
+            )
+        except Exception:
+            pass
+
+
+def _link_experience_skills(experience_id: str, text: str, replace: bool = False) -> None:
+    if replace:
+        _unlink_outgoing("Experience", experience_id, "EXP_UTILIZES")
+    lower_text = str(text or "").lower()
+    if not lower_text:
+        return
+    for skill_name, skill_id in _skill_rows_by_name().items():
+        if len(skill_name) < 2:
+            continue
+        pattern = r"(?<![a-z0-9+#.-])" + re.escape(skill_name) + r"(?![a-z0-9+#.-])"
+        if re.search(pattern, lower_text):
+            try:
+                execute_query(
+                    "MATCH (e:Experience {id: $experience_id}), (s:Skill {id: $skill_id}) MERGE (e)-[:EXP_UTILIZES]->(s)",
+                    {"experience_id": experience_id, "skill_id": skill_id},
+                )
+            except Exception:
+                pass
+
+
 def delete_vec_rows(table_name: str, ids: list[str]) -> None:
     ids = [str(item or "").strip() for item in ids if str(item or "").strip()]
     if not ids:
         return
     try:
-        if table_name not in vec.list_tables():
+        if table_name not in vec_table_names():
             return
         quoted = ["'" + item.replace("'", "''") + "'" for item in ids]
         vec.open_table(table_name).delete("id IN (" + ", ".join(quoted) + ")")
@@ -209,39 +331,120 @@ def delete_vec_rows(table_name: str, ids: list[str]) -> None:
         pass
 
 
-def add_skill_vec(skill_id: str, name: str, category: str) -> None:
+def delete_vec_id_from_all(row_id: str) -> None:
+    for table_name in ["profile", "candidates", "skills", "projects", "experiences", "credentials"]:
+        delete_vec_rows(table_name, [row_id])
+
+
+def vec_table_names() -> list[str]:
+    raw = vec.list_tables()
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    if hasattr(raw, "tables"):
+        return [str(item) for item in raw.tables]
+    if isinstance(raw, dict):
+        tables = raw.get("tables", raw)
+        if isinstance(tables, list):
+            return [str(item) for item in tables]
+    try:
+        pairs = dict(raw)
+        tables = pairs.get("tables", [])
+        if isinstance(tables, list):
+            return [str(item) for item in tables]
+    except Exception:
+        pass
+    return [str(item) for item in raw]
+
+
+def put_vec_rows(table_name: str, rows: list[dict]) -> None:
+    if not rows:
+        return
+    ids = [str(row.get("id") or "").strip() for row in rows if str(row.get("id") or "").strip()]
+    try:
+        if table_name in vec_table_names():
+            rows = _rows_for_existing_table(table_name, rows)
+            delete_vec_rows(table_name, ids)
+            vec.open_table(table_name).add(rows)
+        else:
+            vec.create_table(table_name, data=rows)
+    except Exception as exc:
+        _log.warning("vector write failed for %s: %s", table_name, exc)
+
+
+def _rows_for_existing_table(table_name: str, rows: list[dict]) -> list[dict]:
+    try:
+        table = vec.open_table(table_name)
+        schema = table.to_arrow().schema
+        field_names = set(schema.names)
+        if not field_names:
+            return rows
+        return [{key: value for key, value in row.items() if key in field_names} for row in rows]
+    except Exception:
+        return rows
+
+
+def embed_rows(table_name: str, rows: list[dict], texts: Iterable[str]) -> None:
     try:
         from data.vector.embeddings import embed_texts
 
-        vectors = embed_texts([name])
+        clean_texts = [str(text or "").strip() for text in texts]
+        vectors = embed_texts(clean_texts)
         if not vectors:
             return
-        rows = [{"id": skill_id, "n": name, "cat": category, "vector": vectors[0]}]
-        if "skills" in vec.list_tables():
-            delete_vec_rows("skills", [skill_id])
-            vec.open_table("skills").add(rows)
-        else:
-            vec.create_table("skills", data=rows)
-    except Exception:
-        pass
+        put_vec_rows(table_name, [{**row, "text": text, "vector": vector} for row, text, vector in zip(rows, clean_texts, vectors)])
+    except Exception as exc:
+        _log.warning("embedding write failed for %s: %s", table_name, exc)
+
+
+def profile_text(name: str, summary: str) -> str:
+    return f"Candidate profile\nName: {name}\nSummary: {summary}".strip()
+
+
+def skill_text(name: str, category: str) -> str:
+    return f"Skill: {name}\nCategory: {category}".strip()
+
+
+def project_text(title: str, stack: str | list, impact: str) -> str:
+    stack_value = ", ".join(stack) if isinstance(stack, list) else str(stack or "")
+    return f"Project: {title}\nStack: {stack_value}\nImpact: {impact}".strip()
+
+
+def experience_text(role: str, company: str, period: str, description: str) -> str:
+    return f"Experience: {role}\nCompany: {company}\nPeriod: {period}\nDescription: {description}".strip()
+
+
+def credential_text(title: str, kind: str) -> str:
+    return f"{kind}: {title}".strip()
+
+
+def add_candidate_vec(candidate_id: str, name: str, summary: str) -> None:
+    row = {"id": candidate_id, "label": name or "Candidate", "kind": "candidate", "n": name, "summary": summary}
+    embed_rows("candidates", [row], [profile_text(name, summary)])
+
+
+def add_profile_vec(profile_id: str, label: str, text: str) -> None:
+    embed_rows("profile", [{"id": profile_id, "label": label, "kind": "profile"}], [text])
+
+
+def add_skill_vec(skill_id: str, name: str, category: str) -> None:
+    row = {"id": skill_id, "label": name, "kind": "skill", "n": name, "cat": category}
+    embed_rows("skills", [row], [skill_text(name, category)])
 
 
 def add_project_vec(project_id: str, title: str, stack: str, impact: str) -> None:
-    try:
-        from data.vector.embeddings import embed_texts
+    row = {"id": project_id, "label": title, "kind": "project", "title": title, "stack": stack, "impact": impact}
+    embed_rows("projects", [row], [project_text(title, stack, impact)])
 
-        text = f"{title} {stack} {impact}"
-        vectors = embed_texts([text])
-        if not vectors:
-            return
-        rows = [{"id": project_id, "title": title, "stack": stack, "impact": impact, "vector": vectors[0]}]
-        if "projects" in vec.list_tables():
-            delete_vec_rows("projects", [project_id])
-            vec.open_table("projects").add(rows)
-        else:
-            vec.create_table("projects", data=rows)
-    except Exception:
-        pass
+
+def add_experience_vec(experience_id: str, role: str, company: str, period: str, description: str) -> None:
+    label = " - ".join(part for part in [role, company] if part) or "Experience"
+    row = {"id": experience_id, "label": label, "kind": "experience", "role": role, "company": company, "period": period, "description": description}
+    embed_rows("experiences", [row], [experience_text(role, company, period, description)])
+
+
+def add_credential_vec(node_id: str, title: str, kind: str) -> None:
+    row = {"id": node_id, "label": title, "kind": kind.lower(), "title": title}
+    embed_rows("credentials", [row], [credential_text(title, kind)])
 
 
 def add_skill(name: str, category: str, db_path: str | None = None) -> dict:
@@ -259,6 +462,7 @@ def add_skill(name: str, category: str, db_path: str | None = None) -> dict:
         add_skill_vec(skill_id, name, category)
     except Exception:
         pass
+    _link_to_candidate("Skill", skill_id, "HAS_SKILL")
     refresh_profile_snapshot(db_path)
     return {"id": skill_id, "n": name, "cat": category}
 
@@ -274,12 +478,14 @@ def update_skill(skill_id: str, name: str, category: str, db_path: str | None = 
         add_skill_vec(skill_id, name, category)
     except Exception:
         pass
+    _link_to_candidate("Skill", skill_id, "HAS_SKILL")
     refresh_profile_snapshot(db_path)
     return {"id": skill_id, "n": name, "cat": category}
 
 
 def delete_skill(skill_id: str, db_path: str | None = None) -> None:
     delete_vec_rows("skills", [skill_id])
+    delete_vec_id_from_all(skill_id)
     execute_query("MATCH (s:Skill) WHERE s.id = $id DETACH DELETE s", {"id": skill_id})
     refresh_profile_snapshot(db_path)
 
@@ -301,6 +507,11 @@ def add_experience(role: str, company: str, period: str, description: str, db_pa
             {"id": experience_id, "role": role, "co": company, "period": period, "d": description},
         )
     _link_to_candidate("Experience", experience_id, "WORKED_AS")
+    _link_experience_skills(experience_id, f"{role} {company} {description}")
+    try:
+        add_experience_vec(experience_id, role, company, period, description)
+    except Exception:
+        pass
     refresh_profile_snapshot(db_path)
     return {"id": experience_id, "role": role, "co": company, "period": period, "d": description}
 
@@ -314,12 +525,20 @@ def update_experience(experience_id: str, role: str, company: str, period: str, 
         "MATCH (e:Experience) WHERE e.id = $id SET e.role = $role, e.co = $co, e.period = $period, e.d = $d",
         {"id": experience_id, "role": role, "co": company, "period": period, "d": description},
     )
+    _link_to_candidate("Experience", experience_id, "WORKED_AS")
+    _link_experience_skills(experience_id, f"{role} {company} {description}", replace=True)
+    try:
+        add_experience_vec(experience_id, role, company, period, description)
+    except Exception:
+        pass
     refresh_profile_snapshot(db_path)
     return {"id": experience_id, "role": role, "co": company, "period": period, "d": description}
 
 
 def delete_experience(experience_id: str, db_path: str | None = None) -> None:
     refresh_profile_snapshot(db_path)
+    delete_vec_rows("experiences", [experience_id])
+    delete_vec_id_from_all(experience_id)
     execute_query("MATCH (e:Experience) WHERE e.id = $id DETACH DELETE e", {"id": experience_id})
     refresh_profile_snapshot(db_path)
 
@@ -341,6 +560,7 @@ def add_project(title: str, stack: str, repo: str, impact: str, db_path: str | N
             {"id": project_id, "title": title, "stack": stack, "repo": repo, "impact": impact},
         )
     _link_to_candidate("Project", project_id, "BUILT")
+    _link_project_skills(project_id, stack, db_path)
     try:
         add_project_vec(project_id, title, stack, impact)
     except Exception:
@@ -358,6 +578,8 @@ def update_project(project_id: str, title: str, stack: str, repo: str, impact: s
         "MATCH (p:Project) WHERE p.id = $id SET p.title = $title, p.stack = $stack, p.repo = $repo, p.impact = $impact",
         {"id": project_id, "title": title, "stack": stack, "repo": repo, "impact": impact},
     )
+    _link_to_candidate("Project", project_id, "BUILT")
+    _link_project_skills(project_id, stack, db_path, replace=True)
     try:
         add_project_vec(project_id, title, stack, impact)
     except Exception:
@@ -368,6 +590,7 @@ def update_project(project_id: str, title: str, stack: str, repo: str, impact: s
 
 def delete_project(project_id: str, db_path: str | None = None) -> None:
     delete_vec_rows("projects", [project_id])
+    delete_vec_id_from_all(project_id)
     execute_query("MATCH (p:Project) WHERE p.id = $id DETACH DELETE p", {"id": project_id})
     refresh_profile_snapshot(db_path)
 
@@ -380,6 +603,10 @@ def _add_text_node(label: str, rel: str, title: str, db_path: str | None = None)
     except Exception:
         pass
     _link_to_candidate(label, node_id, rel)
+    try:
+        add_credential_vec(node_id, title, label)
+    except Exception:
+        pass
     refresh_profile_snapshot(db_path)
     return {"id": node_id, "title": title}
 
@@ -416,5 +643,9 @@ def update_candidate(name: str, summary: str, db_path: str | None = None) -> dic
             )
         except Exception:
             pass
+    try:
+        add_candidate_vec(candidate_id, name, summary)
+    except Exception:
+        pass
     refresh_profile_snapshot(db_path)
     return {"n": name, "s": summary}

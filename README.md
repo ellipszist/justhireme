@@ -506,10 +506,10 @@ Planned improvement:
 The first public packaging target is Windows. Public installers are built and published by GitHub Actions when a `v*` tag is pushed.
 
 ```powershell
-npm run release
+npm run release:windows
 ```
 
-For local smoke tests without installer bundling, use `npm run release:fast`.
+For local smoke tests without installer bundling, use `npm run release:smoke`.
 
 Release smoke test and packaging details: [docs/windows-release.md](docs/windows-release.md)
 

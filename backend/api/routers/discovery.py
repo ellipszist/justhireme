@@ -74,14 +74,14 @@ async def run_x_signal_scan(manager, cfg: dict, kind_filter: str | None = None, 
     return leads
 
 
-async def run_free_source_scan(manager, cfg: dict, kind_filter: str | None = None, profile: dict | None = None) -> list[dict]:
-    if not free_sources_enabled(cfg):
-        return []
+async def run_free_source_scan(manager, cfg: dict, kind_filter: str | None = None, profile: dict | None = None, force: bool = False) -> tuple[list[dict], dict, list[str]]:
+    if not force and not free_sources_enabled(cfg):
+        return [], {}, []
 
     kind_filter = "job"
     label = "job leads"
     await manager.broadcast({"type": "agent", "event": "free_scout_start", "msg": f"Scanning free sources for {label}..."})
-    result = await get_discovery_service().scan_free_sources(cfg, kind_filter=kind_filter, profile=profile)
+    result = await get_discovery_service().scan_free_sources(cfg, kind_filter=kind_filter, profile=profile, force=force)
     leads = result.leads
     usage = result.usage
     await manager.broadcast({
@@ -94,7 +94,7 @@ async def run_free_source_scan(manager, cfg: dict, kind_filter: str | None = Non
             await manager.broadcast({"type": "agent", "event": "free_source_error", "msg": f"Free source skipped: {msg}"})
     for lead in leads:
         await manager.broadcast({"type": "LEAD_UPDATED", "data": lead})
-    return leads
+    return leads, usage, result.errors
 
 
 async def run_scan(
@@ -353,7 +353,7 @@ def create_router(
     async def free_sources_scan(repo: Repository = Depends(get_repository)):
         cfg = repo.settings.get_settings()
         profile = profile_for_discovery(await asyncio.to_thread(repo.profile.get_profile), cfg)
-        leads = await run_free_source_scan(manager, cfg, "job", profile)
-        return {"status": "done", "leads": len(leads)}
+        leads, usage, errors = await run_free_source_scan(manager, cfg, "job", profile, force=True)
+        return {"status": "done", "leads": len(leads), "usage": usage, "errors": errors[:8]}
 
     return router

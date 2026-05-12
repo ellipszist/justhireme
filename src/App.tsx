@@ -15,7 +15,6 @@ import { Sidebar } from "./shared/components/Sidebar";
 import { Topbar } from "./shared/components/Topbar";
 import ErrorBoundary from "./shared/components/ErrorBoundary";
 import { DashboardView } from "./features/dashboard/DashboardView";
-import { LeadInboxView } from "./features/inbox/LeadInboxView";
 import { ApplyJobView } from "./features/apply/ApplyJobView";
 import { PipelineView } from "./features/pipeline/PipelineView";
 import { GraphView } from "./features/graph/GraphView";
@@ -45,6 +44,11 @@ export default function App() {
   // Always pass the live version of the selected lead so the drawer reflects real-time updates
   const liveSel = sel ? (leads.find(l => l.job_id === sel.job_id) ?? sel) : null;
   const [startupSeconds, setStartupSeconds] = useState(0);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("jhm-sidebar-collapsed") === "1");
+
+  useEffect(() => {
+    localStorage.setItem("jhm-sidebar-collapsed", sidebarCollapsed ? "1" : "0");
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     const h = () => setScanning(false);
@@ -174,13 +178,23 @@ export default function App() {
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", alignItems: "stretch" }}>
-      <Sidebar view={view} setView={setView} leadCounts={leadCounts} online={conn === "connected"} port={port} beat={beat} onSettings={() => setShowSettings(true)} onSetup={openSetupGuide} />
+      <Sidebar
+        view={view}
+        setView={setView}
+        leadCounts={leadCounts}
+        online={conn === "connected"}
+        port={port}
+        beat={beat}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed(value => !value)}
+        onSettings={() => setShowSettings(true)}
+        onSetup={openSetupGuide}
+      />
       <div className="app-main">
         <Topbar view={view} />
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
           {view === "apply"     && <ErrorBoundary label="Apply" api={api ?? undefined}><ApplyJobView port={port} api={api} leads={leads} openDrawer={setSel} initialInput={applyDraft} autoFocus={applyAutoFocus} /></ErrorBoundary>}
           {view === "dashboard" && <ErrorBoundary label="Dashboard" api={api ?? undefined}><DashboardView leads={leads} dueFollowups={dueFollowups} logs={logs} setView={setView} openDrawer={setSel} scanning={scanning} reevaluating={reevaluating} cleaning={cleaning} onScan={onScan} onStopScan={onStopScan} onReevaluate={onReevaluateJobs} onStopReevaluate={onStopReevaluate} onCleanup={onCleanupLeads} scanErr={scanErr} /></ErrorBoundary>}
-          {view === "inbox"     && <ErrorBoundary label="Inbox" api={api ?? undefined}><LeadInboxView port={port} api={api} onCreated={setSel} /></ErrorBoundary>}
           {view === "pipeline"  && <ErrorBoundary label="Pipeline" api={api ?? undefined}><PipelineView leads={leads} openDrawer={setSel} deleteLead={deleteLead} port={port} api={api} scanning={scanning} reevaluating={reevaluating} cleaning={cleaning} onReevaluate={onReevaluateJobs} onStopReevaluate={onStopReevaluate} onCleanup={onCleanupLeads} loading={leadsLoading || !port || !api} error={leadsError} /></ErrorBoundary>}
           {view === "graph"     && <ErrorBoundary label="Graph" api={api ?? undefined}><GraphView stats={stats} /></ErrorBoundary>}
           {view === "activity"  && <ErrorBoundary label="Activity" api={api ?? undefined}><ActivityView logs={logs} /></ErrorBoundary>}
@@ -191,7 +205,7 @@ export default function App() {
 
       <AnimatePresence>
         {liveSel && api && (
-          <ApprovalDrawer key={liveSel.job_id} j={liveSel} api={api} onClose={() => setSel(null)} onFired={() => setSel(null)} />
+          <ApprovalDrawer key={liveSel.job_id} j={liveSel} api={api} onClose={() => setSel(null)} />
         )}
         {showSettings && api && (
           <SettingsModal key="settings" api={api} onClose={() => setShowSettings(false)} />

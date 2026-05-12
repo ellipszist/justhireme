@@ -59,20 +59,28 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
       console.error("Delete error:", err);
     }
     await fetchProfile();
+    window.dispatchEvent(new CustomEvent("profile-refresh"));
+    window.dispatchEvent(new CustomEvent("graph-refresh"));
   };
 
   const saveEdit = async (type: string, id: string) => {
     await api(`/api/v1/profile/${type}/${id}`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editData),
     });
-    setEditId(null); fetchProfile();
+    setEditId(null);
+    await fetchProfile();
+    window.dispatchEvent(new CustomEvent("profile-refresh"));
+    window.dispatchEvent(new CustomEvent("graph-refresh"));
   };
 
   const saveCandidate = async () => {
     await api(`/api/v1/profile/candidate`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candForm),
     });
-    setEditingCandidate(false); fetchProfile();
+    setEditingCandidate(false);
+    await fetchProfile();
+    window.dispatchEvent(new CustomEvent("profile-refresh"));
+    window.dispatchEvent(new CustomEvent("graph-refresh"));
   };
 
   const skills = profile?.skills || [];

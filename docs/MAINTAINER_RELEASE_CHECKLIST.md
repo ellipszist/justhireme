@@ -2,9 +2,12 @@
 
 Use this before cutting a public release or sharing a build link.
 
+For the full production release plan, see [Production Release Roadmap](PRODUCTION_RELEASE_ROADMAP.md).
+
 ## Required Checks
 
 - [ ] `npm ci`
+- [ ] `npm run version:check`
 - [ ] `npm run typecheck`
 - [ ] `npm test`
 - [ ] `npm run build`
@@ -23,10 +26,10 @@ Use this before cutting a public release or sharing a build link.
 
 ## Release Flow
 
-1. Update versions in `package.json`, `backend/pyproject.toml`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
+1. Update versions with `npm run version:bump -- X.Y.Z`.
 2. Run the required checks above.
 3. Create a tag like `v0.1.0`.
-4. For a quick local smoke test, run `npm run package:fast` and launch `src-tauri/target/release/justhireme.exe`.
-5. For the standard Windows installer, run `npm run package:windows`.
+4. For a quick local smoke test, run `npm run release:smoke` and launch `src-tauri/target/release/justhireme.exe`.
+5. For the standard Windows installer, run `npm run release:windows`.
 6. Push the tag and let the release workflow build and publish the GitHub Release from CI.
 7. Download and smoke-test the GitHub-built installer before sharing the release link widely.

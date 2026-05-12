@@ -91,8 +91,7 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
   const tourPages = [
     { name: "Customize", detail: "Paste a job URL or job text, analyze fit, generate a tailored resume, cover letter, and outreach drafts from one screen." },
     { name: "Dashboard", detail: "See the working snapshot: saved leads, pipeline counts, recent activity, source coverage, and what the agent has been doing." },
-    { name: "Leads", detail: "Review discovered jobs, sort by fit and signal, open details, approve the ones worth applying to, and remove weak leads." },
-    { name: "Job Pipeline", detail: "Track approved jobs from evaluating to applied, interviewing, accepted, or rejected so follow-up work stays organized." },
+    { name: "Job Pipeline", detail: "Scan sources, review discovered jobs, sort by fit and signal, open details, mark applied, and remove weak leads." },
     { name: "Knowledge", detail: "Inspect the local profile graph built from your resume, projects, GitHub, portfolio, and manual context." },
     { name: "Activity", detail: "Read the event trail for scans, scoring, generation, scraping, imports, and failures when you need to debug or audit decisions." },
     { name: "Profile", detail: "Edit your candidate identity, experience, skills, education, links, and application defaults used in generated packages." },

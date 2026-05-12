@@ -16,7 +16,7 @@ const groups = {
     ["website build", npm, ["run", "build"], { cwd: "website" }],
     ["rust check", "cargo", ["check"], { cwd: "src-tauri" }],
   ],
-  "release": [
+  "release:smoke": [
     ["frontend build", npm, ["run", "build"]],
     ["sidecar build", npm, ["run", "build:sidecar"]],
     ["rust build", "cargo", ["build", "--release"], { cwd: "src-tauri" }],
@@ -34,6 +34,7 @@ if (!tasks) {
 
 const colors = [36, 35, 34, 33, 32, 31];
 let failed = false;
+const startedAt = Date.now();
 
 function prefixLine(name, index, chunk) {
   const color = colors[index % colors.length];
@@ -48,6 +49,7 @@ function prefixLine(name, index, chunk) {
 function startTask(task, index) {
   const [name, command, args, options = {}] = task;
   const cwd = options.cwd || ".";
+  const taskStartedAt = Date.now();
   const child = spawn(command, args, {
     cwd,
     shell: true,
@@ -70,9 +72,12 @@ function startTask(task, index) {
 
   return new Promise((resolve) => {
     child.on("close", (code) => {
+      const seconds = ((Date.now() - taskStartedAt) / 1000).toFixed(1);
       if (code !== 0) {
         failed = true;
-        console.error(`[${name}] exited with code ${code}`);
+        console.error(`[${name}] exited with code ${code} after ${seconds}s`);
+      } else {
+        console.log(`[${name}] completed in ${seconds}s`);
       }
       resolve();
     });
@@ -80,4 +85,5 @@ function startTask(task, index) {
 }
 
 await Promise.all(tasks.map(startTask));
+console.log(`[${groupName}] completed in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
 process.exit(failed ? 1 : 0);

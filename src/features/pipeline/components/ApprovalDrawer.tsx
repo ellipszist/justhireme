@@ -3,16 +3,15 @@ import { motion } from "framer-motion";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import Icon from "../../../shared/components/Icon";
 import type { ApiFetch, KeywordCoverage, Lead } from "../../../types";
+import { GENERATION_TIMEOUT_MS } from "../../../api/generation";
 import { cleanLeadText, getTone, leadDisplayHeading } from "../../../shared/lib/leadUtils";
 import { FormReader } from "../../apply/components/FormReader";
 
-export function ApprovalDrawer({ j, api, onClose, onFired }: {
-  j: Lead; api: ApiFetch; onClose: () => void; onFired: () => void;
+export function ApprovalDrawer({ j, api, onClose }: {
+  j: Lead; api: ApiFetch; onClose: () => void;
 }) {
   type DocKind = "resume" | "cover";
   type VersionEntry = { version: number; resume?: string; cover_letter?: string };
-  const [firing, setFiring] = useState(false);
-  const [done,   setDone]   = useState(false);
   const [generating, setGenerating] = useState(false);
   const [activeDoc, setActiveDoc] = useState<DocKind>("resume");
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
@@ -20,17 +19,21 @@ export function ApprovalDrawer({ j, api, onClose, onFired }: {
   const [generateErr, setGenerateErr] = useState<string | null>(null);
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [pipelineMsg, setPipelineMsg] = useState<string | null>(null);
-  const [fireErr, setFireErr] = useState<string | null>(null);
+  const [statusBusy, setStatusBusy] = useState<string | null>(null);
+  const [statusErr, setStatusErr] = useState<string | null>(null);
   const [feedbackBusy, setFeedbackBusy] = useState<string | null>(null);
   const [feedbackErr, setFeedbackErr] = useState<string | null>(null);
   const [followupBusy, setFollowupBusy] = useState<number | null>(null);
   const [versions, setVersions] = useState<VersionEntry[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [versionErr, setVersionErr] = useState<string | null>(null);
-  const [experimentalAutoApply, setExperimentalAutoApply] = useState(false);
-  const actionControllerRef = useRef<AbortController | null>(null);
+  const generateControllerRef = useRef<AbortController | null>(null);
+  const pipelineControllerRef = useRef<AbortController | null>(null);
 
-  useEffect(() => () => actionControllerRef.current?.abort(), []);
+  useEffect(() => () => {
+    generateControllerRef.current?.abort();
+    pipelineControllerRef.current?.abort();
+  }, []);
 
   const resumeReady = Boolean(j.resume_asset || j.asset);
   const coverReady = Boolean(j.cover_letter_asset);
@@ -53,7 +56,6 @@ export function ApprovalDrawer({ j, api, onClose, onFired }: {
   const hasCoverage = missingTerms.length > 0 || incorporatedTerms.length > 0 || coveredTerms.length > 0;
   const qualityScore = Number(j.lead_quality_score || j.source_meta?.lead_quality_score || 0);
   const qualityReason = String(j.lead_quality_reason || j.source_meta?.lead_quality_reason || "");
-  const canFire = experimentalAutoApply && resumeReady && coverReady && !firing;
   const display = leadDisplayHeading(j);
   const originalTitle = cleanLeadText(j.title);
   const descriptionText = cleanLeadText(j.description);
@@ -84,15 +86,6 @@ export function ApprovalDrawer({ j, api, onClose, onFired }: {
     return () => controller.abort();
   }, [loadVersions, j.resume_asset, j.cover_letter_asset, j.resume_version]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    api("/api/v1/settings", { signal: controller.signal })
-      .then(r => r.ok ? r.json() : {})
-      .then((cfg: Record<string, string>) => setExperimentalAutoApply(cfg.auto_apply === "true"))
-      .catch(() => setExperimentalAutoApply(false));
-    return () => controller.abort();
-  }, [api]);
-
   // Tauri WebView blocks <iframe src="http://..."> for localhost � fetch as blob instead
   useEffect(() => {
     if (!activeDocPath) { setPdfBlobUrl(null); setPdfLoadErr(null); return; }
@@ -111,6 +104,8 @@ export function ApprovalDrawer({ j, api, onClose, onFired }: {
       })
       .catch(err => {
         if (!alive) return;
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (String(err).toLowerCase().includes("signal is aborted")) return;
         setPdfLoadErr(String(err));
         setPdfBlobUrl(null);
       });
@@ -126,68 +121,49 @@ export function ApprovalDrawer({ j, api, onClose, onFired }: {
     if (generating && resumeReady && coverReady) setGenerating(false);
   }, [resumeReady, coverReady, generating]);
 
-  const fire = async () => {
-    if (!canFire) return;
-    setFiring(true);
-    setFireErr(null);
-    actionControllerRef.current?.abort();
-    const controller = new AbortController();
-    actionControllerRef.current = controller;
-    try {
-      const r = await api(`/api/v1/fire/${j.job_id}`, { method: "POST", signal: controller.signal });
-      if (!r.ok) {
-        const detail = await r.json().then(d => d.detail).catch(() => "");
-        throw new Error(detail || `Server returned ${r.status}`);
-      }
-      setDone(true); setTimeout(onFired, 1500);
-    } catch (err) {
-      setFireErr(err instanceof Error ? err.message : "Fire failed");
-      setFiring(false);
-    } finally {
-      if (actionControllerRef.current === controller) actionControllerRef.current = null;
-    }
-  };
-
   const generatePdf = async () => {
+    if (generating || pipelineRunning) return;
     setGenerating(true);
     setGenerateErr(null);
     setPdfBlobUrl(null);
     setPdfLoadErr(null);
     setActiveDoc("resume");
-    actionControllerRef.current?.abort();
+    generateControllerRef.current?.abort();
     const controller = new AbortController();
-    actionControllerRef.current = controller;
+    generateControllerRef.current = controller;
     try {
-      const r = await api(`/api/v1/leads/${j.job_id}/generate`, { method: "POST", signal: controller.signal });
+      const r = await api(`/api/v1/leads/${j.job_id}/generate`, { method: "POST", signal: controller.signal, timeoutMs: GENERATION_TIMEOUT_MS });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.detail || `Server returned ${r.status}`);
       window.dispatchEvent(new CustomEvent("leads-refresh"));
       await loadVersions();
     } catch (err) {
+      if (controller.signal.aborted) return;
       setGenerateErr(err instanceof Error ? err.message : String(err));
       setGenerating(false);
     } finally {
-      if (actionControllerRef.current === controller) actionControllerRef.current = null;
+      if (generateControllerRef.current === controller) generateControllerRef.current = null;
     }
   };
 
   const runPipeline = async () => {
-    if (pipelineRunning) return;
+    if (pipelineRunning || generating) return;
     setPipelineRunning(true);
     setPipelineMsg(null);
-    actionControllerRef.current?.abort();
+    pipelineControllerRef.current?.abort();
     const controller = new AbortController();
-    actionControllerRef.current = controller;
+    pipelineControllerRef.current = controller;
     try {
       const r = await api(`/api/v1/leads/${j.job_id}/pipeline/run`, { method: "POST", signal: controller.signal });
       if (!r.ok) throw new Error(`Server returned ${r.status}`);
       setPipelineMsg("Pipeline running...");
       window.setTimeout(() => setPipelineRunning(false), 3000);
     } catch (err) {
+      if (controller.signal.aborted) return;
       setPipelineMsg(err instanceof Error ? err.message : "Pipeline failed to start");
       setPipelineRunning(false);
     } finally {
-      if (actionControllerRef.current === controller) actionControllerRef.current = null;
+      if (pipelineControllerRef.current === controller) pipelineControllerRef.current = null;
     }
   };
 
@@ -210,6 +186,28 @@ export function ApprovalDrawer({ j, api, onClose, onFired }: {
       setFeedbackErr(err instanceof Error ? err.message : "Feedback failed");
     } finally {
       setFeedbackBusy(null);
+    }
+  };
+
+  const updateLeadStatus = async (status: string) => {
+    setStatusBusy(status);
+    setStatusErr(null);
+    try {
+      const r = await api(`/api/v1/leads/${j.job_id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!r.ok) {
+        const detail = await r.json().then(d => d.detail).catch(() => "");
+        throw new Error(detail || `Server returned ${r.status}`);
+      }
+      window.dispatchEvent(new CustomEvent("lead-updated", { detail: { job_id: j.job_id, status } }));
+      window.dispatchEvent(new CustomEvent("leads-refresh"));
+    } catch (err) {
+      setStatusErr(err instanceof Error ? err.message : "Status update failed");
+    } finally {
+      setStatusBusy(null);
     }
   };
 
@@ -305,13 +303,13 @@ export function ApprovalDrawer({ j, api, onClose, onFired }: {
                     <Icon name="download" size={12} color="var(--teal)" /> Open PDF
                   </button>
                 )}
-                <button onClick={generatePdf} disabled={generating} style={{
+                <button onClick={generatePdf} disabled={generating || pipelineRunning} style={{
                   padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700,
-                  border: "1px solid var(--purple)", background: "var(--purple-soft)", color: "var(--purple-ink)", cursor: generating ? "wait" : "pointer",
+                  border: "1px solid var(--purple)", background: "var(--purple-soft)", color: "var(--purple-ink)", cursor: generating ? "wait" : pipelineRunning ? "not-allowed" : "pointer",
                 }}>{generating ? "Generating..." : resumeReady || coverReady ? "Regenerate Package" : "Generate Package"}</button>
-                <button onClick={runPipeline} disabled={pipelineRunning} style={{
+                <button onClick={runPipeline} disabled={pipelineRunning || generating} style={{
                   padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700,
-                  border: "1px solid var(--blue)", background: "var(--blue-soft)", color: "var(--blue-ink)", cursor: pipelineRunning ? "wait" : "pointer",
+                  border: "1px solid var(--blue)", background: "var(--blue-soft)", color: "var(--blue-ink)", cursor: pipelineRunning ? "wait" : generating ? "not-allowed" : "pointer",
                 }}>{pipelineRunning ? "Pipeline running..." : "Run full pipeline"}</button>
               </div>
             </div>
@@ -415,7 +413,7 @@ export function ApprovalDrawer({ j, api, onClose, onFired }: {
                   <div style={{ maxWidth: 380, lineHeight: 1.5 }}>
                     Generate the application package to create separate PDFs using the job description, company context, and best-matching projects.
                   </div>
-                  <button onClick={generatePdf} disabled={generating} style={{ padding: "8px 18px", borderRadius: 8, fontSize: 12, fontWeight: 700, border: "1px solid var(--purple)", background: "var(--purple-soft)", color: "var(--purple-ink)", cursor: generating ? "wait" : "pointer" }}>
+                  <button onClick={generatePdf} disabled={generating || pipelineRunning} style={{ padding: "8px 18px", borderRadius: 8, fontSize: 12, fontWeight: 700, border: "1px solid var(--purple)", background: "var(--purple-soft)", color: "var(--purple-ink)", cursor: generating ? "wait" : pipelineRunning ? "not-allowed" : "pointer" }}>
                     Generate Package
                   </button>
                 </div>
@@ -635,28 +633,29 @@ export function ApprovalDrawer({ j, api, onClose, onFired }: {
 
             </div>
             <div style={{ textAlign: "center", padding: 16, borderTop: "1px solid var(--line)", background: "var(--paper)", flexShrink: 0 }}>
-              {done
-                ? <div style={{ fontSize: 15, color: "var(--ok)", fontWeight: 700 }}>Experimental automation running</div>
-                : <>
-                    <button className="btn btn-accent" onClick={fire} disabled={!canFire} style={{ fontSize: 15, padding: "12px 24px", width: "100%", cursor: canFire ? "pointer" : "not-allowed", opacity: canFire ? 1 : 0.58, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                      <Icon name="fire" size={15} color="#fff" /> {firing ? "Starting..." : "Experimental Auto Apply"}
-                    </button>
-                    {fireErr ? (
-                      <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--bad)", lineHeight: 1.45 }}>
-                        {fireErr}
-                      </div>
-                    ) : null}
-                    {!experimentalAutoApply ? (
-                      <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
-                        Auto-apply is an unsupported contributor lab. Enable Experimental Auto Apply in settings to test it.
-                      </div>
-                    ) : !resumeReady || !coverReady ? (
-                      <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
-                        Generate the resume and cover letter before testing experimental automation.
-                      </div>
-                    ) : null}
-                  </>
-              }
+              <button
+                className={`btn ${j.status === "applied" ? "btn-applied-done" : "btn-apply-action"}`}
+                onClick={() => updateLeadStatus("applied")}
+                disabled={statusBusy === "applied" || j.status === "applied"}
+                style={{
+                  fontSize: 15,
+                  padding: "12px 24px",
+                  width: "100%",
+                  cursor: statusBusy === "applied" ? "wait" : j.status === "applied" ? "default" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
+              >
+                <Icon name="check" size={15} color="#fff" />
+                {statusBusy === "applied" ? "Saving..." : j.status === "applied" ? "Marked as applied" : "Mark as applied"}
+              </button>
+              {statusErr ? (
+                <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--bad)", lineHeight: 1.45 }}>
+                  {statusErr}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

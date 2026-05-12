@@ -15,8 +15,23 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  release-preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Verify tag matches project versions
+        run: npm run version:check -- "${GITHUB_REF_NAME}"
+
   build-backend:
     name: Build backend sidecar (${{ matrix.name }})
+    needs: release-preflight
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental }}
     strategy:
@@ -37,6 +52,11 @@ jobs:
             experimental: false
     steps:
       - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
       - uses: actions/setup-python@v6
         with:
@@ -70,63 +90,8 @@ jobs:
           cd backend
           uv run python -m playwright install chromium
 
-      - name: Build sidecar with PyInstaller (Windows)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          Remove-Item -Path src-tauri\resources\backend -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item -Path src-tauri\resources\backend.exe -Force -ErrorAction SilentlyContinue
-          cd backend
-          uv run pyinstaller backend.spec --distpath ..\src-tauri\resources\backend --noconfirm --clean
-          cd ..
-
-          $triple = (rustc -vV | Select-String "host:").ToString().Split()[1].Trim()
-          $src = "src-tauri\resources\backend\backend\backend.exe"
-          $dst = "src-tauri\resources\backend\jhm-sidecar-next-$triple.exe"
-          $internalSrc = "src-tauri\resources\backend\backend\_internal"
-          $internalDst = "src-tauri\resources\sidecar-internal"
-
-          if (-not (Test-Path $src)) {
-            throw "Expected sidecar was not created: $src"
-          }
-          if (-not (Test-Path $internalSrc)) {
-            throw "Expected sidecar runtime was not created: $internalSrc"
-          }
-          Remove-Item -Path $internalDst -Recurse -Force -ErrorAction SilentlyContinue
-          Move-Item -Path $internalSrc -Destination $internalDst -Force
-          Copy-Item $src $dst -Force
-          Write-Host "Sidecar ready: $dst"
-
-      - name: Build sidecar with PyInstaller (Unix)
-        if: matrix.platform != 'windows'
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf src-tauri/resources/backend src-tauri/resources/backend.exe
-          cd backend
-          uv run pyinstaller backend.spec --distpath ../src-tauri/resources/backend --noconfirm --clean
-          cd ..
-
-          triple="$(rustc -vV | awk '/host:/ {print $2}')"
-          src="src-tauri/resources/backend/backend/backend"
-          dst="src-tauri/resources/backend/jhm-sidecar-next-${triple}"
-          internal_src="src-tauri/resources/backend/backend/_internal"
-          internal_dst="src-tauri/resources/sidecar-internal"
-
-          if [ ! -f "$src" ]; then
-            echo "Expected sidecar was not created: $src" >&2
-            exit 1
-          fi
-          if [ ! -d "$internal_src" ]; then
-            echo "Expected sidecar runtime was not created: $internal_src" >&2
-            exit 1
-          fi
-          rm -rf "$internal_dst"
-          mv "$internal_src" "$internal_dst"
-          cp "$src" "$dst"
-          chmod +x "$dst"
-          echo "Sidecar ready: $dst"
+      - name: Build sidecar with canonical script
+        run: npm run build:sidecar
 
       - name: List sidecar output (Windows)
         if: matrix.platform == 'windows'
@@ -136,9 +101,13 @@ jobs:
           Get-ChildItem -Path src-tauri\resources\backend\ -Recurse |
             Select-Object FullName, Length |
             Format-Table -AutoSize
-          $total = (Get-ChildItem -Path src-tauri\resources\backend\ -Recurse -File |
+          $backendTotal = (Get-ChildItem -Path src-tauri\resources\backend\ -Recurse -File |
             Measure-Object -Property Length -Sum).Sum / 1MB
-          Write-Host "Total size: $([math]::Round($total, 1)) MB"
+          $runtimeTotal = (Get-ChildItem -Path src-tauri\resources\sidecar-internal\ -Recurse -File |
+            Measure-Object -Property Length -Sum).Sum / 1MB
+          Write-Host "Sidecar backend size: $([math]::Round($backendTotal, 1)) MB"
+          Write-Host "Sidecar runtime size: $([math]::Round($runtimeTotal, 1)) MB"
+          Get-Content src-tauri\resources\backend\sidecar-manifest.json
 
       - name: List sidecar output (Unix)
         if: matrix.platform != 'windows'
@@ -146,8 +115,11 @@ jobs:
         run: |
           set -euo pipefail
           find src-tauri/resources/backend -maxdepth 3 -type f -print
-          total_kb="$(du -sk src-tauri/resources/backend | awk '{print $1}')"
-          echo "Total size: $((total_kb / 1024)) MB"
+          backend_kb="$(du -sk src-tauri/resources/backend | awk '{print $1}')"
+          runtime_kb="$(du -sk src-tauri/resources/sidecar-internal | awk '{print $1}')"
+          echo "Sidecar backend size: $((backend_kb / 1024)) MB"
+          echo "Sidecar runtime size: $((runtime_kb / 1024)) MB"
+          cat src-tauri/resources/backend/sidecar-manifest.json
 
       - name: Upload backend sidecar artifact
         uses: actions/upload-artifact@v7
@@ -288,6 +260,12 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
+      - name: Verify project versions
+        run: npm run version:check -- "${GITHUB_REF_NAME}"
+
+      - name: Build frontend
+        run: npm run build
+
       - name: Download backend sidecar
         uses: actions/download-artifact@v8
         with:
@@ -307,6 +285,9 @@ jobs:
           if (-not (Test-Path $runtime)) {
             throw "Sidecar runtime not found at $runtime"
           }
+          if (-not (Test-Path "src-tauri\resources\backend\sidecar-manifest.json")) {
+            throw "Sidecar manifest not found."
+          }
           Write-Host "Sidecar verified: $sidecar ($(( Get-Item $sidecar ).Length / 1MB) MB)"
           Write-Host "Browser runtime is shipped as an OTA asset, not bundled into the installer."
 
@@ -324,6 +305,10 @@ jobs:
           fi
           if [ ! -f "$runtime" ]; then
             echo "Sidecar runtime not found at $runtime" >&2
+            exit 1
+          fi
+          if [ ! -f "src-tauri/resources/backend/sidecar-manifest.json" ]; then
+            echo "Sidecar manifest not found." >&2
             exit 1
           fi
           chmod +x "$sidecar"
@@ -439,9 +424,18 @@ jobs:
           version="${tag#v}"
           cd release-assets
 
-          find . -type f ! -name "SHA256SUMS-*.txt" -printf "%P\n" | sort | while read -r asset; do
+          find . -type f ! -name "SHA256SUMS*.txt" ! -name "ASSET-SIZES.txt" -printf "%P\n" | sort | while read -r asset; do
             sha256sum "$asset"
           done > SHA256SUMS.txt
+          find . -type f ! -name "SHA256SUMS*.txt" ! -name "ASSET-SIZES.txt" -printf "%P\n" | sort | while read -r asset; do
+            bytes="$(stat -c%s "$asset")"
+            python - "$bytes" "$asset" <<'PY'
+          import sys
+          size = int(sys.argv[1])
+          asset = sys.argv[2]
+          print(f"{size / (1024 * 1024):8.1f} MB  {asset}")
+          PY
+          done > ASSET-SIZES.txt
 
           release_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
           windows_asset="$(find . -maxdepth 1 -type f -name "*.exe" -printf "%f\n" | sort | head -n1)"
@@ -508,6 +502,10 @@ jobs:
             echo "### SHA256 checksums"
             echo
             sed 's/^/    /' release-assets/SHA256SUMS.txt
+            echo
+            echo "### Asset sizes"
+            echo
+            sed 's/^/    /' release-assets/ASSET-SIZES.txt
             echo
             echo "### What's inside"
             echo "- Local-first job intelligence workbench"

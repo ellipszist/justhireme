@@ -9,10 +9,10 @@ npm install
 cd backend
 uv sync --dev
 cd ..
-npm run release
+npm run release:windows
 ```
 
-The standard Windows release build runs the frontend, Rust release compile, and Python sidecar build in parallel, then produces the NSIS installer.
+The standard Windows release build verifies project versions, builds the frontend and Python sidecar, then produces the NSIS installer through Tauri. Use `npm run release:smoke` when you want the fastest parallel local smoke build without installer generation.
 
 | Artifact | Use |
 | --- | --- |
@@ -22,7 +22,7 @@ The standard Windows release build runs the frontend, Rust release compile, and 
 For the fastest release smoke test, skip installer generation:
 
 ```powershell
-npm run release:fast
+npm run release:smoke
 .\src-tauri\target\release\justhireme.exe
 ```
 
