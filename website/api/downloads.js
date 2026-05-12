@@ -1,4 +1,4 @@
-import { cacheableJson, cleanId, createMemoryCache, json, redisConfigured, redisPipeline, send } from "./_counter.js";
+import { cacheableJson, cleanId, countersWritable, createMemoryCache, envInt, json, redisConfigured, redisPipeline, redisScript, send } from "./_counter.js";
 
 const TOTAL_KEY = "justhireme:downloads:total";
 const UNIQUE_PREFIX = "justhireme:downloads:visitor:";
@@ -7,7 +7,36 @@ const PLATFORM_KEYS = {
   mac: "justhireme:downloads:mac",
   linux: "justhireme:downloads:linux",
 };
-const COUNT_CACHE = createMemoryCache(5 * 60 * 1000);
+const COUNT_CACHE = createMemoryCache(envInt("COUNTER_SERVER_CACHE_SECONDS", 30 * 60) * 1000);
+const VISITOR_TTL_SECONDS = envInt("COUNTER_VISITOR_TTL_DAYS", 400) * 24 * 60 * 60;
+const COUNT_DOWNLOAD_SCRIPT = `
+local visitorKey = KEYS[1]
+local totalKey = KEYS[2]
+local platformKey = KEYS[3]
+local baseline = tonumber(ARGV[1]) or 0
+local ttl = tonumber(ARGV[2]) or 0
+
+if redis.call("EXISTS", totalKey) == 0 then
+  redis.call("SET", totalKey, baseline)
+end
+
+local wasNew
+if ttl > 0 then
+  wasNew = redis.call("SET", visitorKey, "1", "EX", ttl, "NX")
+else
+  wasNew = redis.call("SET", visitorKey, "1", "NX")
+end
+
+if wasNew then
+  return { 1, redis.call("INCR", totalKey), redis.call("INCR", platformKey) }
+end
+
+return {
+  0,
+  tonumber(redis.call("GET", totalKey)) or baseline,
+  tonumber(redis.call("GET", platformKey)) or 0
+}
+`;
 
 function cleanPlatform(value) {
   const platform = String(value || "").toLowerCase();
@@ -69,30 +98,25 @@ export default async function handler(request, response) {
       return send(response, json({ configured: false, counted: false, total: baseline, windows: 0, mac: 0, linux: 0 }));
     }
 
-    const visitorKey = `${UNIQUE_PREFIX}${platform}:${visitorId}`;
-    const [wasNew] = await redisPipeline([
-      ["SET", visitorKey, "1", "NX"],
-      ["SET", TOTAL_KEY, baseline, "NX"],
-    ]);
-
-    let counts;
-    if (wasNew) {
-      const [total, platformTotal] = await redisPipeline([
-        ["INCR", TOTAL_KEY],
-        ["INCR", PLATFORM_KEYS[platform]],
-      ]);
-      const cached = COUNT_CACHE.get();
-      counts = COUNT_CACHE.set({
-        configured: true,
-        total: Number.parseInt(total || `${cached?.total || baseline}`, 10),
-        windows: cached?.windows || 0,
-        mac: cached?.mac || 0,
-        linux: cached?.linux || 0,
-        [platform]: Number.parseInt(platformTotal || `${cached?.[platform] || 0}`, 10),
-      });
-    } else {
-      counts = await getDownloadCounts(configured, baseline);
+    if (!countersWritable()) {
+      return send(response, json({ configured: true, writable: false, counted: false, total: baseline, windows: 0, mac: 0, linux: 0 }));
     }
+
+    const visitorKey = `${UNIQUE_PREFIX}${platform}:${visitorId}`;
+    const [wasNew, total, platformTotal] = await redisScript(
+      COUNT_DOWNLOAD_SCRIPT,
+      [visitorKey, TOTAL_KEY, PLATFORM_KEYS[platform]],
+      [String(baseline), String(VISITOR_TTL_SECONDS)],
+    );
+    const cached = COUNT_CACHE.get();
+    const counts = COUNT_CACHE.set({
+      configured: true,
+      total: Number.parseInt(total || `${cached?.total || baseline}`, 10),
+      windows: cached?.windows || 0,
+      mac: cached?.mac || 0,
+      linux: cached?.linux || 0,
+      [platform]: Number.parseInt(platformTotal || `${cached?.[platform] || 0}`, 10),
+    });
 
     return send(response, json({
       configured: true,
