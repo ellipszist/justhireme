@@ -1,0 +1,181 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Just Hire Me hero banner</title>
+  <desc id="desc">A warm typographic banner for Just Hire Me with cohesive product UI components for sources, quality gate, ranking, graph matching, and tailored materials.</desc>
+  <defs>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="28" flood-color="#1F1A14" flood-opacity="0.12"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#1F1A14" flood-opacity="0.08"/>
+    </filter>
+    <filter id="tinyShadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#1F1A14" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="paperWash" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7F3EA"/>
+      <stop offset="0.48" stop-color="#F4F3EE"/>
+      <stop offset="1" stop-color="#EEE8DC"/>
+    </linearGradient>
+    <linearGradient id="heroInk" x1="220" y1="250" x2="850" y2="600" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1F1A14"/>
+      <stop offset="0.72" stop-color="#403A32"/>
+      <stop offset="1" stop-color="#C96442"/>
+    </linearGradient>
+    <linearGradient id="accentBand" x1="220" y1="610" x2="1020" y2="610" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C96442"/>
+      <stop offset="0.32" stop-color="#D17847"/>
+      <stop offset="0.66" stop-color="#5A9DA8"/>
+      <stop offset="1" stop-color="#8B7BB8"/>
+    </linearGradient>
+    <pattern id="dotGrid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.3" fill="#1F1A14" opacity="0.08"/>
+    </pattern>
+    <style>
+      .sans { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .display { font-family: Fraunces, "Instrument Serif", Georgia, ui-serif, serif; }
+      .mono { font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace; }
+      .ink { fill: #1F1A14; }
+      .muted { fill: #6F675C; }
+      .faint { fill: #A9A197; }
+      .line { stroke: rgba(31, 26, 20, 0.12); }
+      .panel { fill: rgba(255, 255, 255, 0.58); stroke: rgba(201, 100, 66, 0.18); }
+      .panelStrong { fill: rgba(255, 255, 255, 0.78); stroke: rgba(201, 100, 66, 0.18); }
+      .label { font-size: 22px; font-weight: 800; letter-spacing: 0; }
+      .micro { font-size: 15px; font-weight: 700; letter-spacing: 0; }
+      .tiny { font-size: 13px; font-weight: 650; letter-spacing: 0; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#paperWash)"/>
+  <rect width="1600" height="900" fill="url(#dotGrid)" opacity="0.55"/>
+  <path d="M121 137C244 79 388 54 553 77C706 99 771 162 918 142C1084 120 1205 40 1396 92C1516 125 1575 209 1597 318V0H0V248C31 200 70 161 121 137Z" fill="#FCE0C8" opacity="0.42"/>
+  <path d="M95 780C226 703 358 698 493 742C676 803 793 850 973 796C1135 747 1302 705 1600 804V900H0V849C26 824 57 801 95 780Z" fill="#CFE4DF" opacity="0.38"/>
+
+  <g transform="translate(70 54)">
+    <rect width="1460" height="792" rx="34" fill="rgba(255,255,255,0.34)" stroke="rgba(31,26,20,0.08)"/>
+    <rect x="26" y="26" width="1408" height="740" rx="26" fill="rgba(244,243,238,0.72)" stroke="rgba(31,26,20,0.07)"/>
+  </g>
+
+  <g transform="translate(150 128)" filter="url(#softShadow)">
+    <rect width="1300" height="644" rx="28" class="panelStrong"/>
+    <rect y="0" width="1300" height="76" rx="28" fill="#FFFDF8" opacity="0.82"/>
+    <path d="M0 76H1300" stroke="rgba(31,26,20,0.08)"/>
+    <circle cx="38" cy="38" r="9" fill="#E96D4E"/>
+    <circle cx="66" cy="38" r="9" fill="#D9A33F"/>
+    <circle cx="94" cy="38" r="9" fill="#6A9068"/>
+    <rect x="492" y="22" width="316" height="32" rx="8" fill="#F4F3EE" stroke="rgba(31,26,20,0.12)"/>
+    <circle cx="520" cy="38" r="7" stroke="#4A463E" stroke-width="2"/>
+    <path d="M525 43L533 51" stroke="#4A463E" stroke-width="2" stroke-linecap="round"/>
+    <rect x="548" y="34" width="142" height="8" rx="4" fill="#B5AFA3" opacity="0.64"/>
+    <g transform="translate(1142 22)">
+      <circle cx="16" cy="16" r="16" fill="#FCE0C8" stroke="rgba(201,100,66,0.24)"/>
+      <path d="M10 16H22M16 10V22" stroke="#C96442" stroke-width="2.3" stroke-linecap="round"/>
+      <circle cx="62" cy="16" r="16" fill="#E7DDF1" stroke="rgba(139,123,184,0.24)"/>
+      <path d="M56 17L61 22L69 10" stroke="#4A3E70" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="108" cy="16" r="16" fill="#DCEAD4" stroke="rgba(91,140,68,0.24)"/>
+      <path d="M101 16H115M108 9V23" stroke="#2D4A2E" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+
+    <g transform="translate(44 104)">
+      <text class="sans tiny muted" x="0" y="0">LOCAL-FIRST AI JOB INTELLIGENCE</text>
+      <text class="display" x="0" y="150" font-size="142" font-weight="650" letter-spacing="0" fill="url(#heroInk)">Just Hire Me</text>
+      <rect x="6" y="178" width="690" height="8" rx="4" fill="url(#accentBand)"/>
+      <text class="sans" x="2" y="226" font-size="27" font-weight="650" letter-spacing="0" fill="#4A463E">Scrape better roles. Rank fit. Tailor materials.</text>
+
+      <g transform="translate(0 272)">
+        <rect width="172" height="58" rx="8" fill="#1F1A14"/>
+        <text class="sans" x="24" y="37" font-size="18" font-weight="850" fill="#F4F3EE">Source scan</text>
+        <rect x="192" width="176" height="58" rx="8" fill="#FCE0C8" stroke="rgba(201,100,66,0.2)"/>
+        <text class="sans" x="218" y="37" font-size="18" font-weight="850" fill="#5E3318">Quality gate</text>
+        <rect x="388" width="150" height="58" rx="8" fill="#DCEAD4" stroke="rgba(91,140,68,0.2)"/>
+        <text class="sans" x="423" y="37" font-size="18" font-weight="850" fill="#2D4A2E">Fit score</text>
+        <rect x="558" width="184" height="58" rx="8" fill="#E7DDF1" stroke="rgba(139,123,184,0.2)"/>
+        <text class="sans" x="586" y="37" font-size="18" font-weight="850" fill="#4A3E70">Tailor docs</text>
+      </g>
+    </g>
+
+    <g transform="translate(46 476)" filter="url(#tinyShadow)">
+      <rect width="392" height="118" rx="12" class="panel"/>
+      <text class="sans micro ink" x="22" y="36">Pipeline</text>
+      <g transform="translate(22 54)">
+        <rect width="348" height="14" rx="7" fill="#EDEBE3"/>
+        <rect width="226" height="14" rx="7" fill="#6A9068"/>
+        <circle cx="258" cy="7" r="7" fill="#D17847"/>
+        <circle cx="292" cy="7" r="7" fill="#5A9DA8"/>
+        <circle cx="326" cy="7" r="7" fill="#8B7BB8"/>
+      </g>
+      <g transform="translate(22 86)">
+        <circle cx="7" cy="7" r="7" fill="#C96442"/>
+        <rect x="25" y="1" width="88" height="12" rx="6" fill="#B5AFA3"/>
+        <rect x="134" y="1" width="54" height="12" rx="6" fill="#DCEAD4"/>
+        <rect x="204" y="1" width="132" height="12" rx="6" fill="#B5AFA3" opacity="0.55"/>
+      </g>
+    </g>
+
+    <g transform="translate(818 118)" filter="url(#tinyShadow)">
+      <rect width="404" height="220" rx="14" class="panel"/>
+      <text class="sans micro ink" x="24" y="38">Lead stack</text>
+      <text class="mono" x="324" y="38" font-size="18" font-weight="850" fill="#5B8C44">89%</text>
+      <g transform="translate(24 64)">
+        <rect width="356" height="38" rx="8" fill="#FFFDF8" stroke="rgba(31,26,20,0.07)"/>
+        <rect x="14" y="13" width="116" height="12" rx="6" fill="#8A847A" opacity="0.55"/>
+        <rect x="154" y="13" width="56" height="12" rx="6" fill="#FCE0C8"/>
+        <circle cx="264" cy="19" r="7" fill="#6A9068"/>
+        <circle cx="286" cy="19" r="7" fill="#6A9068"/>
+        <circle cx="308" cy="19" r="7" fill="#6A9068"/>
+      </g>
+      <g transform="translate(24 112)">
+        <rect width="356" height="38" rx="8" fill="#FFFDF8" stroke="rgba(31,26,20,0.07)"/>
+        <rect x="14" y="13" width="94" height="12" rx="6" fill="#8A847A" opacity="0.55"/>
+        <rect x="154" y="13" width="74" height="12" rx="6" fill="#DCEAD4"/>
+        <circle cx="264" cy="19" r="7" fill="#6A9068"/>
+        <circle cx="286" cy="19" r="7" fill="#D9A33F"/>
+        <circle cx="308" cy="19" r="7" fill="#D8D4C7"/>
+      </g>
+      <g transform="translate(24 160)">
+        <rect width="356" height="38" rx="8" fill="#FFFDF8" stroke="rgba(31,26,20,0.07)"/>
+        <rect x="14" y="13" width="136" height="12" rx="6" fill="#8A847A" opacity="0.55"/>
+        <rect x="154" y="13" width="44" height="12" rx="6" fill="#E7DDF1"/>
+        <circle cx="264" cy="19" r="7" fill="#D17847"/>
+        <circle cx="286" cy="19" r="7" fill="#D8D4C7"/>
+        <circle cx="308" cy="19" r="7" fill="#D8D4C7"/>
+      </g>
+    </g>
+
+    <g transform="translate(790 372)" filter="url(#tinyShadow)">
+      <rect width="256" height="222" rx="14" class="panel"/>
+      <text class="sans micro ink" x="22" y="36">Profile graph</text>
+      <g transform="translate(36 60)">
+        <path d="M82 64L36 28M82 64L38 120M82 64L142 28M82 64L152 112M142 28L184 70M38 120L152 112M36 28L142 28" stroke="#8A847A" stroke-opacity="0.42" stroke-width="2"/>
+        <circle cx="82" cy="64" r="18" fill="#6A9068"/>
+        <circle cx="36" cy="28" r="10" fill="#5A9DA8"/>
+        <circle cx="38" cy="120" r="10" fill="#D17847"/>
+        <circle cx="142" cy="28" r="10" fill="#8B7BB8"/>
+        <circle cx="152" cy="112" r="10" fill="#C28098"/>
+        <circle cx="184" cy="70" r="10" fill="#D9A33F"/>
+      </g>
+    </g>
+
+    <g transform="translate(1068 372)" filter="url(#tinyShadow)">
+      <rect width="184" height="222" rx="14" class="panel"/>
+      <text class="sans micro ink" x="20" y="36">Materials</text>
+      <rect x="28" y="58" width="128" height="132" rx="7" fill="#FFFDF8" stroke="rgba(31,26,20,0.10)"/>
+      <circle cx="54" cy="82" r="13" fill="#1F1A14" opacity="0.85"/>
+      <rect x="76" y="74" width="54" height="8" rx="4" fill="#8A847A"/>
+      <rect x="44" y="112" width="88" height="6" rx="3" fill="#B5AFA3"/>
+      <rect x="44" y="128" width="72" height="6" rx="3" fill="#B5AFA3"/>
+      <rect x="44" y="150" width="92" height="7" rx="3.5" fill="#DCEAD4"/>
+      <rect x="44" y="166" width="62" height="7" rx="3.5" fill="#E7DDF1"/>
+      <circle cx="144" cy="188" r="16" fill="#DCEAD4" stroke="#6A9068" stroke-width="2"/>
+      <path d="M137 188L142 193L151 181" stroke="#2D4A2E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <g transform="translate(472 494)" filter="url(#tinyShadow)">
+      <rect width="292" height="100" rx="14" fill="#1F1A14" opacity="0.92"/>
+      <text class="sans micro" x="24" y="36" fill="#F4F3EE">Local data stays local</text>
+      <rect x="24" y="56" width="114" height="10" rx="5" fill="#5A9DA8"/>
+      <rect x="150" y="56" width="84" height="10" rx="5" fill="#D17847"/>
+      <rect x="24" y="76" width="208" height="10" rx="5" fill="#8B7BB8"/>
+      <circle cx="250" cy="66" r="18" fill="#F4F3EE"/>
+      <path d="M244 66L249 71L258 59" stroke="#5B8C44" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
