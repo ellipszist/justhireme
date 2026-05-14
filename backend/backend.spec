@@ -87,7 +87,9 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,
+    # The Tauri shell captures stdout/stderr; on Windows a console subsystem
+    # sidecar flashes a terminal window during app startup.
+    console=sys.platform != "win32",
 )
 
 coll = COLLECT(

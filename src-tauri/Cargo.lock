@@ -1938,7 +1938,7 @@ dependencies = [
 
 [[package]]
 name = "justhireme"
-version = "0.1.30"
+version = "0.1.32"
 dependencies = [
  "serde",
  "serde_json",

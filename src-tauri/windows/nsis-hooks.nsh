@@ -1,7 +1,7 @@
 !macro NSIS_HOOK_PREINSTALL
   DetailPrint "Stopping running JustHireMe processes before upgrade..."
-  ExecWait '"$SYSDIR\taskkill.exe" /IM justhireme.exe /T /F'
-  ExecWait '"$SYSDIR\taskkill.exe" /IM backend.exe /T /F'
+  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM justhireme.exe /T /F'
+  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM backend.exe /T /F'
   Sleep 2000
 
   ClearErrors
