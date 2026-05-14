@@ -342,7 +342,16 @@ function useLatestRelease() {
     let cancelled = false;
 
     const loadRelease = async () => {
-      const payload = await cachedFetchJson("justhireme.release", "/api/releases");
+      try {
+        localStorage.removeItem("justhireme.release");
+      } catch {
+        // Storage can be unavailable in hardened browser modes.
+      }
+
+      const response = await fetch(`/api/releases?ts=${Date.now()}`, {
+        headers: { "cache-control": "no-cache" },
+      });
+      const payload = await response.json();
       if (!cancelled) {
         setRelease({
           available: Boolean(payload.available),

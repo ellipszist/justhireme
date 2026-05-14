@@ -112,7 +112,7 @@ export default async function handler(request, response) {
     }
 
     if (!release) {
-      response.setHeader("cache-control", "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400");
+      response.setHeader("cache-control", "public, max-age=30, s-maxage=60, stale-while-revalidate=300");
       response.status(200).json({
         available: false,
         tag: null,
@@ -123,10 +123,10 @@ export default async function handler(request, response) {
       return;
     }
 
-    response.setHeader("cache-control", "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400");
+    response.setHeader("cache-control", "public, max-age=30, s-maxage=60, stale-while-revalidate=300");
     response.status(200).json({ ...releasePayload(release), tagsUrl: TAGS_URL });
   } catch (error) {
-    response.setHeader("cache-control", "public, max-age=300, s-maxage=1800");
+    response.setHeader("cache-control", "public, max-age=30, s-maxage=60");
     response.status(200).json({
       available: false,
       tag: null,
