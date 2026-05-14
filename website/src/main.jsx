@@ -8,8 +8,8 @@ import "./styles.css";
 const repoUrl = "https://github.com/vasu-devs/JustHireMe";
 const coffeeUrl = "https://buymeacoffee.com/vasu.devs";
 const releaseNotice = {
-  title: "A new JustHireMe version is releasing soon.",
-  copy: "The current public build has a few known issues, so I am holding downloads while the next version is polished. Please bookmark this page and come back soon, or leave feedback with your email and I will send a note when the new version drops.",
+  title: "Release assets are publishing.",
+  copy: "The newest build is being prepared by GitHub Actions. Download links fall back to the releases page until platform installers are available.",
 };
 
 const navItems = ["Workflow", "Why local", "Features", "Feedback", "Release"];
@@ -285,17 +285,19 @@ function PlatformDownload({ platform, asset, releaseTag, releaseUrl, onDownload 
   );
 }
 
-function ReleaseNoticeBanner({ compact = false }) {
+function ReleaseNoticeBanner({ compact = false, release }) {
+  const latestText = release?.tag ? `Latest tag: ${release.tag}` : "Latest release assets";
+
   return (
     <div className={`release-notice ${compact ? "compact" : ""}`} role="status" aria-live="polite">
       <span className="release-notice-icon"><Icon name="pulse" /></span>
       <div>
-        <strong>{releaseNotice.title}</strong>
-        <p>{releaseNotice.copy}</p>
+        <strong>{release?.available ? latestText : releaseNotice.title}</strong>
+        <p>{release?.available ? "Pick your platform below. If an installer is still missing, the link opens the GitHub release page." : releaseNotice.copy}</p>
       </div>
-      <a className="button primary" href="#feedback">
-        <Icon name="message" />
-        Leave feedback
+      <a className="button primary" href={release?.url || `${repoUrl}/releases`}>
+        <Icon name="external" />
+        Releases
       </a>
     </div>
   );
@@ -578,7 +580,7 @@ function MiniApp() {
         <div className="preview-status">
           <span className="live-dot" />
           Local agent ready
-          <small>release waiting</small>
+          <small>latest release live</small>
         </div>
       </aside>
       <main className="preview-main">
@@ -647,8 +649,10 @@ function MiniApp() {
 
 function App() {
   const { views, configured } = useViewCounter();
-  const { downloads } = useDownloadCounter();
+  const { downloads, trackDownload } = useDownloadCounter();
   const github = useGitHubStars();
+  const release = useLatestRelease();
+  const hasReleaseAssets = platformOptions.some((platform) => release.assets?.[platform.id]?.url);
 
   return (
     <>
@@ -679,16 +683,33 @@ function App() {
               <span>Desktop-first</span>
             </div>
             <div className="hero-actions">
-              <a className="button primary" href="#feedback" title="Leave feedback and your email for the next release note">
-                <Icon name="message" />
-                Notify me
+              <a className="button primary" href="#release" title="Download the latest JustHireMe release">
+                <Icon name="download" />
+                Download
               </a>
               <a className="button secondary" href={repoUrl}>
                 <Icon name="star" />
                 {github.stars == null ? "GitHub stars" : `${formatCount(github.stars)} stars`}
               </a>
             </div>
-            <ReleaseNoticeBanner compact />
+            <div className="hero-downloads" aria-label="Latest downloads">
+              {platformOptions.map((platform) => (
+                <PlatformDownload
+                  key={platform.id}
+                  platform={platform}
+                  asset={release.assets?.[platform.id]}
+                  releaseTag={release.tag}
+                  releaseUrl={release.url}
+                  onDownload={trackDownload}
+                />
+              ))}
+            </div>
+            {!hasReleaseAssets && (
+              <div className="wait-note">
+                <span className="spinner" />
+                Installer assets are still publishing. Links open GitHub Releases for now.
+              </div>
+            )}
             <div className="live-counter" title={configured ? "Backed by the deployed view counter" : "Connect Upstash Redis on Vercel to persist this counter"}>
               <span className="live-dot" />
               <strong>{formatCount(views)}</strong>
@@ -813,13 +834,38 @@ function App() {
 
         <section id="release" className="section final-cta band">
           <span className="eyebrow">Release status</span>
-          <h2>New build coming soon.</h2>
+          <h2>{release.tag ? `${release.tag} downloads` : "Latest downloads"}</h2>
           <p>
-            The current public version has known issues, so downloads are paused until the next cleaner release is ready.
+            Download the latest public build. Stats stay live, and download links update from GitHub Releases automatically.
           </p>
-          <ReleaseNoticeBanner />
+          <div className="hero-downloads release-downloads" aria-label="Latest platform downloads">
+            {platformOptions.map((platform) => (
+              <PlatformDownload
+                key={platform.id}
+                platform={platform}
+                asset={release.assets?.[platform.id]}
+                releaseTag={release.tag}
+                releaseUrl={release.url}
+                onDownload={trackDownload}
+              />
+            ))}
+          </div>
+          {!hasReleaseAssets && <ReleaseNoticeBanner release={release} />}
+          <div className="download-proof">
+            <Icon name="download" />
+            <strong>{formatCount(downloads.total)}</strong>
+            <span>tracked downloads</span>
+          </div>
+          <div className="download-breakdown">
+            {platformOptions.map((platform) => (
+              <span className={`tone-${platform.tone}`} key={platform.id}>
+                {platform.label}
+                <strong>{formatCount(downloads[platform.id] || 0)}</strong>
+              </span>
+            ))}
+          </div>
           <div className="hero-actions centered">
-            <a className="button primary" href="#feedback"><Icon name="message" /> Drop feedback</a>
+            <a className="button primary" href={release.url || `${repoUrl}/releases`}><Icon name="external" /> GitHub release</a>
             <a className="button secondary" href={repoUrl}><Icon name="github" /> View source</a>
           </div>
           <div className="creator-links" aria-label="Creator links">

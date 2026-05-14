@@ -291,6 +291,12 @@ p {
   max-width: 560px;
 }
 
+.release-downloads {
+  width: min(100%, 760px);
+  max-width: 760px;
+  margin: 24px auto 0;
+}
+
 .hero-downloads .platform-button {
   min-width: 0;
 }
