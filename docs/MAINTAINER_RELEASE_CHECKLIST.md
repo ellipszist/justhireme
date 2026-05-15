@@ -14,6 +14,7 @@ For the full production release plan, see [Production Release Roadmap](PRODUCTIO
 - [ ] `cd backend && uv sync --dev`
 - [ ] `cd backend && uv run python -m pytest tests/test_regressions.py tests/test_api.py::TestAuthGate`
 - [ ] `cd src-tauri && cargo check`
+- [ ] For generated release assets, `npm run release:verify-updater -- release-assets vX.Y.Z`
 
 ## Privacy And Safety
 
@@ -31,5 +32,6 @@ For the full production release plan, see [Production Release Roadmap](PRODUCTIO
 3. Create a tag like `v0.1.0`.
 4. For a quick local smoke test, run `npm run release:smoke` and launch `src-tauri/target/release/justhireme.exe`.
 5. For the standard Windows installer, run `npm run release:windows`.
-6. Push the tag and let the release workflow build and publish the GitHub Release from CI.
+6. Push the tag and let the release workflow build, verify updater artifacts, and publish the GitHub Release from CI.
 7. Download and smoke-test the GitHub-built installer before sharing the release link widely.
+8. On a machine with the previous release installed, open the app, wait for the update prompt, install the update, restart, and confirm the app reports the new version while local app data remains intact.

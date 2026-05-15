@@ -33,7 +33,7 @@ This roadmap turns JustHireMe's current release skeleton into a production-grade
 - macOS currently uses ad-hoc signing, which is not production-grade for public downloads.
 - `latest.json` generation needs complete platform coverage, especially both macOS architectures if both are supported.
 - Heavy backend dependencies and generated resources can make the sidecar and installer too large.
-- Installer smoke testing is still mostly manual.
+- Installer launch smoke testing is still mostly manual.
 - Update channels are not separated yet, so a bad tagged release can become the default update for everyone.
 
 ## Phase 0 - Define Release Readiness
@@ -51,6 +51,7 @@ Tasks:
   - Installer builds on every target OS.
   - App launches and sidecar reports healthy.
   - Update artifacts and signatures are present.
+  - Generated updater manifest is verified against the release assets before publishing.
   - Release notes and checksums are generated.
 - Decide supported OS matrix for the next public release:
   - Windows x64.
@@ -289,6 +290,11 @@ Tasks:
   - Relaunch.
   - Verify version changed.
   - Verify existing app data survived.
+- Keep the release manifest gate in CI:
+  - Parse `latest.json`.
+  - Verify the manifest version matches the tag.
+  - Verify every platform URL points at a local uploaded asset.
+  - Verify every manifest signature matches the asset `.sig` file.
 - Keep a stable test profile fixture with no private data.
 - Add failure artifact uploads:
   - app logs
@@ -457,7 +463,7 @@ Do not promote a release to stable unless all of these pass:
 - [ ] Sidecar builds on every target OS.
 - [ ] Installers build on every target OS.
 - [ ] Updater artifacts are generated.
-- [ ] Updater signatures are present.
+- [ ] Updater signatures are present and match `latest.json`.
 - [ ] Windows installer is signed for stable.
 - [ ] macOS artifact is signed and notarized for stable.
 - [ ] Linux checksums are published.

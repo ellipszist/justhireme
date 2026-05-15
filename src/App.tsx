@@ -189,7 +189,12 @@ export default function App() {
   const isPipelineView = Boolean(PIPELINE_VIEW_TO_TAB[view]);
 
   if (!api) {
-    return <StartupScreen conn={conn} port={port} seconds={startupSeconds} sidecarError={sidecarError} />;
+    return (
+      <>
+        <StartupScreen conn={conn} port={port} seconds={startupSeconds} sidecarError={sidecarError} />
+        <UpdatePrompt />
+      </>
+    );
   }
 
   return (

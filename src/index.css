@@ -4679,12 +4679,29 @@ button.profile-map-node {
   transition: width .18s ease;
 }
 
+.update-progress.is-indeterminate div {
+  width: 38%;
+  min-width: 38%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: updateSlide 1.2s ease-in-out infinite;
+}
+
 .update-progress span {
   display: block;
   margin-top: 6px;
   color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: 10px;
+}
+
+@keyframes updateSlide {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  100% {
+    transform: translateX(280%);
+  }
 }
 
 .update-error {

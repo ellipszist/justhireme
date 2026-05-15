@@ -40,6 +40,16 @@ npm run package:windows:all
 
 For the alpha installer, the bundled Python sidecar intentionally excludes the experimental browser automation stack and heavyweight local embedding model packages. The supported release smoke path is app launch, settings, profile/lead workflows, deterministic ranking, and document/outreach generation. Semantic matching should fail soft when local embedding packages are unavailable.
 
+## Updater Verification
+
+Tagged GitHub releases generate `latest.json` from the signed Tauri updater artifacts. The release workflow runs:
+
+```powershell
+npm run release:verify-updater -- release-assets vX.Y.Z
+```
+
+That check fails the release if `latest.json` points at a missing installer, has a mismatched version, omits a signature, or contains a signature that does not match the uploaded `.sig` file.
+
 ## Smoke Test
 
 - Install on a clean Windows machine or VM.
@@ -50,6 +60,7 @@ For the alpha installer, the bundled Python sidecar intentionally excludes the e
 - Verify leads show signal, fit, and quality explanations.
 - Generate resume PDF, cover letter PDF, and outreach drafts.
 - Confirm experimental browser automation is not presented as the primary workflow.
+- If a previous release is installed, confirm the in-app update prompt downloads the new release, installs it, restarts, and preserves local app data.
 
 ## Release Notes
 

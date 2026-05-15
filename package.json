@@ -20,6 +20,7 @@
     "build": "node scripts/build-frontend.mjs",
     "build:sidecar": "node scripts/build-sidecar.mjs",
     "build:all": "node scripts/run-parallel.mjs build:all",
+    "release:verify-updater": "node scripts/verify-updater-release.mjs",
     "version:bump": "node scripts/version.mjs bump",
     "version:check": "node scripts/version.mjs check",
     "check": "npm run check:all",
