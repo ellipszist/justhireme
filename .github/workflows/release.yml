@@ -300,6 +300,8 @@ jobs:
           sidecar="src-tauri/resources/backend/jhm-sidecar-next-${triple}"
           runtime="src-tauri/resources/sidecar-internal/base_library.zip"
           layout="$(python -c 'import json; print(json.load(open("src-tauri/resources/backend/sidecar-manifest.json")).get("sidecarLayout", "onedir"))')"
+          mkdir -p src-tauri/resources/sidecar-internal
+          touch src-tauri/resources/sidecar-internal/.release-placeholder
           if [ ! -f "$sidecar" ]; then
             echo "Sidecar not found at $sidecar" >&2
             exit 1
