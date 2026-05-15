@@ -165,3 +165,53 @@ def test_graph_profile_get_profile_merges_snapshot_with_existing_graph(monkeypat
     assert merged["n"] == "Old Candidate"
     assert {skill["n"] for skill in merged["skills"]} == {"Python", "React"}
     assert saved["skills"][0]["n"] == "Python"
+
+
+def test_graph_profile_manual_candidate_save_updates_snapshot(monkeypatch):
+    from data.graph import profile as graph_profile
+
+    saved = {}
+    rows = iter([["candidate-1"]])
+
+    class Result:
+        def has_next(self):
+            return True
+
+        def get_next(self):
+            return next(rows, ["candidate-1"])
+
+    monkeypatch.setattr(graph_profile, "execute_query", lambda *_args, **_kwargs: Result())
+    monkeypatch.setattr(graph_profile, "load_profile_snapshot", lambda _db_path=None: {"n": "Old", "s": "", "skills": [], "projects": [], "exp": []})
+    monkeypatch.setattr(graph_profile, "read_profile_from_graph", lambda: {"n": "Old", "s": "", "skills": [], "projects": [], "exp": []})
+    monkeypatch.setattr(graph_profile, "save_profile_snapshot", lambda profile, _db_path=None: saved.update(profile))
+    monkeypatch.setattr(graph_profile, "add_candidate_vec", lambda *_args, **_kwargs: None)
+
+    result = graph_profile.update_candidate("Jane Doe", "Applied AI engineer")
+
+    assert result == {"n": "Jane Doe", "s": "Applied AI engineer"}
+    assert saved["n"] == "Jane Doe"
+    assert saved["s"] == "Applied AI engineer"
+
+
+def test_graph_profile_manual_skill_save_updates_snapshot(monkeypatch):
+    from data.graph import profile as graph_profile
+
+    saved = {}
+
+    class EmptyResult:
+        def has_next(self):
+            return False
+
+        def get_next(self):
+            return []
+
+    monkeypatch.setattr(graph_profile, "execute_query", lambda *_args, **_kwargs: EmptyResult())
+    monkeypatch.setattr(graph_profile, "load_profile_snapshot", lambda _db_path=None: {"n": "Jane", "s": "", "skills": [], "projects": [], "exp": []})
+    monkeypatch.setattr(graph_profile, "read_profile_from_graph", lambda: {"n": "Jane", "s": "", "skills": [], "projects": [], "exp": []})
+    monkeypatch.setattr(graph_profile, "save_profile_snapshot", lambda profile, _db_path=None: saved.update(profile))
+    monkeypatch.setattr(graph_profile, "add_skill_vec", lambda *_args, **_kwargs: None)
+
+    result = graph_profile.add_skill("Python", "technical")
+
+    assert result["n"] == "Python"
+    assert saved["skills"][0]["n"] == "Python"

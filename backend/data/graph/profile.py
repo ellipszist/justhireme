@@ -42,6 +42,20 @@ def _refresh_after_write(db_path: str | None = None) -> None:
         refresh_profile_snapshot(db_path)
 
 
+def _save_profile_patch(patch: dict, db_path: str | None = None) -> None:
+    try:
+        base = load_profile_snapshot(db_path)
+        try:
+            graph = read_profile_from_graph()
+            if profile_has_data(graph):
+                base = merge_profiles(base, graph)
+        except Exception:
+            pass
+        save_profile_snapshot(merge_profiles(base, patch), db_path)
+    except Exception:
+        pass
+
+
 def stack_list(value) -> list[str]:
     if isinstance(value, list):
         return [str(item).strip() for item in value if str(item).strip()]
@@ -567,6 +581,7 @@ def add_skill(name: str, category: str, db_path: str | None = None) -> dict:
             pass
     _link_to_candidate("Skill", skill_id, "HAS_SKILL")
     _refresh_after_write(db_path)
+    _save_profile_patch({"skills": [{"id": skill_id, "n": name, "cat": category}]}, db_path)
     return {"id": skill_id, "n": name, "cat": category}
 
 
@@ -584,6 +599,16 @@ def update_skill(skill_id: str, name: str, category: str, db_path: str | None = 
             pass
     _link_to_candidate("Skill", skill_id, "HAS_SKILL")
     _refresh_after_write(db_path)
+    snapshot = load_profile_snapshot(db_path)
+    skills = []
+    for item in snapshot.get("skills", []) or []:
+        if isinstance(item, dict) and str(item.get("id") or "") == str(skill_id):
+            skills.append({"id": skill_id, "n": name, "cat": category})
+        else:
+            skills.append(item)
+    if not any(isinstance(item, dict) and str(item.get("id") or "") == str(skill_id) for item in skills):
+        skills.append({"id": skill_id, "n": name, "cat": category})
+    save_profile_snapshot({**normal_profile(snapshot), "skills": skills}, db_path)
     return {"id": skill_id, "n": name, "cat": category}
 
 
@@ -592,6 +617,9 @@ def delete_skill(skill_id: str, db_path: str | None = None) -> None:
     delete_vec_id_from_all(skill_id)
     execute_query("MATCH (s:Skill) WHERE s.id = $id DETACH DELETE s", {"id": skill_id})
     _refresh_after_write(db_path)
+    snapshot = normal_profile(load_profile_snapshot(db_path))
+    snapshot["skills"] = [item for item in snapshot.get("skills", []) if not (isinstance(item, dict) and str(item.get("id") or "") == str(skill_id))]
+    save_profile_snapshot(snapshot, db_path)
 
 
 def add_experience(role: str, company: str, period: str, description: str, db_path: str | None = None) -> dict:
@@ -618,6 +646,7 @@ def add_experience(role: str, company: str, period: str, description: str, db_pa
         except Exception:
             pass
     _refresh_after_write(db_path)
+    _save_profile_patch({"exp": [{"id": experience_id, "role": role, "co": company, "period": period, "d": description}]}, db_path)
     return {"id": experience_id, "role": role, "co": company, "period": period, "d": description}
 
 
@@ -638,6 +667,12 @@ def update_experience(experience_id: str, role: str, company: str, period: str, 
         except Exception:
             pass
     _refresh_after_write(db_path)
+    snapshot = normal_profile(load_profile_snapshot(db_path))
+    row = {"id": experience_id, "role": role, "co": company, "period": period, "d": description}
+    snapshot["exp"] = [row if isinstance(item, dict) and str(item.get("id") or "") == str(experience_id) else item for item in snapshot.get("exp", [])]
+    if not any(isinstance(item, dict) and str(item.get("id") or "") == str(experience_id) for item in snapshot["exp"]):
+        snapshot["exp"].append(row)
+    save_profile_snapshot(snapshot, db_path)
     return {"id": experience_id, "role": role, "co": company, "period": period, "d": description}
 
 
@@ -647,6 +682,9 @@ def delete_experience(experience_id: str, db_path: str | None = None) -> None:
     delete_vec_id_from_all(experience_id)
     execute_query("MATCH (e:Experience) WHERE e.id = $id DETACH DELETE e", {"id": experience_id})
     _refresh_after_write(db_path)
+    snapshot = normal_profile(load_profile_snapshot(db_path))
+    snapshot["exp"] = [item for item in snapshot.get("exp", []) if not (isinstance(item, dict) and str(item.get("id") or "") == str(experience_id))]
+    save_profile_snapshot(snapshot, db_path)
 
 
 def add_project(title: str, stack: str, repo: str, impact: str, db_path: str | None = None) -> dict:
@@ -673,6 +711,7 @@ def add_project(title: str, stack: str, repo: str, impact: str, db_path: str | N
         except Exception:
             pass
     _refresh_after_write(db_path)
+    _save_profile_patch({"projects": [{"id": project_id, "title": title, "stack": stack_list(stack), "repo": repo, "impact": impact}]}, db_path)
     return {"id": project_id, "title": title, "stack": stack.split(",") if stack else [], "repo": repo, "impact": impact}
 
 
@@ -693,6 +732,12 @@ def update_project(project_id: str, title: str, stack: str, repo: str, impact: s
         except Exception:
             pass
     _refresh_after_write(db_path)
+    snapshot = normal_profile(load_profile_snapshot(db_path))
+    row = {"id": project_id, "title": title, "stack": stack_list(stack), "repo": repo, "impact": impact}
+    snapshot["projects"] = [row if isinstance(item, dict) and str(item.get("id") or "") == str(project_id) else item for item in snapshot.get("projects", [])]
+    if not any(isinstance(item, dict) and str(item.get("id") or "") == str(project_id) for item in snapshot["projects"]):
+        snapshot["projects"].append(row)
+    save_profile_snapshot(snapshot, db_path)
     return {"id": project_id, "title": title, "stack": stack.split(",") if stack else [], "repo": repo, "impact": impact}
 
 
@@ -701,6 +746,9 @@ def delete_project(project_id: str, db_path: str | None = None) -> None:
     delete_vec_id_from_all(project_id)
     execute_query("MATCH (p:Project) WHERE p.id = $id DETACH DELETE p", {"id": project_id})
     _refresh_after_write(db_path)
+    snapshot = normal_profile(load_profile_snapshot(db_path))
+    snapshot["projects"] = [item for item in snapshot.get("projects", []) if not (isinstance(item, dict) and str(item.get("id") or "") == str(project_id))]
+    save_profile_snapshot(snapshot, db_path)
 
 
 def _add_text_node(label: str, rel: str, title: str, db_path: str | None = None) -> dict:
@@ -717,6 +765,13 @@ def _add_text_node(label: str, rel: str, title: str, db_path: str | None = None)
         except Exception:
             pass
     _refresh_after_write(db_path)
+    key = {
+        "Education": "education",
+        "Certification": "certifications",
+        "Achievement": "achievements",
+    }.get(label)
+    if key:
+        _save_profile_patch({key: [title]}, db_path)
     return {"id": node_id, "title": title}
 
 
@@ -771,4 +826,5 @@ def update_candidate(name: str, summary: str, db_path: str | None = None) -> dic
         except Exception:
             pass
     _refresh_after_write(db_path)
+    _save_profile_patch({"n": name, "s": summary}, db_path)
     return {"n": name, "s": summary}

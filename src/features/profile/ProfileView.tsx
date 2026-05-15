@@ -72,9 +72,10 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
   };
 
   const saveEdit = async (type: string, id: string) => {
-    await api(`/api/v1/profile/${type}/${id}`, {
+    const res = await api(`/api/v1/profile/${type}/${id}`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editData),
     });
+    if (!res.ok) throw new Error(`Save failed (${res.status})`);
     setEditId(null);
     await fetchProfile();
     window.dispatchEvent(new CustomEvent("profile-refresh"));
@@ -82,22 +83,37 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
   };
 
   const saveCandidate = async () => {
-    await api(`/api/v1/profile/candidate`, {
+    try {
+      const res = await api(`/api/v1/profile/candidate`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candForm),
-    });
-    setEditingCandidate(false);
-    await fetchProfile();
-    window.dispatchEvent(new CustomEvent("profile-refresh"));
-    window.dispatchEvent(new CustomEvent("graph-refresh"));
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || `Save failed (${res.status})`);
+      setProfile((prev: any) => ({ ...(prev || {}), n: body.n ?? candForm.n, s: body.s ?? candForm.s }));
+      setEditingCandidate(false);
+      await fetchProfile();
+      window.dispatchEvent(new CustomEvent("profile-refresh"));
+      window.dispatchEvent(new CustomEvent("graph-refresh"));
+    } catch (err: any) {
+      setProfileErr(err?.message || "Identity save failed");
+    }
   };
 
   const saveIdentity = async () => {
-    await api(`/api/v1/profile/identity`, {
+    try {
+      const res = await api(`/api/v1/profile/identity`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(identityForm),
-    });
-    setEditingIdentity(false);
-    await fetchProfile();
-    window.dispatchEvent(new CustomEvent("profile-refresh"));
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || `Save failed (${res.status})`);
+      setProfile((prev: any) => ({ ...(prev || {}), identity: { ...((prev || {}).identity || {}), ...body } }));
+      setEditingIdentity(false);
+      await fetchProfile();
+      window.dispatchEvent(new CustomEvent("profile-refresh"));
+      window.dispatchEvent(new CustomEvent("graph-refresh"));
+    } catch (err: any) {
+      setProfileErr(err?.message || "Contact save failed");
+    }
   };
 
   const skills = profile?.skills || [];
