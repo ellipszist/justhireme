@@ -164,7 +164,11 @@ await run(python, pyinstallerArgs, { cwd: backendDir });
 
 const triple = await getRustTriple();
 const extension = process.platform === "win32" ? ".exe" : "";
-const source = join(builtSidecarDir, `backend${extension}`);
+const onefileSource = join(distDir, `backend${extension}`);
+const onedirSource = join(builtSidecarDir, `backend${extension}`);
+const source = existsSync(onefileSource) && statSync(onefileSource).isFile()
+  ? onefileSource
+  : onedirSource;
 const sidecarName = "jhm-sidecar-next";
 const target = join(sidecarDir, `${sidecarName}-${triple}${extension}`);
 const internalSource = join(builtSidecarDir, "_internal");
