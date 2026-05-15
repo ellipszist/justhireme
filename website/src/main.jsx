@@ -285,6 +285,14 @@ function PlatformDownload({ platform, asset, releaseTag, releaseUrl, onDownload 
   );
 }
 
+function getPreferredPlatformId() {
+  const platform = `${navigator.platform || ""} ${navigator.userAgent || ""}`.toLowerCase();
+  if (platform.includes("win")) return "windows";
+  if (platform.includes("mac")) return "mac";
+  if (platform.includes("linux") || platform.includes("x11")) return "linux";
+  return "windows";
+}
+
 function ReleaseNoticeBanner({ compact = false, release }) {
   const latestText = release?.tag ? `Latest tag: ${release.tag}` : "Latest release assets";
 
@@ -662,6 +670,9 @@ function App() {
   const github = useGitHubStars();
   const release = useLatestRelease();
   const hasReleaseAssets = platformOptions.some((platform) => release.assets?.[platform.id]?.url);
+  const preferredPlatformId = React.useMemo(getPreferredPlatformId, []);
+  const preferredAsset = release.assets?.[preferredPlatformId];
+  const downloadHref = preferredAsset?.url || release.url || `${repoUrl}/releases`;
 
   return (
     <>
@@ -692,7 +703,12 @@ function App() {
               <span>Desktop-first</span>
             </div>
             <div className="hero-actions">
-              <a className="button primary" href="#release" title="Download the latest JustHireMe release">
+              <a
+                className="button primary"
+                href={downloadHref}
+                onClick={() => preferredAsset?.url && trackDownload(preferredPlatformId)}
+                title={preferredAsset?.name ? `Download ${preferredAsset.name}` : "Open the latest JustHireMe release"}
+              >
                 <Icon name="download" />
                 Download
               </a>
