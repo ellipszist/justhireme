@@ -135,3 +135,33 @@ def test_profile_service_ingest_resume_saves_snapshot_fallback(monkeypatch):
     assert saved["skills"][0]["n"] == "Python"
     assert saved["exp"][0]["role"] == "Engineer"
     assert saved["projects"][0]["title"] == "Hiring Agent"
+
+
+def test_graph_profile_get_profile_merges_snapshot_with_existing_graph(monkeypatch):
+    from data.graph import profile as graph_profile
+
+    snapshot = {
+        "n": "Jane Doe",
+        "s": "Imported resume",
+        "skills": [{"id": "python", "n": "Python", "cat": "resume"}],
+        "projects": [],
+        "exp": [],
+    }
+    graph = {
+        "n": "Old Candidate",
+        "s": "Old graph profile",
+        "skills": [{"id": "react", "n": "React", "cat": "graph"}],
+        "projects": [],
+        "exp": [],
+    }
+    saved = {}
+
+    monkeypatch.setattr(graph_profile, "load_profile_snapshot", lambda _db_path=None: snapshot)
+    monkeypatch.setattr(graph_profile, "read_profile_from_graph", lambda: graph)
+    monkeypatch.setattr(graph_profile, "save_profile_snapshot", lambda profile, _db_path=None: saved.update(profile))
+
+    merged = graph_profile.get_profile()
+
+    assert merged["n"] == "Old Candidate"
+    assert {skill["n"] for skill in merged["skills"]} == {"Python", "React"}
+    assert saved["skills"][0]["n"] == "Python"

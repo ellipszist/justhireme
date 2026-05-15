@@ -193,9 +193,44 @@ def get_profile(db_path: str | None = None) -> dict:
         return empty_profile()
 
     if profile_has_data(profile):
+        if snapshot:
+            profile = merge_profiles(snapshot, profile)
         save_profile_snapshot(profile, db_path)
         return profile
     return snapshot or profile
+
+
+def merge_profiles(base: dict | None, incoming: dict | None) -> dict:
+    merged = normal_profile(base)
+    incoming = normal_profile(incoming)
+    if str(incoming.get("n") or "").strip().lower() not in {"", "unknown", "candidate"}:
+        merged["n"] = incoming.get("n", "")
+    if str(incoming.get("s") or "").strip():
+        merged["s"] = incoming.get("s", "")
+    merged["identity"] = {**(merged.get("identity") or {}), **{k: v for k, v in (incoming.get("identity") or {}).items() if v}}
+    for key, id_key in [("skills", "id"), ("projects", "id"), ("exp", "id")]:
+        seen: set[str] = set()
+        rows: list[dict] = []
+        for item in [*(merged.get(key) or []), *(incoming.get(key) or [])]:
+            if not isinstance(item, dict):
+                continue
+            marker = str(item.get(id_key) or item.get("n") or item.get("title") or item.get("role") or "").strip().lower()
+            if not marker or marker in seen:
+                continue
+            seen.add(marker)
+            rows.append(item)
+        merged[key] = rows
+    for key in ["education", "certifications", "achievements"]:
+        seen_text: set[str] = set()
+        values: list[str] = []
+        for item in [*(merged.get(key) or []), *(incoming.get(key) or [])]:
+            text = str(item.get("title") if isinstance(item, dict) else item or "").strip()
+            marker = text.lower()
+            if text and marker not in seen_text:
+                seen_text.add(marker)
+                values.append(text)
+        merged[key] = values
+    return merged
 
 
 def refresh_profile_snapshot(db_path: str | None = None) -> None:

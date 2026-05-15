@@ -43,13 +43,17 @@ async def generate_one(
             pass
         generation = await service.generate_with_contacts(lead, template=template)
         package = generation.package
-        repo.leads.save_asset_package(
-            job_id,
-            package["resume"],
-            package["cover_letter"],
-            package.get("selected_projects", []),
-            package.get("keyword_coverage", {}),
-        )
+        persistence_errors: list[str] = []
+        try:
+            repo.leads.save_asset_package(
+                job_id,
+                package["resume"],
+                package["cover_letter"],
+                package.get("selected_projects", []),
+                package.get("keyword_coverage", {}),
+            )
+        except Exception as exc:
+            persistence_errors.append(f"asset package: {exc}")
 
         outreach_fields = {}
         if package.get("founder_message"):
@@ -59,7 +63,10 @@ async def generate_one(
         if package.get("cold_email"):
             outreach_fields["outreach_email"] = package["cold_email"]
         if outreach_fields:
-            repo.leads.update_outreach_fields(job_id, outreach_fields)
+            try:
+                repo.leads.update_outreach_fields(job_id, outreach_fields)
+            except Exception as exc:
+                persistence_errors.append(f"outreach fields: {exc}")
 
         enriched_lead = {
             **lead,
@@ -74,10 +81,15 @@ async def generate_one(
             "status": "approved",
         }
         contact_lookup = generation.contact_lookup or {}
-        repo.leads.save_contact_lookup(job_id, contact_lookup)
+        try:
+            repo.leads.save_contact_lookup(job_id, contact_lookup)
+        except Exception as exc:
+            persistence_errors.append(f"contact lookup: {exc}")
         enriched_lead["contact_lookup"] = contact_lookup
         enriched_meta = dict(enriched_lead.get("source_meta") or {})
         enriched_meta["contact_lookup"] = contact_lookup
+        if persistence_errors:
+            enriched_meta["generation_persistence_errors"] = persistence_errors
         enriched_lead["source_meta"] = enriched_meta
         await manager.broadcast({"type": "LEAD_UPDATED", "data": enriched_lead})
         await manager.broadcast({
@@ -85,7 +97,10 @@ async def generate_one(
             "event": "gen_done",
             "msg": f"Resume and cover letter ready: {lead.get('title','?')}",
         })
-        job_store.update(job.job_id, status="succeeded", progress=100, result={"lead": enriched_lead})
+        try:
+            job_store.update(job.job_id, status="succeeded", progress=100, result={"lead": enriched_lead})
+        except Exception:
+            pass
         enriched_lead["generation_job_id"] = job.job_id
         return enriched_lead
     except Exception as exc:

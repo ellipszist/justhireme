@@ -490,7 +490,7 @@ def _parse_local(txt: str) -> C:
     education = _split_csv(fields.get("education", ""))
     achievements = _split_csv(fields.get("achievements", "") or fields.get("awards", ""))
 
-    return C(
+    parsed = C(
         n=name,
         s=summary,
         skills=skills,
@@ -499,6 +499,124 @@ def _parse_local(txt: str) -> C:
         certifications=certifications,
         education=education,
         achievements=achievements,
+    )
+    if _profile_has_content(parsed):
+        return parsed
+    return _parse_resume_heuristic(txt)
+
+
+def _profile_has_content(profile: C) -> bool:
+    return bool(
+        str(profile.n or "").strip() not in {"", "Candidate", "Unknown"}
+        or str(profile.s or "").strip()
+        or profile.skills
+        or profile.exp
+        or profile.projects
+        or profile.certifications
+        or profile.education
+        or profile.achievements
+    )
+
+
+def _section_lines(text: str, headings: tuple[str, ...]) -> list[str]:
+    pattern = "|".join(re.escape(name) for name in headings)
+    match = re.search(rf"(?im)^\s*(?:#+\s*)?(?:{pattern})\s*:?\s*$", text or "")
+    if not match:
+        return []
+    tail = text[match.end():]
+    end = re.search(
+        r"(?im)^\s*(?:#+\s*)?(?:summary|profile|objective|skills|technical skills|experience|work experience|employment|projects|education|certifications|certificates|achievements|awards)\s*:?\s*$",
+        tail,
+    )
+    if end:
+        tail = tail[:end.start()]
+    return [_strip_md(re.sub(r"^\s*[-*•]\s*", "", line)) for line in tail.splitlines() if _strip_md(line)]
+
+
+def _parse_resume_heuristic(txt: str) -> C:
+    from models.schema import S, E, P
+
+    clean_text = re.sub(r"\r\n?", "\n", txt or "")
+    lines = [_strip_md(line) for line in clean_text.splitlines()]
+    lines = [line for line in lines if line]
+
+    email = re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", clean_text)
+    phone = re.search(r"(?:\+?\d[\d\s().-]{7,}\d)", clean_text)
+    links = re.findall(r"https?://[^\s|)]+", clean_text)
+
+    name = "Candidate"
+    for line in lines[:8]:
+        lower = line.lower()
+        if "@" in line or "http" in lower or "linkedin" in lower or "github" in lower:
+            continue
+        words = re.findall(r"[A-Za-z][A-Za-z'.-]*", line)
+        if 1 <= len(words) <= 5 and not any(token in lower for token in ("resume", "curriculum", "engineer |", "developer |")):
+            name = " ".join(words)
+            break
+
+    summary_lines = _section_lines(clean_text, ("summary", "profile", "objective"))
+    summary = " ".join(summary_lines[:3])
+    if not summary:
+        summary_parts = []
+        if email:
+            summary_parts.append(f"Email: {email.group(0)}")
+        if phone:
+            summary_parts.append(f"Phone: {phone.group(0).strip()}")
+        if links:
+            summary_parts.append("Links: " + ", ".join(links[:3]))
+        summary = ". ".join(summary_parts)
+
+    skill_lines = _section_lines(clean_text, ("skills", "technical skills", "technologies", "tools"))
+    skill_names: list[str] = []
+    known_terms = {
+        "Python", "TypeScript", "JavaScript", "React", "Next.js", "Node.js", "FastAPI", "Django", "Flask",
+        "SQL", "PostgreSQL", "SQLite", "MongoDB", "Redis", "Docker", "Kubernetes", "AWS", "GCP", "Azure",
+        "LangGraph", "LangChain", "OpenAI", "Gemini", "LLM", "RAG", "Machine Learning", "Pandas", "NumPy",
+        "PyTorch", "TensorFlow", "Tauri", "Rust", "Git", "CI/CD", "Linux", "Playwright",
+    }
+    for line in skill_lines:
+        value = re.sub(r"^[A-Za-z /&+-]{2,35}:\s*", "", line)
+        skill_names.extend(_split_csv(re.sub(r"[|;]", ",", value)))
+    lower_resume = clean_text.lower()
+    for term in known_terms:
+        if re.search(r"(?<![a-z0-9+#.-])" + re.escape(term.lower()) + r"(?![a-z0-9+#.-])", lower_resume):
+            skill_names.append(term)
+    skills = [S(n=item, cat="resume") for item in _dedupe(skill_names)[:40]]
+
+    exp_lines = _section_lines(clean_text, ("experience", "work experience", "employment"))
+    exp: list[E] = []
+    for line in exp_lines[:8]:
+        if len(line) < 6:
+            continue
+        if re.search(r"\b(intern|engineer|developer|manager|designer|analyst|consultant|lead|architect)\b", line, flags=re.I):
+            role, company = line, ""
+            if " at " in line.lower():
+                parts = re.split(r"\s+at\s+", line, maxsplit=1, flags=re.I)
+                role, company = parts[0], parts[1]
+            exp.append(E(role=role[:180], co=company[:180], period="", d=line[:900], s=[]))
+        if len(exp) >= 4:
+            break
+
+    project_lines = _section_lines(clean_text, ("projects", "selected projects", "personal projects"))
+    projects: list[P] = []
+    for line in project_lines[:10]:
+        if len(line) < 5:
+            continue
+        title = re.split(r"\s[-:|]\s", line, maxsplit=1)[0].strip()[:160]
+        stack = [skill.n for skill in skills if skill.n.lower() in line.lower()][:8]
+        projects.append(P(title=title or line[:80], stack=stack, repo=_first_url(line), impact=line[:900], s=stack))
+        if len(projects) >= 5:
+            break
+
+    return C(
+        n=name,
+        s=summary,
+        skills=skills,
+        exp=exp,
+        projects=projects,
+        certifications=_section_lines(clean_text, ("certifications", "certificates"))[:8],
+        education=_section_lines(clean_text, ("education",))[:6],
+        achievements=_section_lines(clean_text, ("achievements", "awards"))[:8],
     )
 
 

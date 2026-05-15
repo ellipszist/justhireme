@@ -84,8 +84,9 @@ export function IngestionView({ api }: { api: ApiFetch }) {
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const r = await api(`/api/v1/ingest`, { method: "POST", body: fd });
+      const r = await api(`/api/v1/ingest`, { method: "POST", body: fd, timeoutMs: 180000 });
       if (r.ok) {
+        await r.json().catch(() => ({}));
         window.dispatchEvent(new CustomEvent("profile-refresh"));
         window.dispatchEvent(new CustomEvent("graph-refresh"));
         setStatus("done");
@@ -138,6 +139,7 @@ export function IngestionView({ api }: { api: ApiFetch }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: githubUsername, token: githubToken, max_repos: githubMaxRepos }),
+        timeoutMs: 180000,
       });
       if (r.ok) {
         const data = await r.json();
@@ -150,8 +152,8 @@ export function IngestionView({ api }: { api: ApiFetch }) {
         setGithubResult({ errorMsg: data?.detail || `GitHub import failed (${r.status})` });
         setStatus("idle");
       }
-    } catch {
-      setGithubResult({ errorMsg: "Could not reach the local backend." });
+    } catch (err: any) {
+      setGithubResult({ errorMsg: err?.message || "Could not reach the local backend." });
       setStatus("idle");
     }
   };
@@ -254,6 +256,8 @@ export function IngestionView({ api }: { api: ApiFetch }) {
       const data = await r.json().catch(() => ({}));
       if (r.ok) {
         setJsonResult(data);
+        window.dispatchEvent(new CustomEvent("profile-refresh"));
+        window.dispatchEvent(new CustomEvent("graph-refresh"));
         setStatus("idle");
       } else {
         setJsonError(data?.detail ? JSON.stringify(data.detail) : `Import failed (${r.status})`);
@@ -271,12 +275,17 @@ export function IngestionView({ api }: { api: ApiFetch }) {
     fd.append("raw", rawText);
     try {
       const r = await api(`/api/v1/ingest`, { method: "POST", body: fd });
-      if (r.ok) { setStatus("done"); setRawText(""); } else { setStatus("error"); }
+      if (r.ok) {
+        window.dispatchEvent(new CustomEvent("profile-refresh"));
+        window.dispatchEvent(new CustomEvent("graph-refresh"));
+        setStatus("done");
+        setRawText("");
+      } else { setStatus("error"); }
     } catch { setStatus("error"); }
   };
 
   const TABS = [
-    { id: "resume" as const, label: "Resume", description: "PDF parser", icon: "upload", accent: "teal" },
+    { id: "resume" as const, label: "Resume", description: "PDF, DOCX, text", icon: "upload", accent: "teal" },
     { id: "manual" as const, label: "Manual", description: "Skills, roles, projects", icon: "plus", accent: "blue" },
     { id: "raw" as const, label: "Raw Text", description: "Paste notes", icon: "file", accent: "yellow" },
     { id: "template" as const, label: "Template", description: "Resume format", icon: "layers", accent: "purple" },
@@ -334,10 +343,10 @@ export function IngestionView({ api }: { api: ApiFetch }) {
         {activeTab === "resume" && (
           <motion.div initial={{opacity:0}} animate={{opacity:1}} className="card col gap-4" style={{ padding: "64px 32px", alignItems: "center", textAlign: "center", border: "2px dashed var(--line)", background: "var(--paper-2)" }}>
             <div style={{ width: 64, height: 64, borderRadius: 16, background: "var(--teal-soft)", color: "var(--teal)", display: "grid", placeItems: "center" }}><Icon name="upload" size={28} /></div>
-            <div style={{ fontWeight: 600, fontSize: 18 }}>Drop a fresh Resume PDF</div>
-            <div style={{ fontSize: 14, color: "var(--ink-3)", maxWidth: 360, lineHeight: 1.5 }}>Our ingestion agent discovers skills, roles, and projects and maps them into your graph.</div>
-            <input type="file" accept=".pdf" onChange={e => e.target.files?.[0] && ingestResume(e.target.files[0])} style={{ display: "none" }} id="pdf-in" />
-            <button className="btn btn-primary" style={{ marginTop: 16, padding: "12px 32px", fontSize: 15 }} onClick={() => document.getElementById("pdf-in")?.click()}>Select PDF File</button>
+            <div style={{ fontWeight: 600, fontSize: 18 }}>Drop a fresh resume</div>
+            <div style={{ fontSize: 14, color: "var(--ink-3)", maxWidth: 360, lineHeight: 1.5 }}>PDF, DOCX, TXT, or Markdown. The ingestion agent discovers skills, roles, and projects and maps them into your graph.</div>
+            <input type="file" accept=".pdf,.docx,.txt,.md" onChange={e => e.target.files?.[0] && ingestResume(e.target.files[0])} style={{ display: "none" }} id="resume-in" />
+            <button className="btn btn-primary" style={{ marginTop: 16, padding: "12px 32px", fontSize: 15 }} onClick={() => document.getElementById("resume-in")?.click()}>Select Resume File</button>
             {status === "loading" && <div className="mono pulse" style={{ fontSize: 12, marginTop: 16 }}>Agent parsing resume...</div>}
           </motion.div>
         )}

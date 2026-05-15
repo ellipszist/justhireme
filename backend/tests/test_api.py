@@ -2,6 +2,7 @@ import os
 import sys
 import types
 import unittest
+import asyncio
 from pathlib import Path
 from unittest import mock
 
@@ -582,6 +583,62 @@ class TestGenerateEndpoint(unittest.TestCase):
         self.assertEqual(resp.json()["status"], "started")
         self.assertEqual(resp.json()["job_id"], "test-generate-start-001")
         self.assertEqual(generate_mock.await_count, 1)
+
+    def test_generate_one_returns_package_when_persistence_steps_fail(self):
+        from api.routers import generation
+
+        broadcasts = []
+
+        class Manager:
+            async def broadcast(self, payload):
+                broadcasts.append(payload)
+
+        class JobStore:
+            def create(self, *_args, **_kwargs):
+                return types.SimpleNamespace(job_id="gen-1")
+
+            def update(self, *_args, **_kwargs):
+                return None
+
+        repo = types.SimpleNamespace(
+            settings=types.SimpleNamespace(get_setting=lambda *_args, **_kwargs: ""),
+            leads=types.SimpleNamespace(
+                get_lead_by_id=lambda _job_id: {
+                    "job_id": "job-1",
+                    "title": "AI Engineer",
+                    "company": "Acme",
+                    "description": "Build FastAPI systems.",
+                    "source_meta": {},
+                },
+                update_lead_status=lambda *_args, **_kwargs: None,
+                save_asset_package=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("db locked")),
+                update_outreach_fields=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("db locked")),
+                save_contact_lookup=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("db locked")),
+            ),
+        )
+        service = types.SimpleNamespace(
+            generate_with_contacts=mock.AsyncMock(return_value=types.SimpleNamespace(
+                package={
+                    "resume": "resume.pdf",
+                    "cover_letter": "cover.pdf",
+                    "selected_projects": [],
+                    "keyword_coverage": {},
+                    "founder_message": "hello",
+                },
+                contact_lookup={"contacts": []},
+            ))
+        )
+
+        lead = asyncio.run(generation.generate_one(
+            "job-1",
+            Manager(),
+            repo=repo,
+            service=service,
+            job_store=JobStore(),
+        ))
+
+        self.assertEqual(lead["resume_asset"], "resume.pdf")
+        self.assertIn("generation_persistence_errors", lead["source_meta"])
 
 
 class TestIngestionEndpoints(unittest.TestCase):
