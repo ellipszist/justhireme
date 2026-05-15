@@ -3,13 +3,13 @@ import type { Lead, LeadSort, SeniorityFilter } from "../../types";
 export const getMark = (company: string) => company ? company.charAt(0).toUpperCase() : "?";
 export const PAGE_SIZE = 80;
 export const ONBOARDING_KEY = "justhireme:onboarding:v4";
-export const DEMO_JOB_DRAFT = `https://jobs.example.com/applied-ai-engineer-demo
+export const DEMO_JOB_DRAFT = `https://jobs.example.com/software-engineer-demo
 
-Applied AI Engineer
+Software Engineer
 Company: NimbusWorks
 Location: Remote
 
-Build production AI workflows for hiring teams using Python, FastAPI, React, PostgreSQL, background jobs, prompt evaluation, and ATS-friendly document generation. The role needs someone comfortable with LLM integrations, CI/CD, observability, and shipping user-facing automation from messy product requirements.`;
+Build production workflow software for hiring teams using Python, FastAPI, React, PostgreSQL, background jobs, document generation, CI/CD, and observability. The role needs someone comfortable turning messy product requirements into reliable user-facing automation.`;
 
 export const leadSignal = (lead: Lead) => Math.max(lead.signal_score || 0, lead.score || 0);
 

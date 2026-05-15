@@ -8,6 +8,7 @@ block_cipher = None
 backend_root = Path("backend").resolve()
 if not (backend_root / "main.py").exists():
     backend_root = Path(".").resolve()
+onedir_sidecar = sys.platform == "win32"
 if sys.platform == "win32":
     venv_site_packages = backend_root / ".venv" / "Lib" / "site-packages"
 else:
@@ -77,11 +78,12 @@ a = Analysis(
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+exe_inputs = [] if onedir_sidecar else [a.binaries, a.zipfiles, a.datas]
 
 exe = EXE(
     pyz, a.scripts,
-    [],
-    exclude_binaries=True,
+    *exe_inputs,
+    exclude_binaries=onedir_sidecar,
     name="backend",
     debug=False,
     bootloader_ignore_signals=False,
@@ -92,12 +94,13 @@ exe = EXE(
     console=sys.platform != "win32",
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    name="backend",
-)
+if onedir_sidecar:
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=False,
+        upx=False,
+        name="backend",
+    )

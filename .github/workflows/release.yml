@@ -299,11 +299,12 @@ jobs:
           triple="$(rustc -vV | awk '/host:/ {print $2}')"
           sidecar="src-tauri/resources/backend/jhm-sidecar-next-${triple}"
           runtime="src-tauri/resources/sidecar-internal/base_library.zip"
+          layout="$(python -c 'import json; print(json.load(open("src-tauri/resources/backend/sidecar-manifest.json")).get("sidecarLayout", "onedir"))')"
           if [ ! -f "$sidecar" ]; then
             echo "Sidecar not found at $sidecar" >&2
             exit 1
           fi
-          if [ ! -f "$runtime" ]; then
+          if [ "$layout" = "onedir" ] && [ ! -f "$runtime" ]; then
             echo "Sidecar runtime not found at $runtime" >&2
             exit 1
           fi

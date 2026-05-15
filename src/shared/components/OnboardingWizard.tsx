@@ -8,7 +8,7 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
   const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [rawResume, setRawResume] = useState("");
-  const [role, setRole] = useState("Applied AI Engineer");
+  const [role, setRole] = useState("");
   const [market, setMarket] = useState("remote");
   const [provider, setProvider] = useState("ollama");
   const [model, setModel] = useState("");
@@ -129,12 +129,13 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
   const savePreferences = async () => {
     setBusy(true);
     setErr(null);
+    const trimmedRole = role.trim();
     const payload: Record<string, any> = {
       job_market_focus: market,
       llm_provider: provider,
-      onboarding_target_role: role,
       free_sources_enabled: true,
     };
+    if (trimmedRole) payload.onboarding_target_role = trimmedRole;
     if (provider === "ollama") payload.ollama_url = ollamaUrl;
     const field = keyField[provider];
     if (field && apiKey.trim()) payload[field] = apiKey.trim();
@@ -246,7 +247,7 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
             <div className="col gap-4">
               <div>
                 <label className="eyebrow">Target role</label>
-                <input className="field-input" value={role} onChange={e => setRole(e.target.value)} style={{ marginTop: 7 }} />
+                <input className="field-input" value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Backend Engineer, Product Designer, Data Analyst" style={{ marginTop: 7 }} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
@@ -305,7 +306,7 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
               )}
               <div className="row gap-2" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
                 <button className="btn" onClick={onOpenSettings}><Icon name="settings" size={13} /> Advanced settings</button>
-                <button className="btn btn-accent" onClick={savePreferences} disabled={busy || !role.trim()} style={{ minWidth: 170, justifyContent: "center" }}>
+                <button className="btn btn-accent" onClick={savePreferences} disabled={busy} style={{ minWidth: 170, justifyContent: "center" }}>
                   <Icon name="arrow-right" size={14} color="#fff" /> {busy ? "Saving..." : "Continue"}
                 </button>
               </div>

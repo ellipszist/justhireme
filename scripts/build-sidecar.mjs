@@ -169,17 +169,20 @@ const sidecarName = "jhm-sidecar-next";
 const target = join(sidecarDir, `${sidecarName}-${triple}${extension}`);
 const internalSource = join(builtSidecarDir, "_internal");
 const manifestTarget = join(sidecarDir, "sidecar-manifest.json");
+const sidecarLayout = existsSync(internalSource) ? "onedir" : "onefile";
 
 if (!existsSync(source)) {
   throw new Error(`Expected PyInstaller sidecar was not created: ${source}`);
 }
-if (!existsSync(internalSource)) {
-  throw new Error(`Expected PyInstaller runtime directory was not created: ${internalSource}`);
-}
 
 mkdirSync(sidecarDir, { recursive: true });
 await rmWithRetries(sidecarInternalDir, { recursive: true, force: true });
-cpSync(internalSource, sidecarInternalDir, { recursive: true });
+mkdirSync(sidecarInternalDir, { recursive: true });
+if (sidecarLayout === "onedir") {
+  cpSync(internalSource, sidecarInternalDir, { recursive: true });
+} else {
+  writeFileSync(join(sidecarInternalDir, ".onefile-sidecar"), "PyInstaller onefile sidecar has no external runtime directory.\n", "utf8");
+}
 copyFileSync(source, target);
 if (process.platform !== "win32") {
   chmodSync(target, 0o755);
@@ -197,6 +200,7 @@ const manifest = {
   sidecarBinary: `${sidecarName}-${triple}${extension}`,
   sidecarBinaryBytes: bytes(target),
   sidecarInternalBytes: bytes(sidecarInternalDir),
+  sidecarLayout,
 };
 
 writeFileSync(manifestTarget, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
@@ -204,4 +208,5 @@ writeFileSync(manifestTarget, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 console.log(`Sidecar ready: ${target}`);
 console.log(`Sidecar binary size: ${formatMb(manifest.sidecarBinaryBytes)}`);
 console.log(`Sidecar runtime size: ${formatMb(manifest.sidecarInternalBytes)}`);
+console.log(`Sidecar layout: ${manifest.sidecarLayout}`);
 console.log(`Sidecar manifest: ${manifestTarget}`);

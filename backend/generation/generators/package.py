@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import re
+
 from data.repository import Repository, create_repository
 from core.logging import get_logger
 
@@ -33,6 +36,11 @@ _log = get_logger(__name__)
 _assets = _pdf._assets
 
 
+def _safe_job_id(value: object) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "manual").strip())
+    return safe.strip("._-") or "manual"
+
+
 def get_profile(repo: Repository | None = None) -> dict:
     active_repo = repo or create_repository()
     return active_repo.profile.get_profile()
@@ -48,11 +56,13 @@ def _strip_inline(text: str) -> str:
 
 def _render_resume_template(md_text: str, filename: str) -> str:
     _pdf._assets = _assets
+    os.makedirs(_assets, exist_ok=True)
     return _pdf.render_resume_template(md_text, filename)
 
 
 def _render(md_text: str, filename: str, kind: str = "resume") -> str:
     _pdf._assets = _assets
+    os.makedirs(_assets, exist_ok=True)
     return _pdf.render(md_text, filename, kind=kind)
 
 
@@ -74,8 +84,8 @@ def run_package(lead: dict, template: str = "", repo: Repository | None = None) 
         package = _fallback_package(profile, lead_with_ctx, template=template)
     keyword_coverage = _keyword_coverage(profile, lead_with_ctx, package.resume_markdown)
 
+    job_id = _safe_job_id(lead.get("job_id") or lead.get("id"))
     try:
-        job_id = lead["job_id"]
         current_version = repo.leads.get_resume_version(job_id)
         new_version = current_version + 1
         resume_path = _render(package.resume_markdown, f"{job_id}_v{new_version}.pdf", kind="resume")
@@ -85,8 +95,21 @@ def run_package(lead: dict, template: str = "", repo: Repository | None = None) 
         except Exception as exc:
             _log.warning("asset version persistence skipped for %s: %s", job_id, exc)
     except Exception as exc:
-        _log.error("PDF render failed for %s: %s", lead.get("job_id", "?"), exc)
-        raise RuntimeError(f"PDF render failed: {exc}") from exc
+        _log.warning("PDF render failed for %s; retrying with local fallback package: %s", job_id, exc)
+        try:
+            package = _fallback_package(profile, lead_with_ctx, template=template)
+            keyword_coverage = _keyword_coverage(profile, lead_with_ctx, package.resume_markdown)
+            current_version = repo.leads.get_resume_version(job_id)
+            new_version = current_version + 1
+            resume_path = _render(package.resume_markdown, f"{job_id}_v{new_version}.pdf", kind="resume")
+            cover_letter_path = _render(package.cover_letter_markdown, f"{job_id}_cl_v{new_version}.pdf", kind="cover")
+            try:
+                repo.leads.save_generated_asset_version(job_id, resume_path, cover_letter_path, new_version)
+            except Exception as persist_exc:
+                _log.warning("asset version persistence skipped for %s: %s", job_id, persist_exc)
+        except Exception as fallback_exc:
+            _log.error("Fallback PDF render failed for %s: %s", job_id, fallback_exc)
+            raise RuntimeError(f"PDF render failed: {fallback_exc}") from fallback_exc
 
     return {
         "resume": resume_path,

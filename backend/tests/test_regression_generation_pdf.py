@@ -163,3 +163,33 @@ Bachelor's in Computer Science (Expected) 2022 - 2026
                     (Path(__file__).resolve().parent / name).unlink()
                 except FileNotFoundError:
                     pass
+
+    def test_generator_sanitizes_job_id_for_pdf_paths(self):
+        import generation.generator as generator
+
+        lead = {
+            "job_id": "https://jobs.example.com/roles/applied?ref=mail",
+            "title": "Software Engineer",
+            "company": "Acme",
+            "description": "Build Python and React workflow software.",
+        }
+        previous_assets = generator._assets
+        generator._assets = str(Path(__file__).resolve().parent)
+        expected = "https_jobs.example.com_roles_applied_ref_mail_v1.pdf"
+        expected_cover = "https_jobs.example.com_roles_applied_ref_mail_cl_v1.pdf"
+        try:
+            with (
+                mock.patch.object(generator, "get_profile", return_value=_sample_scoring_profile()),
+                mock.patch.object(generator, "_draft_package", side_effect=RuntimeError("provider offline")),
+            ):
+                package = generator.run_package(lead)
+
+            self.assertTrue(package["resume"].endswith(expected))
+            self.assertTrue((Path(__file__).resolve().parent / expected).exists())
+        finally:
+            generator._assets = previous_assets
+            for name in (expected, expected_cover):
+                try:
+                    (Path(__file__).resolve().parent / name).unlink()
+                except FileNotFoundError:
+                    pass

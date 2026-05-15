@@ -4,6 +4,10 @@ import asyncio
 from dataclasses import dataclass
 
 from data.repository import Repository, create_repository
+from core.logging import get_logger
+
+
+_log = get_logger(__name__)
 
 
 @dataclass
@@ -44,7 +48,13 @@ class GenerationService:
         include_contacts: bool = True,
     ) -> GenerationResult:
         package = await self.generate_package(lead, template)
-        contacts = await self.lookup_contact(lead) if include_contacts else None
+        contacts = None
+        if include_contacts:
+            try:
+                contacts = await self.lookup_contact(lead)
+            except Exception as exc:
+                _log.warning("contact lookup skipped for %s: %s", lead.get("job_id", "?"), exc)
+                contacts = {"contacts": [], "error": str(exc)}
         return GenerationResult(package=package, contact_lookup=contacts)
 
 
