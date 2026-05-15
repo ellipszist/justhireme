@@ -157,7 +157,7 @@ def graph_counts() -> dict:
     for table in ["Candidate", "Skill", "Project", "Experience", "JobLead"]:
         try:
             result = execute_query(f"MATCH (n:{table}) RETURN count(n)")
-            out[table.lower()] = result.get_next()[0] if result.has_next() else 0
+            out[table.lower()] = result.get_next()[0] if result and result.has_next() else 0
         except Exception as exc:
             _log.warning("graph count failed for %s: %s", table, exc)
     return out

@@ -723,12 +723,40 @@ class TestIngestionEndpoints(unittest.TestCase):
         resp = post("/api/v1/ingest/github", json={"username": ""})
         self.assertNotEqual(resp.status_code, 200)
 
+    def test_github_ingest_unexpected_error_is_not_500(self):
+        from api.routers import ingestion
+
+        class FailingProfileService:
+            async def ingest_github(self, *_args, **_kwargs):
+                raise RuntimeError("github ingest crashed")
+
+        with mock.patch.object(ingestion, "get_profile_service", return_value=FailingProfileService()):
+            resp = post("/api/v1/ingest/github", json={"username": "vasu-devs"})
+
+        self.assertEqual(resp.status_code, 502)
+        self.assertIn("could not ingest github profile", resp.json()["detail"])
+
     def test_profile_import_empty_body(self):
         resp = post("/api/v1/ingest/profile", json={})
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertIn("stats", data)
         self.assertIn("errors", data)
+
+    def test_profile_import_unexpected_error_returns_partial_payload(self):
+        from api.routers import ingestion
+
+        class FailingProfileService:
+            async def import_profile_data(self, *_args, **_kwargs):
+                raise RuntimeError("graph locked")
+
+        with mock.patch.object(ingestion, "get_profile_service", return_value=FailingProfileService()):
+            resp = post("/api/v1/ingest/profile", json={})
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["status"], "partial")
+        self.assertIn("graph locked", data["errors"][0])
 
     def test_profile_import_valid_skills(self):
         resp = post(

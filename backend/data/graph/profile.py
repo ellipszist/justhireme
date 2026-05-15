@@ -133,13 +133,24 @@ def save_profile_snapshot(profile: dict, db_path: str | None = None) -> None:
         pass
 
 
+def _safe_execute(query: str, params: dict | None = None):
+    try:
+        return execute_query(query, params)
+    except Exception as exc:
+        _log.warning("graph query skipped: %s", exc)
+        return None
+
+
+def _query_rows(query: str, params: dict | None = None) -> list[list]:
+    rows: list[list] = []
+    result = _safe_execute(query, params)
+    while result is not None and result.has_next():
+        rows.append(result.get_next())
+    return rows
+
+
 def read_profile_from_graph() -> dict:
-    result = execute_query("MATCH (n:Candidate) RETURN n.id, n.n, n.s")
-    if result is None:
-        return empty_profile()
-    candidates = []
-    while result.has_next():
-        candidates.append(result.get_next())
+    candidates = _query_rows("MATCH (n:Candidate) RETURN n.id, n.n, n.s")
     if candidates:
         candidates.sort(
             key=lambda row: (
@@ -152,32 +163,21 @@ def read_profile_from_graph() -> dict:
     else:
         candidate = ["", "", ""]
 
-    result = execute_query("MATCH (n:Skill) RETURN n.id, n.n, n.cat")
     skills = []
-    while result.has_next():
-        row = result.get_next()
+    for row in _query_rows("MATCH (n:Skill) RETURN n.id, n.n, n.cat"):
         skills.append({"id": row[0], "n": row[1], "cat": row[2]})
 
-    result = execute_query("MATCH (n:Project) RETURN n.id, n.title, n.stack, n.repo, n.impact")
     projects = []
-    while result.has_next():
-        row = result.get_next()
+    for row in _query_rows("MATCH (n:Project) RETURN n.id, n.title, n.stack, n.repo, n.impact"):
         projects.append({"id": row[0], "title": row[1], "stack": stack_list(row[2]), "repo": row[3], "impact": row[4]})
 
-    result = execute_query("MATCH (n:Experience) RETURN n.id, n.role, n.co, n.period, n.d")
     experience = []
-    while result.has_next():
-        row = result.get_next()
+    for row in _query_rows("MATCH (n:Experience) RETURN n.id, n.role, n.co, n.period, n.d"):
         experience.append({"id": row[0], "role": row[1], "co": row[2], "period": row[3], "d": row[4]})
 
     def read_text_nodes(label: str) -> list[str]:
-        try:
-            rows = execute_query(f"MATCH (n:{label}) RETURN n.title")
-        except Exception:
-            return []
         items: list[str] = []
-        while rows.has_next():
-            row = rows.get_next()
+        for row in _query_rows(f"MATCH (n:{label}) RETURN n.title"):
             text = str(row[0] or "").strip()
             if text:
                 items.append(text)
@@ -321,11 +321,8 @@ def sync_vectors_from_graph() -> dict:
 
 
 def _candidate_id() -> str | None:
-    try:
-        result = execute_query("MATCH (c:Candidate) RETURN c.id LIMIT 1")
-        return result.get_next()[0] if result.has_next() else None
-    except Exception:
-        return None
+    rows = _query_rows("MATCH (c:Candidate) RETURN c.id LIMIT 1")
+    return rows[0][0] if rows else None
 
 
 def _link_to_candidate(label: str, node_id: str, rel: str) -> None:
@@ -350,15 +347,10 @@ def _unlink_outgoing(label: str, node_id: str, rel: str) -> None:
 
 def _skill_rows_by_name() -> dict[str, str]:
     rows: dict[str, str] = {}
-    try:
-        result = execute_query("MATCH (s:Skill) RETURN s.id, s.n")
-        while result and result.has_next():
-            row = result.get_next()
-            name = str(row[1] or "").strip().lower()
-            if name:
-                rows[name] = str(row[0] or "")
-    except Exception:
-        pass
+    for row in _query_rows("MATCH (s:Skill) RETURN s.id, s.n"):
+        name = str(row[1] or "").strip().lower()
+        if name:
+            rows[name] = str(row[0] or "")
     return rows
 
 
@@ -570,7 +562,7 @@ def add_skill(name: str, category: str, db_path: str | None = None) -> dict:
     try:
         execute_query("CREATE (:Skill {id: $id, n: $n, cat: $cat})", {"id": skill_id, "n": name, "cat": category})
     except Exception:
-        execute_query(
+        _safe_execute(
             "MATCH (s:Skill) WHERE s.id = $id SET s.n = $n, s.cat = $cat",
             {"id": skill_id, "n": name, "cat": category},
         )
@@ -588,7 +580,7 @@ def add_skill(name: str, category: str, db_path: str | None = None) -> dict:
 def update_skill(skill_id: str, name: str, category: str, db_path: str | None = None) -> dict:
     name = str(name or "").strip()
     category = str(category or "general").strip() or "general"
-    execute_query(
+    _safe_execute(
         "MATCH (s:Skill) WHERE s.id = $id SET s.n = $n, s.cat = $cat",
         {"id": skill_id, "n": name, "cat": category},
     )
@@ -615,7 +607,7 @@ def update_skill(skill_id: str, name: str, category: str, db_path: str | None = 
 def delete_skill(skill_id: str, db_path: str | None = None) -> None:
     delete_vec_rows("skills", [skill_id])
     delete_vec_id_from_all(skill_id)
-    execute_query("MATCH (s:Skill) WHERE s.id = $id DETACH DELETE s", {"id": skill_id})
+    _safe_execute("MATCH (s:Skill) WHERE s.id = $id DETACH DELETE s", {"id": skill_id})
     _refresh_after_write(db_path)
     snapshot = normal_profile(load_profile_snapshot(db_path))
     snapshot["skills"] = [item for item in snapshot.get("skills", []) if not (isinstance(item, dict) and str(item.get("id") or "") == str(skill_id))]
@@ -634,7 +626,7 @@ def add_experience(role: str, company: str, period: str, description: str, db_pa
             {"id": experience_id, "role": role, "co": company, "period": period, "d": description},
         )
     except Exception:
-        execute_query(
+        _safe_execute(
             "MATCH (e:Experience) WHERE e.id = $id SET e.role = $role, e.co = $co, e.period = $period, e.d = $d",
             {"id": experience_id, "role": role, "co": company, "period": period, "d": description},
         )
@@ -655,7 +647,7 @@ def update_experience(experience_id: str, role: str, company: str, period: str, 
     company = str(company or "").strip()
     period = str(period or "").strip()
     description = str(description or "").strip()
-    execute_query(
+    _safe_execute(
         "MATCH (e:Experience) WHERE e.id = $id SET e.role = $role, e.co = $co, e.period = $period, e.d = $d",
         {"id": experience_id, "role": role, "co": company, "period": period, "d": description},
     )
@@ -680,7 +672,7 @@ def delete_experience(experience_id: str, db_path: str | None = None) -> None:
     _refresh_after_write(db_path)
     delete_vec_rows("experiences", [experience_id])
     delete_vec_id_from_all(experience_id)
-    execute_query("MATCH (e:Experience) WHERE e.id = $id DETACH DELETE e", {"id": experience_id})
+    _safe_execute("MATCH (e:Experience) WHERE e.id = $id DETACH DELETE e", {"id": experience_id})
     _refresh_after_write(db_path)
     snapshot = normal_profile(load_profile_snapshot(db_path))
     snapshot["exp"] = [item for item in snapshot.get("exp", []) if not (isinstance(item, dict) and str(item.get("id") or "") == str(experience_id))]
@@ -699,7 +691,7 @@ def add_project(title: str, stack: str, repo: str, impact: str, db_path: str | N
             {"id": project_id, "title": title, "stack": stack, "repo": repo, "impact": impact},
         )
     except Exception:
-        execute_query(
+        _safe_execute(
             "MATCH (p:Project) WHERE p.id = $id SET p.title = $title, p.stack = $stack, p.repo = $repo, p.impact = $impact",
             {"id": project_id, "title": title, "stack": stack, "repo": repo, "impact": impact},
         )
@@ -720,7 +712,7 @@ def update_project(project_id: str, title: str, stack: str, repo: str, impact: s
     stack = str(stack or "").strip()
     repo = str(repo or "").strip()
     impact = str(impact or "").strip()
-    execute_query(
+    _safe_execute(
         "MATCH (p:Project) WHERE p.id = $id SET p.title = $title, p.stack = $stack, p.repo = $repo, p.impact = $impact",
         {"id": project_id, "title": title, "stack": stack, "repo": repo, "impact": impact},
     )
@@ -744,7 +736,7 @@ def update_project(project_id: str, title: str, stack: str, repo: str, impact: s
 def delete_project(project_id: str, db_path: str | None = None) -> None:
     delete_vec_rows("projects", [project_id])
     delete_vec_id_from_all(project_id)
-    execute_query("MATCH (p:Project) WHERE p.id = $id DETACH DELETE p", {"id": project_id})
+    _safe_execute("MATCH (p:Project) WHERE p.id = $id DETACH DELETE p", {"id": project_id})
     _refresh_after_write(db_path)
     snapshot = normal_profile(load_profile_snapshot(db_path))
     snapshot["projects"] = [item for item in snapshot.get("projects", []) if not (isinstance(item, dict) and str(item.get("id") or "") == str(project_id))]
@@ -790,7 +782,10 @@ def add_achievement(title: str, db_path: str | None = None) -> dict:
 def update_identity(identity: dict, db_path: str | None = None) -> dict:
     clean = {key: str(identity.get(key) or "").strip() for key in IDENTITY_KEYS if key in identity}
     if clean:
-        save_settings(clean, db_path) if db_path else save_settings(clean)
+        try:
+            save_settings(clean, db_path) if db_path else save_settings(clean)
+        except Exception as exc:
+            _log.warning("identity settings save skipped: %s", exc)
     try:
         snapshot = normal_profile(load_profile_snapshot(db_path) or read_profile_from_graph())
     except Exception:

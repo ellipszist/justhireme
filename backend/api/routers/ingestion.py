@@ -147,11 +147,21 @@ def create_router(manager, logger) -> APIRouter:
 
     @router.post("/ingest/github")
     async def ingest_github_endpoint(body: GithubIngestBody):
-        result = await get_profile_service().ingest_github(
-            body.username,
-            token=body.token or None,
-            max_repos=body.max_repos,
-        )
+        try:
+            result = await get_profile_service().ingest_github(
+                body.username,
+                token=body.token or None,
+                max_repos=body.max_repos,
+            )
+        except ServiceTimeout as exc:
+            raise HTTPException(504, str(exc))
+        except ServiceUnavailable as exc:
+            raise HTTPException(503, str(exc))
+        except ServiceRequestError as exc:
+            raise HTTPException(502, str(exc))
+        except Exception as exc:
+            logger.error("github ingest failed: %s", exc)
+            raise HTTPException(502, f"could not ingest github profile: {exc}")
         if "error" in result:
             status_code = int(result.get("status_code") or (404 if result.get("error_kind") == "not_found" else 502))
             raise HTTPException(status_code, result["error"])
@@ -159,7 +169,23 @@ def create_router(manager, logger) -> APIRouter:
 
     @router.post("/ingest/profile")
     async def import_profile_json(body: ProfileImportBody):
-        return await get_profile_service().import_profile_data(body)
+        try:
+            return await get_profile_service().import_profile_data(body)
+        except Exception as exc:
+            logger.error("profile import failed: %s", exc)
+            return {
+                "status": "partial",
+                "stats": {
+                    "skills": 0,
+                    "experience": 0,
+                    "projects": 0,
+                    "education": 0,
+                    "certifications": 0,
+                    "achievements": 0,
+                    "vector_sync": "skipped",
+                },
+                "errors": [str(exc)],
+            }
 
     @router.get("/ingest/profile/template")
     async def get_profile_template():
@@ -179,6 +205,9 @@ def create_router(manager, logger) -> APIRouter:
             raise HTTPException(503, str(exc))
         except ServiceRequestError as exc:
             raise HTTPException(502, str(exc))
+        except Exception as exc:
+            logger.error("portfolio ingest failed: %s", exc)
+            raise HTTPException(502, f"could not ingest portfolio: {exc}")
         if result.get("error") and not result.get("screenshot_b64"):
             raise HTTPException(int(result.get("status_code") or 422), result["error"])
         if result.get("imported"):
