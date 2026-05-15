@@ -1,6 +1,7 @@
 import asyncio
 
 from profile.service import ProfileService
+from models.schema import C, S, E, P
 
 
 def test_profile_service_import_profile_data_counts_and_identity(monkeypatch):
@@ -107,3 +108,30 @@ def test_profile_service_import_profile_data_saves_snapshot_fallback(monkeypatch
     assert saved["skills"][0]["n"] == "React"
     assert saved["projects"][0]["title"] == "Ops Console"
     assert saved["achievements"] == ["Shipped production automation"]
+
+
+def test_profile_service_ingest_resume_saves_snapshot_fallback(monkeypatch):
+    service = ProfileService()
+    saved = {}
+    parsed = C(
+        n="Jane Doe",
+        s="Applied AI engineer",
+        skills=[S(n="Python", cat="technical")],
+        exp=[E(role="Engineer", co="Acme", period="2025", d="Built agents")],
+        projects=[P(title="Hiring Agent", stack=["FastAPI", "React"], repo="", impact="Automated matching")],
+        education=["B.Tech"],
+    )
+
+    monkeypatch.setattr("profile.ingestor.ingest", lambda _raw, _path: parsed)
+    monkeypatch.setattr(service, "get_profile", lambda: {"n": "", "s": "", "skills": [], "projects": [], "exp": []})
+    monkeypatch.setattr(service, "refresh_profile_snapshot", lambda: None)
+    monkeypatch.setattr("profile.service.graph_profile.save_profile_snapshot", lambda profile: saved.update(profile))
+    monkeypatch.setattr("profile.service.graph_profile.sync_vectors_from_graph", lambda: {"status": "ok"})
+
+    result = asyncio.run(service.ingest_resume("resume text", None))
+
+    assert result.n == "Jane Doe"
+    assert saved["n"] == "Jane Doe"
+    assert saved["skills"][0]["n"] == "Python"
+    assert saved["exp"][0]["role"] == "Engineer"
+    assert saved["projects"][0]["title"] == "Hiring Agent"

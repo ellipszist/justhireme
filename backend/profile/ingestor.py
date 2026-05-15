@@ -1,5 +1,8 @@
 import hashlib
 import re
+import zipfile
+import xml.etree.ElementTree as ET
+from pathlib import Path
 from data.vector.connection import vec
 from data.vector.embeddings import embed_texts, hash_embedding
 from core.logging import get_logger
@@ -142,6 +145,45 @@ def _vectors(p: C):
                 _put_vec("projects", [{**r, "vector": v} for r, v in zip(p_rows, vecs)])
     except Exception as exc:
         _log.warning("vectors skipped: %s", exc, exc_info=True)
+
+
+def _docx(path: str) -> str:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            xml = archive.read("word/document.xml")
+        root = ET.fromstring(xml)
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        paragraphs = []
+        for paragraph in root.findall(".//w:p", ns):
+            text = "".join(node.text or "" for node in paragraph.findall(".//w:t", ns))
+            if text.strip():
+                paragraphs.append(text)
+        return "\n".join(paragraphs)
+    except Exception as exc:
+        _log.error("DOCX read error for %s: %s", path, exc)
+        return ""
+
+
+def _text_file(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="ignore")
+    except Exception as exc:
+        _log.error("text resume read error for %s: %s", path, exc)
+        return ""
+
+
+def _document(path: str) -> str:
+    suffix = Path(path).suffix.lower()
+    if suffix == ".pdf":
+        return _pdf(path)
+    if suffix == ".docx":
+        return _docx(path)
+    if suffix in {".txt", ".md"}:
+        return _text_file(path)
+    if suffix == ".doc":
+        _log.error("Legacy .doc resume uploads are not supported; export the resume as PDF or DOCX")
+        return ""
+    return _text_file(path)
 
 
 def _pdf(path: str) -> str:
@@ -463,7 +505,7 @@ def _parse_local(txt: str) -> C:
 def run(raw: str = "", pdf: str | None = None) -> C:
     from llm import call_llm, resolve_config
 
-    txt = (raw + " " + _pdf(pdf)).strip() if pdf else raw
+    txt = (raw + " " + _document(pdf)).strip() if pdf else raw
     p, k, model = resolve_config("ingestor")
 
     if p != "ollama" and not k:
@@ -506,7 +548,7 @@ def run(raw: str = "", pdf: str | None = None) -> C:
 
 
 def ingest(raw: str = "", pdf: str | None = None) -> C:
-    pdf_text = _pdf(pdf) if pdf else ""
+    pdf_text = _document(pdf) if pdf else ""
     txt = (raw + " " + pdf_text).strip() if pdf_text else raw
     if not txt.strip():
         _log.warning("No usable text for extraction - returning empty profile")

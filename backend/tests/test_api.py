@@ -585,6 +585,33 @@ class TestGenerateEndpoint(unittest.TestCase):
 
 
 class TestIngestionEndpoints(unittest.TestCase):
+    def test_resume_ingest_accepts_text_upload_and_returns_profile(self):
+        from api.routers import ingestion
+        from models.schema import C, S
+
+        class FakeProfileService:
+            async def ingest_resume(self, raw="", pdf_path=None):
+                self.raw = raw
+                self.pdf_path = pdf_path
+                return C(n="Jane Doe", s="Applied AI engineer", skills=[S(n="Python", cat="technical")])
+
+        fake = FakeProfileService()
+        try:
+            with mock.patch.object(ingestion, "get_profile_service", return_value=fake):
+                resp = CLIENT.post(
+                    "/api/v1/ingest",
+                    headers=AUTH,
+                    files={"file": ("resume.txt", b"name: Jane Doe\nskills: Python", "text/plain")},
+                )
+        finally:
+            pass
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["n"], "Jane Doe")
+        self.assertEqual(data["skills"][0]["n"], "Python")
+        self.assertTrue(str(fake.pdf_path).endswith(".txt"))
+
     def test_linkedin_ingest_rejects_non_zip(self):
         resp = CLIENT.post(
             "/api/v1/ingest/linkedin",

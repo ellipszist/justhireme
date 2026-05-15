@@ -87,7 +87,10 @@ def _temp_upload(file: UploadFile | None):
     if not file or not file.filename:
         yield None
         return
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in {".pdf", ".doc", ".docx", ".txt", ".md"}:
+        suffix = ".txt"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
         shutil.copyfileobj(file.file, tmp)
         tmp.close()

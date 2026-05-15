@@ -85,7 +85,13 @@ export function IngestionView({ api }: { api: ApiFetch }) {
     fd.append("file", file);
     try {
       const r = await api(`/api/v1/ingest`, { method: "POST", body: fd });
-      setStatus(r.ok ? "done" : "error");
+      if (r.ok) {
+        window.dispatchEvent(new CustomEvent("profile-refresh"));
+        window.dispatchEvent(new CustomEvent("graph-refresh"));
+        setStatus("done");
+      } else {
+        setStatus("error");
+      }
     } catch { setStatus("error"); }
   };
 
@@ -136,6 +142,8 @@ export function IngestionView({ api }: { api: ApiFetch }) {
       if (r.ok) {
         const data = await r.json();
         setGithubResult(data);
+        window.dispatchEvent(new CustomEvent("profile-refresh"));
+        window.dispatchEvent(new CustomEvent("graph-refresh"));
         setStatus("idle");
       } else {
         const data = await r.json().catch(() => ({}));

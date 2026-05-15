@@ -61,7 +61,14 @@ class ProfileService:
         from profile.ingestor import ingest
 
         result = await asyncio.to_thread(ingest, raw, pdf_path)
+        snapshot = _profile_snapshot_from_resume(result, await asyncio.to_thread(self.get_profile))
+        if graph_profile.profile_has_data(snapshot):
+            await asyncio.to_thread(graph_profile.save_profile_snapshot, snapshot)
         await asyncio.to_thread(self.refresh_profile_snapshot)
+        if graph_profile.profile_has_data(snapshot):
+            current = await asyncio.to_thread(self.get_profile)
+            if not graph_profile.profile_has_data(current):
+                await asyncio.to_thread(graph_profile.save_profile_snapshot, snapshot)
         await asyncio.to_thread(graph_profile.sync_vectors_from_graph)
         return result
 
@@ -347,6 +354,45 @@ def _profile_snapshot_from_import(data: dict, existing: dict | None = None) -> d
     }
 
     return _merge_profile_snapshots(existing, incoming)
+
+
+def _profile_snapshot_from_resume(profile: Any, existing: dict | None = None) -> dict:
+    data = profile.model_dump() if hasattr(profile, "model_dump") else _as_dict(profile)
+    incoming = {
+        "candidate": {
+            "name": data.get("n", ""),
+            "summary": data.get("s", ""),
+        },
+        "skills": [
+            {"name": item.get("n", ""), "category": item.get("cat", "general")}
+            for item in data.get("skills", []) or []
+            if isinstance(item, dict) and item.get("n")
+        ],
+        "experience": [
+            {
+                "role": item.get("role", ""),
+                "company": item.get("co", ""),
+                "period": item.get("period", ""),
+                "description": item.get("d", ""),
+            }
+            for item in data.get("exp", []) or []
+            if isinstance(item, dict)
+        ],
+        "projects": [
+            {
+                "title": item.get("title", ""),
+                "stack": ", ".join(item.get("stack", []) or []) if isinstance(item.get("stack"), list) else item.get("stack", ""),
+                "repo": item.get("repo", "") or "",
+                "impact": item.get("impact", ""),
+            }
+            for item in data.get("projects", []) or []
+            if isinstance(item, dict)
+        ],
+        "education": data.get("education", []) or [],
+        "certifications": data.get("certifications", []) or [],
+        "achievements": data.get("achievements", []) or [],
+    }
+    return _profile_snapshot_from_import(incoming, existing)
 
 
 def _merge_profile_snapshots(existing: dict, incoming: dict) -> dict:
