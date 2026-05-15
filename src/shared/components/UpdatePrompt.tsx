@@ -3,6 +3,8 @@ import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updat
 import { relaunch } from "@tauri-apps/plugin-process";
 
 type UpdateState = "checking" | "available" | "downloading" | "installing" | "ready" | "error";
+const DISMISSED_UPDATE_KEY = "jhm.dismissedUpdate";
+const PENDING_RESTART_KEY = "jhm.pendingUpdateRestart";
 
 function formatBytes(value: number) {
   if (!value) return "0 MB";
@@ -23,7 +25,8 @@ export function UpdatePrompt() {
   const [total, setTotal] = useState<number | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [dismissedVersion, setDismissedVersion] = useState(() => localStorage.getItem("jhm.dismissedUpdate") || "");
+  const [dismissedVersion, setDismissedVersion] = useState(() => localStorage.getItem(DISMISSED_UPDATE_KEY) || "");
+  const [pendingRestartVersion, setPendingRestartVersion] = useState(() => localStorage.getItem(PENDING_RESTART_KEY) || "");
 
   useEffect(() => {
     let alive = true;
@@ -36,7 +39,7 @@ export function UpdatePrompt() {
             return;
           }
           setUpdate(next);
-          setState("available");
+          setState(next.version === pendingRestartVersion ? "ready" : "available");
         })
         .catch(() => {
           if (alive) setUpdate(null);
@@ -47,7 +50,7 @@ export function UpdatePrompt() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [dismissedVersion]);
+  }, [dismissedVersion, pendingRestartVersion]);
 
   const progress = useMemo(() => {
     if (!total) return null;
@@ -82,7 +85,7 @@ export function UpdatePrompt() {
   if (!update) return null;
 
   const dismiss = () => {
-    localStorage.setItem("jhm.dismissedUpdate", update.version);
+    localStorage.setItem(DISMISSED_UPDATE_KEY, update.version);
     setDismissedVersion(update.version);
     setUpdate(null);
   };
@@ -105,6 +108,8 @@ export function UpdatePrompt() {
           setState("installing");
         }
       });
+      localStorage.setItem(PENDING_RESTART_KEY, update.version);
+      setPendingRestartVersion(update.version);
       setState("ready");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -128,7 +133,15 @@ export function UpdatePrompt() {
       </div>
       <div className="update-actions">
         {state === "ready" ? (
-          <button className="btn btn-accent" onClick={() => relaunch()}>Restart</button>
+          <button
+            className="btn btn-accent"
+            onClick={() => {
+              localStorage.removeItem(PENDING_RESTART_KEY);
+              relaunch();
+            }}
+          >
+            Restart
+          </button>
         ) : (
           <button className="btn btn-accent" onClick={install} disabled={state === "downloading" || state === "installing"}>
             {state === "downloading" ? "Downloading..." : state === "installing" ? "Installing..." : "Update"}

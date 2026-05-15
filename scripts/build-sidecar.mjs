@@ -179,6 +179,7 @@ if (!existsSync(source)) {
   throw new Error(`Expected PyInstaller sidecar was not created: ${source}`);
 }
 
+await rmWithRetries(sidecarDir, { recursive: true, force: true });
 mkdirSync(sidecarDir, { recursive: true });
 await rmWithRetries(sidecarInternalDir, { recursive: true, force: true });
 mkdirSync(sidecarInternalDir, { recursive: true });
