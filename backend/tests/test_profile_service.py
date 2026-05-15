@@ -193,6 +193,24 @@ def test_graph_profile_manual_candidate_save_updates_snapshot(monkeypatch):
     assert saved["s"] == "Applied AI engineer"
 
 
+def test_graph_profile_manual_candidate_save_falls_back_when_graph_unavailable(monkeypatch):
+    from data.graph import profile as graph_profile
+
+    saved = {}
+
+    monkeypatch.setattr(graph_profile, "execute_query", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(graph_profile, "load_profile_snapshot", lambda _db_path=None: {"n": "Old", "s": "", "skills": [], "projects": [], "exp": []})
+    monkeypatch.setattr(graph_profile, "read_profile_from_graph", lambda: (_ for _ in ()).throw(RuntimeError("graph locked")))
+    monkeypatch.setattr(graph_profile, "save_profile_snapshot", lambda profile, _db_path=None: saved.update(profile))
+    monkeypatch.setattr(graph_profile, "add_candidate_vec", lambda *_args, **_kwargs: None)
+
+    result = graph_profile.update_candidate("Jane Doe", "Applied AI engineer")
+
+    assert result == {"n": "Jane Doe", "s": "Applied AI engineer"}
+    assert saved["n"] == "Jane Doe"
+    assert saved["s"] == "Applied AI engineer"
+
+
 def test_graph_profile_manual_skill_save_updates_snapshot(monkeypatch):
     from data.graph import profile as graph_profile
 

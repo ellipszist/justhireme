@@ -19,8 +19,17 @@ except Exception as exc:
 else:
     _KUZU_IMPORT_ERROR = ""
 
-BASE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe")
-GRAPH_PATH = os.path.join(BASE_DIR, "graph.kuzu")
+def default_base_dir() -> str:
+    root = os.environ.get("JHM_APP_DATA_DIR") or os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    return os.path.join(root, "JustHireMe")
+
+
+def default_graph_path() -> str:
+    return os.path.join(default_base_dir(), "graph.kuzu")
+
+
+BASE_DIR = default_base_dir()
+GRAPH_PATH = default_graph_path()
 
 _GRAPH_ERROR = ""
 _GRAPH_DIR_READY = False
@@ -28,15 +37,32 @@ _graph_lock = threading.RLock()
 db = None
 conn = None
 
-try:
-    os.makedirs(BASE_DIR, exist_ok=True)
-    _GRAPH_DIR_READY = True
-except Exception as exc:
-    _GRAPH_ERROR = str(exc)
-    _log.warning("graph store path unavailable: %s", exc)
+def _prepare_graph_path() -> bool:
+    global BASE_DIR, GRAPH_PATH, _GRAPH_DIR_READY, _GRAPH_ERROR, db, conn
+    base_dir = default_base_dir()
+    graph_path = os.path.join(base_dir, "graph.kuzu")
+    if base_dir != BASE_DIR or graph_path != GRAPH_PATH:
+        db = None
+        conn = None
+        BASE_DIR = base_dir
+        GRAPH_PATH = graph_path
+        _GRAPH_DIR_READY = False
+    try:
+        os.makedirs(BASE_DIR, exist_ok=True)
+        _GRAPH_DIR_READY = True
+        return True
+    except Exception as exc:
+        _GRAPH_ERROR = str(exc)
+        _GRAPH_DIR_READY = False
+        _log.warning("graph store path unavailable: %s", exc)
+        return False
+
+
+_prepare_graph_path()
 
 def _ensure_connection() -> bool:
     global db, conn, _GRAPH_ERROR
+    _prepare_graph_path()
     if db is not None and conn is not None:
         return True
     with _graph_lock:

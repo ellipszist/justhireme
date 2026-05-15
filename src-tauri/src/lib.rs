@@ -302,6 +302,7 @@ pub fn run() {
             };
 
             let mut sidecar_cmd = sidecar_cmd;
+            sidecar_cmd = sidecar_cmd.args(["--no-services"]);
             sidecar_cmd = sidecar_cmd.env("PYTHONUNBUFFERED", "1");
             if let Ok(app_data_dir) = handle.path().app_data_dir() {
                 let _ = std::fs::create_dir_all(&app_data_dir);

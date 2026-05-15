@@ -8,8 +8,18 @@ from core.logging import get_logger
 
 _log = get_logger(__name__)
 
-BASE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe")
-DEFAULT_DB_PATH = os.path.join(BASE_DIR, "crm.db")
+
+def default_base_dir() -> str:
+    root = os.environ.get("JHM_APP_DATA_DIR") or os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    return os.path.join(root, "JustHireMe")
+
+
+def default_db_path() -> str:
+    return os.path.join(default_base_dir(), "crm.db")
+
+
+BASE_DIR = default_base_dir()
+DEFAULT_DB_PATH = default_db_path()
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 _LEGACY_LEAD_COLUMNS = [
@@ -48,7 +58,14 @@ _LEGACY_LEAD_COLUMNS = [
 ]
 
 
-def connect(db_path: str = DEFAULT_DB_PATH):
+def _resolve_db_path(db_path: str | None = None) -> str:
+    if not db_path or db_path == DEFAULT_DB_PATH:
+        return default_db_path()
+    return db_path
+
+
+def connect(db_path: str | None = None):
+    db_path = _resolve_db_path(db_path)
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
@@ -109,7 +126,8 @@ def _unlock_file(lock_file) -> None:
         fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
-def _run_migrations_inner(db_path: str = DEFAULT_DB_PATH) -> None:
+def _run_migrations_inner(db_path: str | None = None) -> None:
+    db_path = _resolve_db_path(db_path)
     conn = connect(db_path)
     try:
         _ensure_core_tables(conn)
@@ -173,7 +191,8 @@ def _ensure_core_tables(conn) -> None:
     )
 
 
-def run_migrations(db_path: str = DEFAULT_DB_PATH) -> None:
+def run_migrations(db_path: str | None = None) -> None:
+    db_path = _resolve_db_path(db_path)
     _ensure_parent(db_path)
     lock_path = db_path + ".migration.lock"
     Path(lock_path).parent.mkdir(parents=True, exist_ok=True)
@@ -194,5 +213,5 @@ def _ensure_legacy_columns(conn) -> None:
                 raise
 
 
-def init_sql(db_path: str = DEFAULT_DB_PATH) -> None:
+def init_sql(db_path: str | None = None) -> None:
     run_migrations(db_path)

@@ -803,23 +803,24 @@ def update_identity(identity: dict, db_path: str | None = None) -> dict:
 def update_candidate(name: str, summary: str, db_path: str | None = None) -> dict:
     name = str(name or "").strip()
     summary = str(summary or "").strip()
+    candidate_id = hash_id(name or "Candidate")
     _refresh_after_write(db_path)
-    result = execute_query("MATCH (n:Candidate) RETURN n.id LIMIT 1")
-    if result.has_next():
-        candidate_id = result.get_next()[0]
-        execute_query(
-            "MATCH (n:Candidate {id: $id}) SET n.n = $n, n.s = $s",
-            {"id": candidate_id, "n": name, "s": summary},
-        )
-    else:
-        candidate_id = hash_id(name)
-        try:
+    try:
+        result = execute_query("MATCH (n:Candidate) RETURN n.id LIMIT 1")
+        if result is not None and result.has_next():
+            row = result.get_next()
+            candidate_id = str(row[0] or candidate_id)
+            execute_query(
+                "MATCH (n:Candidate {id: $id}) SET n.n = $n, n.s = $s",
+                {"id": candidate_id, "n": name, "s": summary},
+            )
+        elif result is not None:
             execute_query(
                 "CREATE (:Candidate {id: $id, n: $n, s: $s})",
                 {"id": candidate_id, "n": name, "s": summary},
             )
-        except Exception:
-            pass
+    except Exception as exc:
+        _log.warning("candidate graph update skipped: %s", exc)
     if not _bulk_import_active():
         try:
             add_candidate_vec(candidate_id, name, summary)
