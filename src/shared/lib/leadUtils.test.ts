@@ -87,6 +87,14 @@ describe("leadDisplayHeading", () => {
   it("strips a company prefix from the title", () => {
     expect(leadDisplayHeading(lead({ title: "Acme | Engineer", company: "Acme" })).role).toBe("Engineer");
   });
+
+  it("derives a readable role when an old lead title is only a URL", () => {
+    expect(leadDisplayHeading(lead({
+      title: "https://wellfound.com/jobs/4015090-ai-research-data-science-intern",
+      url: "https://wellfound.com/jobs/4015090-ai-research-data-science-intern",
+      company: "Wellfound",
+    })).role).toBe("AI Research Data Science Intern");
+  });
 });
 
 describe("stripCompanyPrefix", () => {

@@ -65,3 +65,45 @@ def test_resume_fallback_prioritizes_jd_keywords_and_evidence():
     assert "**Tools & Platforms:** Docker" in resume
     assert "JustHireMe" in resume
     assert "RAG" in resume
+
+
+def test_resume_fallback_scrubs_contact_summary_and_project_noise():
+    from generation.generators.resume import _fallback_package
+
+    profile = {
+        "n": "Komalpreet Kaur",
+        "s": (
+            "Email: kaurkomalpreetsohal@gmail.com. Phone: +91 9451735039. "
+            "Links: https://github.com/Komalpreet2809/Vanta, https://github.com/Komalpreet2809/SOMA"
+        ),
+        "identity": {
+            "email": "kaurkomalpreetsohal@gmail.com",
+            "github_url": "https://github.com/Komalpreet2809",
+        },
+        "skills": [{"n": "Python", "cat": "language"}, {"n": "FastAPI", "cat": "framework"}, {"n": "React", "cat": "framework"}],
+        "projects": [
+            {"title": "conditioning.", "stack": ["FastAPI"], "repo": "https://github.com/Komalpreet2809/Vanta", "impact": "Deployed FastAPI backend."},
+            {"title": "Vanta", "stack": ["FastAPI", "React"], "repo": "https://github.com/Komalpreet2809/Vanta", "impact": "Deployed backend and frontend for an AI application."},
+        ],
+        "exp": [],
+        "certifications": ["Social Networks - NPTEL Jan 2025 - Apr 2025", "Certificate Link"],
+    }
+    lead = {
+        "title": "https://wellfound.com/jobs/4015090-ai-research-data-science-intern",
+        "company": "Wellfound",
+        "url": "https://wellfound.com/jobs/4015090-ai-research-data-science-intern",
+        "description": "AI research intern role using Python and FastAPI for data science workflows.",
+    }
+
+    resume = _fallback_package(profile, lead).resume_markdown
+    summary = resume.split("## SUMMARY", 1)[1].split("## SKILLS", 1)[0]
+
+    assert "Email:" not in summary
+    assert "Phone:" not in summary
+    assert "Links:" not in summary
+    assert "wellfound.com/jobs" not in summary
+    assert "Targeting" not in summary
+    assert "### Vanta - FastAPI, React" in resume
+    assert "conditioning" not in resume
+    assert "Applied FastAPI" not in resume
+    assert "Certificate Link" not in resume

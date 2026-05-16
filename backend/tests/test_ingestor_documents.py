@@ -61,3 +61,51 @@ Hiring Agent - FastAPI, React, RAG job matching
     assert any(skill.n == "FastAPI" for skill in profile.skills)
     assert profile.exp
     assert profile.projects
+
+
+def test_local_parser_does_not_store_contacts_as_summary():
+    profile = ingestor._parse_local(
+        """
+Komalpreet Kaur
+kaurkomalpreetsohal@gmail.com | +91 9451735039
+https://github.com/Komalpreet2809/Vanta
+https://github.com/Komalpreet2809/SOMA
+
+Skills
+Python, FastAPI, React
+"""
+    )
+
+    assert "Email:" not in profile.s
+    assert "Phone:" not in profile.s
+    assert "Links:" not in profile.s
+    assert "github.com" not in profile.s
+
+
+def test_local_parser_repairs_project_titles_and_certificates():
+    profile = ingestor._parse_local(
+        """
+Komalpreet Kaur
+
+Skills
+Python, FastAPI, React, Playwright
+
+Projects
+conditioning. - https://github.com/Komalpreet2809/Vanta
+- Deployed FastAPI backend on Hugging Face Spaces and Next.js frontend on Vercel.
+APIs. - Playwright | https://github.com/Komalpreet2809/Specula
+- Built Chrome extension for Pinterest outfit segmentation with Python and FastAPI.
+
+Certificates
+Social Networks
+Jan2025 - Apr 2025
+NPTEL -- Certificate Link
+"""
+    )
+
+    titles = [project.title for project in profile.projects]
+    assert "Vanta" in titles
+    assert "Specula" in titles
+    assert "conditioning" not in {title.lower() for title in titles}
+    assert "apis" not in {title.lower() for title in titles}
+    assert profile.certifications == ["Social Networks - NPTEL Jan 2025 - Apr 2025"]

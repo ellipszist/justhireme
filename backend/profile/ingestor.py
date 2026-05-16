@@ -375,14 +375,9 @@ def _parse_portfolio_markdown(txt: str):
 
     skills = [S(n=skill, cat="portfolio") for skill in _dedupe(skill_names)]
     services = _section(txt, r"(?m)^##\s+06\s*/\s+Services", r"(?m)^##\s+07\s*/")
-    contact = _section(txt, r"(?m)^##\s+07\s*/\s+Contact", None)
     summary_parts = [tagline]
     if services:
         summary_parts.append("Services: " + " ".join(_strip_md(line) for line in services.splitlines() if _strip_md(line)))
-    if contact:
-        email = re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", contact)
-        if email:
-            summary_parts.append(f"Contact: {email.group(0)}")
 
     return C(
         n=name,
@@ -565,14 +560,7 @@ def _parse_resume_heuristic(txt: str) -> C:
     summary_lines = _section_lines(clean_text, ("summary", "profile", "objective"))
     summary = " ".join(summary_lines[:3])
     if not summary:
-        summary_parts = []
-        if email:
-            summary_parts.append(f"Email: {email.group(0)}")
-        if phone:
-            summary_parts.append(f"Phone: {phone.group(0).strip()}")
-        if links:
-            summary_parts.append("Links: " + ", ".join(links[:3]))
-        summary = ". ".join(summary_parts)
+        summary = ""
 
     skill_lines = _section_lines(clean_text, ("skills", "technical skills", "technologies", "tools"))
     skill_names: list[str] = []

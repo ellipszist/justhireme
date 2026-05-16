@@ -5,6 +5,7 @@ import re
 
 from data.repository import Repository, create_repository
 from core.logging import get_logger
+from core.generation_readiness import lead_generation_blocker
 
 from generation.generators.base import _DocPackage
 from generation.generators.cover_letter import (
@@ -67,6 +68,9 @@ def _render(md_text: str, filename: str, kind: str = "resume") -> str:
 
 
 def run_package(lead: dict, template: str = "", repo: Repository | None = None) -> dict:
+    blocked_reason = lead_generation_blocker(lead)
+    if blocked_reason:
+        raise ValueError(blocked_reason)
     repo = repo or create_repository()
     profile = get_profile(repo)
     proof = _build_proof(profile)

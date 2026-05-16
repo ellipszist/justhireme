@@ -68,6 +68,26 @@ export const seniorityMatches = (lead: Lead, filter: SeniorityFilter) => {
 export const cleanLeadText = (value: unknown) =>
   String(value || "").replace(/\s+/g, " ").trim();
 
+export const isUrlOnlyText = (value: unknown) => {
+  const text = cleanLeadText(value);
+  if (!text) return false;
+  return text.replace(/https?:\/\/\S+|www\.\S+/gi, "").replace(/[\s|,;:()[\]{}\-_\/]+/g, "") === "";
+};
+
+export const roleFromUrl = (value: unknown) => {
+  try {
+    const raw = cleanLeadText(value);
+    const parsed = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    const part = parsed.pathname.split("/").filter(Boolean).pop() || "";
+    const cleaned = decodeURIComponent(part).replace(/^\d+[-_]+/, "").replace(/[-_]+/g, " ").replace(/\b[a-f0-9]{8,}\b/gi, "").trim();
+    return cleaned.split(/\s+/).filter(Boolean).map(word =>
+      ["ai", "ml", "llm", "nlp", "ui", "ux", "qa"].includes(word.toLowerCase()) ? word.toUpperCase() : word.replace(/\b\w/g, ch => ch.toUpperCase()),
+    ).join(" ");
+  } catch {
+    return "";
+  }
+};
+
 export const stripCompanyPrefix = (title: string, company: string) => {
   if (!title || !company) return title;
   const escaped = company.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -102,7 +122,7 @@ export const cleanRoleSegment = (segment: string) => {
 
 export const roleFromLead = (lead: Lead) => {
   const company = cleanLeadText(lead.company) || "Unknown company";
-  const rawTitle = cleanLeadText(lead.title);
+  const rawTitle = isUrlOnlyText(lead.title) ? roleFromUrl(lead.url || lead.title) || "Untitled role" : cleanLeadText(lead.title);
   const parts = rawTitle.split(/\s*\|\s*/).map(cleanLeadText).filter(Boolean);
   const roleHints = /\b(engineer|developer|designer|product|backend|front[- ]?end|frontend|full[- ]?stack|ai|ml|data|software|devops|sre|mobile|ios|android|platform|founding|deployed|research|intern|analyst|architect|security|qa)\b/i;
   const noisy = (part: string) =>

@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from api.dependencies import get_generation_service, get_job_runner, get_repository
 from api.rate_limit import RateLimiter, require_rate_limit
+from core.generation_readiness import lead_generation_blocker
 from data.repository import Repository
 
 
@@ -25,6 +26,14 @@ async def generate_one(
     if not lead:
         await manager.broadcast({"type": "agent", "event": "gen_error", "msg": f"Lead {job_id} not found"})
         raise HTTPException(status_code=404, detail="Lead not found")
+    blocked_reason = lead_generation_blocker(lead)
+    if blocked_reason:
+        try:
+            job_store.update(job.job_id, status="failed", error=blocked_reason)
+        except Exception:
+            pass
+        await manager.broadcast({"type": "agent", "event": "gen_error", "msg": blocked_reason})
+        raise HTTPException(status_code=422, detail=blocked_reason)
 
     template = repo.settings.get_setting("resume_template", "")
     await manager.broadcast({

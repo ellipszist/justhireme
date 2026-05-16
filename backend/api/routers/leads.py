@@ -239,6 +239,14 @@ def create_router(manager) -> APIRouter:
         if raw_lead.get("kind") != "job":
             raise HTTPException(status_code=422, detail="Only job leads are accepted right now")
         lead = annotate_job_lead(raw_lead)
+        from core.generation_readiness import lead_generation_blocker
+
+        blocked_reason = lead_generation_blocker(lead)
+        if blocked_reason:
+            repo.leads.save_lead(lead)
+            saved = repo.leads.get_lead_by_id(lead["job_id"]) or lead
+            await manager.broadcast({"type": "LEAD_UPDATED", "data": saved})
+            raise HTTPException(status_code=422, detail=blocked_reason)
         queued_lead = {**lead, "status": "tailoring"}
 
         async def _run():

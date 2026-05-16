@@ -74,6 +74,11 @@ def generate_node(state: PipelineState) -> dict:
     if int(state.get("score") or 0) < threshold:
         return {"asset_path": "", "cover_letter_path": "", "error": None}
     try:
+        from core.generation_readiness import lead_generation_blocker
+
+        blocked_reason = lead_generation_blocker(state["lead"])
+        if blocked_reason:
+            return {"asset_path": "", "cover_letter_path": "", "error": blocked_reason}
         from generation.generator import run_package
 
         template = str(state.get("cfg", {}).get("resume_template") or "")

@@ -1,6 +1,6 @@
 import hashlib
 import re
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from core.logging import get_logger
 
 _log = get_logger(__name__)
@@ -275,27 +275,69 @@ def company_from_url(url: str) -> str:
     return first[:1].upper() + first[1:]
 
 
+_URL_RE = re.compile(r"https?://\S+|www\.\S+", re.I)
+
+
+def _is_url_only_text(text: str) -> bool:
+    clean = clean_text(text)
+    if not clean:
+        return False
+    remainder = _URL_RE.sub("", clean)
+    remainder = re.sub(r"[\s|,;:(){}\[\]\-_/]+", "", remainder)
+    return not remainder
+
+
+def _role_title_from_url(url: str) -> str:
+    try:
+        parsed = urlparse(url if "://" in url else f"https://{url}")
+    except Exception:
+        return ""
+    parts = [unquote(part).strip() for part in parsed.path.split("/") if part.strip()]
+    if not parts:
+        return ""
+    raw = parts[-1]
+    raw = re.sub(r"^\d+[-_]+", "", raw)
+    raw = re.sub(r"[-_]+", " ", raw)
+    raw = re.sub(r"\b[a-f0-9]{8,}\b", "", raw, flags=re.I)
+    words = [word for word in raw.split() if word]
+    if not words:
+        return ""
+    acronyms = {"ai", "ml", "llm", "nlp", "qa", "ui", "ux", "sre", "devops"}
+    titled = [word.upper() if word.lower() in acronyms else word[:1].upper() + word[1:] for word in words]
+    return " ".join(titled)[:160]
+
+
 def manual_lead_from_text(text: str, url: str = "", default_kind: str = "job") -> dict:
+    text = text or ""
+    url = url or ""
     raw = text or url or ""
+    input_url_only = bool(url.strip()) and (not text.strip() or _is_url_only_text(text))
+    descriptive_raw = "" if input_url_only else raw
     lines = [line.strip() for line in raw.splitlines() if line.strip()]
-    title = next((line for line in lines if len(line) <= 180), "") or "Manual lead"
-    company = company_from_text(raw, company_from_url(url))
-    budget = budget_from_text(raw)
-    quality = signal_quality(raw, default_kind=default_kind)
+    title = (
+        _role_title_from_url(url)
+        if input_url_only else
+        next((line for line in lines if len(line) <= 180 and not _is_url_only_text(line)), "")
+    ) or "Manual job lead"
+    company = company_from_text(descriptive_raw, company_from_url(url))
+    budget = budget_from_text(descriptive_raw)
+    quality_source = descriptive_raw or f"{title} {company}"
+    quality = signal_quality(quality_source, default_kind=default_kind)
     kind = quality["kind"]
-    outreach = outreach_drafts(title, company, raw, kind, budget)
-    stack = tech_stack_from_text(raw)
-    urgency = urgency_from_text(raw)
-    location = location_from_text(raw)
-    bullets = fit_bullets(title, raw)
+    outreach = outreach_drafts(title, company, quality_source, kind, budget)
+    stack = tech_stack_from_text(descriptive_raw)
+    urgency = urgency_from_text(descriptive_raw)
+    location = location_from_text(descriptive_raw)
+    bullets = fit_bullets(title, quality_source)
     source_url = url.strip() or f"manual://{lead_id('manual', raw)}"
+    needs_job_description = input_url_only or len(clean_text(descriptive_raw)) < 40
     return {
         "job_id": lead_id("manual", source_url + raw[:300]),
         "title": title[:220],
         "company": company,
         "url": source_url,
         "platform": "manual",
-        "description": raw[:1200],
+        "description": descriptive_raw[:1200],
         "kind": kind,
         "budget": budget,
         "signal_score": quality["score"],
@@ -307,7 +349,7 @@ def manual_lead_from_text(text: str, url: str = "", default_kind: str = "job") -
         "proposal_draft": outreach["proposal"],
         "fit_bullets": bullets,
         "followup_sequence": followup_sequence(company, kind),
-        "proof_snippet": proof_snippet(title, raw, kind),
+        "proof_snippet": proof_snippet(title, quality_source, kind),
         "tech_stack": stack,
         "location": location,
         "urgency": urgency,
@@ -316,5 +358,8 @@ def manual_lead_from_text(text: str, url: str = "", default_kind: str = "job") -
             "tech_stack": stack,
             "location": location,
             "urgency": urgency,
+            "input_url_only": input_url_only,
+            "needs_job_description": needs_job_description,
+            "content_quality": "url_only" if input_url_only else ("thin" if needs_job_description else "ok"),
         },
     }

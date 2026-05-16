@@ -458,13 +458,6 @@ def _extract_deterministic(url: str, pages: list[PageSnapshot]) -> dict:
     experience = _extract_experience(combined)
     external = _external_links(pages)
 
-    if email and email not in summary:
-        summary = f"{summary}\nContact: {email}".strip()
-    if external.get("linkedin"):
-        summary = f"{summary}\nLinkedIn: {external['linkedin']}".strip()
-    if external.get("github"):
-        summary = f"{summary}\nGitHub: {external['github']}".strip()
-
     return {
         "candidate": {"name": name, "summary": summary},
         "identity": {

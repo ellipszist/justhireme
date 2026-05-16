@@ -131,7 +131,8 @@ End-to-end build of a production-grade financial reporting platform.
         self.assertEqual(profile.exp[0].role, "Full-Stack Engineer - Internal Finance & P&L Platform")
         self.assertIn("BranchGPT", [p.title for p in profile.projects])
         self.assertIn("Waldo", [p.title for p in profile.projects])
-        self.assertIn("siddhvasudev1402@gmail.com", profile.s)
+        self.assertNotIn("siddhvasudev1402@gmail.com", profile.s)
+        self.assertNotIn("Email:", profile.s)
 
     def test_resume_heuristic_keeps_project_bullets_and_education_details_together(self):
         from profile.ingestor import _parse_resume_heuristic

@@ -7,6 +7,11 @@ from generation.generators.keywords import _job_keyword_terms, _keyword_coverage
 from generation.generators.outreach_email import _fallback_outreach
 
 
+URL_RE = re.compile(r"https?://\S+|www\.\S+", re.I)
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
+PHONE_RE = re.compile(r"(?:\+?\d[\d\s().-]{7,}\d)")
+
+
 def _build_proof(profile: dict) -> str:
     """Build proof-of-work string from profile dict -- avoids dead PROJ_UTILIZES graph edges."""
     parts = []
@@ -45,6 +50,40 @@ def _clean_sentence(value: str) -> str:
     if not text:
         return ""
     return text if text.endswith((".", "!", "?")) else f"{text}."
+
+
+def _strip_urls(value: str) -> str:
+    return URL_RE.sub("", str(value or ""))
+
+
+def _safe_text(value: str) -> str:
+    text = _strip_urls(value)
+    text = EMAIL_RE.sub("", text)
+    text = PHONE_RE.sub("", text)
+    return re.sub(r"\s+", " ", text).strip(" .;|-")
+
+
+def _safe_summary(value: str) -> str:
+    lines: list[str] = []
+    for raw_line in str(value or "").splitlines():
+        line = re.sub(r"\s+", " ", raw_line).strip()
+        if not line:
+            continue
+        lower = line.lower().strip(" :-")
+        if lower.startswith(("email", "phone", "mobile", "links", "linkedin", "github", "portfolio", "website", "contact")):
+            continue
+        if lower.startswith(("targeting ", "applying to ", "job url", "url")):
+            continue
+        clean = _safe_text(line)
+        if clean:
+            lines.append(clean)
+    clean = re.sub(r"\s+", " ", " ".join(lines)).strip()
+    if not clean:
+        return ""
+    marker_count = sum(1 for marker in ("email", "phone", "links", "linkedin", "github", "http") if marker in clean.lower())
+    if marker_count >= 2:
+        return ""
+    return clean[:260]
 
 
 def _compact_list(values: list[str], limit: int = 18) -> list[str]:
@@ -99,8 +138,8 @@ def _prioritized_skills(profile: dict, lead: dict, limit: int = 28) -> list[str]
 
 
 def _role_headline(profile: dict, lead: dict, skills: list[str]) -> str:
-    target = str(lead.get("title") or "Software Engineer").strip()
-    summary = str(profile.get("s") or "").strip()
+    target = _safe_text(str(lead.get("title") or "Software Engineer").strip()) or "Software Engineer"
+    summary = _safe_summary(str(profile.get("s") or "").strip())
     if summary:
         first = _clean_sentence(summary).rstrip(".")
         return first[:260]
@@ -109,8 +148,16 @@ def _role_headline(profile: dict, lead: dict, skills: list[str]) -> str:
 
 
 def _impact_bullets(text: str, fallback: str, limit: int = 3) -> list[str]:
-    chunks = re.split(r"(?:\n+|[.;]\s+|•|\u2022)", str(text or ""))
-    bullets = [_clean_sentence(chunk) for chunk in chunks if len(chunk.strip()) > 16]
+    chunks = re.split(r"(?:\n+|[.;]\s+|\u2022)", str(text or ""))
+    bullets = []
+    for chunk in chunks:
+        clean = _safe_text(chunk)
+        lower = clean.lower()
+        if len(clean) <= 16:
+            continue
+        if lower in {"certificate link", "view certificate", "credential link"}:
+            continue
+        bullets.append(_clean_sentence(clean))
     return _dedupe_sentences(bullets or [_clean_sentence(fallback)], limit)
 
 
@@ -137,16 +184,11 @@ def _project_bullets(project: dict, lead: dict, jd_terms: list[str]) -> list[str
     stack = project.get("stack", [])
     stack_text = ", ".join(stack) if isinstance(stack, list) else str(stack or "")
     impact = project.get("impact", "")
-    matched_terms = [term for term in jd_terms if term.lower() in f"{stack_text} {impact} {title}".lower()]
-    focus = ", ".join(matched_terms[:4] or _compact_list(stack_text.split(","), 4))
-    base = _impact_bullets(impact, f"Built {title} with {stack_text} to solve a role-relevant product problem", 2)
-    bullets = [
-        base[0],
-        _clean_sentence(f"Applied {focus} in a production-style workflow aligned with the {lead.get('title', 'target role')} requirements") if focus else "",
-    ]
-    if len(base) > 1:
-        bullets.append(base[1])
-    bullets.append(_clean_sentence(f"Tech: {stack_text}"))
+    fallback = f"Built {title} with {stack_text}" if stack_text else f"Built {title}"
+    base = _impact_bullets(impact, fallback, 3)
+    bullets = [bullet for bullet in base if bullet]
+    if stack_text:
+        bullets.append(_clean_sentence(f"Tech: {stack_text}"))
     return [bullet for bullet in bullets if bullet][:4]
 
 
@@ -166,9 +208,23 @@ def _line_items(values: list, limit: int = 4) -> str:
         else:
             text = str(value or "")
         text = re.sub(r"\s+", " ", text).strip()
+        text = re.sub(r"(?i)\b(?:certificate|credential)\s+link\b", "", text)
+        text = URL_RE.sub("", text).strip(" -|")
         if text:
             items.append(f"- {text}")
     return "\n".join(items)
+
+
+def _valid_resume_project(project: dict) -> bool:
+    title = _safe_text(str(project.get("title") or "")).strip(" .:-|")
+    if not title or len(title) > 120:
+        return False
+    lower = title.lower()
+    if lower in {"api", "apis", "conditioning", "github", "repo", "repository", "project", "projects"}:
+        return False
+    if URL_RE.search(title) or EMAIL_RE.search(title):
+        return False
+    return True
 
 
 def _rank_projects(profile: dict, lead: dict, limit: int = 4) -> list[dict]:
@@ -182,6 +238,8 @@ def _rank_projects(profile: dict, lead: dict, limit: int = 4) -> list[dict]:
     target = _keywords(jd)
     ranked = []
     for project in profile.get("projects", []):
+        if not _valid_resume_project(project):
+            continue
         stack = project.get("stack", [])
         stack_text = ", ".join(stack) if isinstance(stack, list) else str(stack)
         text = " ".join([
@@ -208,6 +266,33 @@ def _profile_payload(profile: dict) -> dict:
         "education": profile.get("education", []),
         "achievements": profile.get("achievements", []),
     }
+
+
+def _section_body(markdown: str, heading: str) -> str:
+    match = re.search(rf"(?im)^##\s+{re.escape(heading)}\s*$", markdown or "")
+    if not match:
+        return ""
+    tail = markdown[match.end():]
+    end = re.search(r"(?im)^##\s+", tail)
+    return tail[:end.start()] if end else tail
+
+
+def _resume_needs_fallback(markdown: str, lead: dict | None = None) -> bool:
+    text = markdown or ""
+    summary = _section_body(text, "SUMMARY") or _section_body(text, "Summary")
+    lower_summary = summary.lower()
+    if EMAIL_RE.search(summary) or PHONE_RE.search(summary) or URL_RE.search(summary):
+        return True
+    if any(marker in lower_summary for marker in ("email:", "phone:", "links:", "linkedin:", "github:", "targeting ")):
+        return True
+    if re.search(r"(?im)^###\s*(?:api|apis|conditioning|github|repo|repository)\b", text):
+        return True
+    if re.search(r"(?im)^###\s*.*https?://", text):
+        return True
+    if re.search(r"(?i)\b(?:certificate|credential)\s+link\b", text):
+        return True
+    lead_url = str((lead or {}).get("url") or "").strip()
+    return bool(lead_url and lead_url in summary)
 
 
 def _categorize_skills(skills: list[dict]) -> dict[str, list[str]]:
@@ -248,8 +333,8 @@ def _fallback_package(profile: dict, lead: dict, template: str = "") -> _DocPack
     selected = _rank_projects(profile, lead, limit=2)
     name = profile.get("n") or "Candidate"
     identity = profile.get("identity") if isinstance(profile.get("identity"), dict) else {}
-    title = lead.get("title", "Software Engineer")
-    company = lead.get("company", "the company")
+    title = _safe_text(str(lead.get("title") or "Software Engineer")) or "Software Engineer"
+    company = _safe_text(str(lead.get("company") or "the company")) or "the company"
     skills_raw = profile.get("skills", [])
     education = profile.get("education", [])
     certs = profile.get("certifications", []) or profile.get("certs", [])
@@ -278,11 +363,10 @@ def _fallback_package(profile: dict, lead: dict, template: str = "") -> _DocPack
     for p in selected:
         stack = p.get("stack", [])
         stack_text = ", ".join(stack) if isinstance(stack, list) else str(stack)
-        repo = str(p.get("repo") or "").strip()
-        subtitle_bits = [bit for bit in [stack_text.split(",")[0].strip() if stack_text else "", repo] if bit]
-        proj_block = f"### {p.get('title','Project')}"
+        subtitle_bits = [bit for bit in [", ".join(_compact_list(stack_text.split(","), 3)) if stack_text else ""] if bit]
+        proj_block = f"### {_safe_text(str(p.get('title','Project'))) or 'Project'}"
         if subtitle_bits:
-            proj_block += f" - {' | '.join(subtitle_bits[:2])}"
+            proj_block += f" - {subtitle_bits[0]}"
         proj_block += "\n"
         for bullet in _project_bullets(p, lead, jd_terms)[:3]:
             proj_block += f"- {bullet}\n"
@@ -322,7 +406,7 @@ def _fallback_package(profile: dict, lead: dict, template: str = "") -> _DocPack
     if contact_parts:
         resume += " | ".join(contact_parts[:4]) + "\n"
     resume += "\n"
-    resume += f"## SUMMARY\n{_clean_sentence(summary)} Targeting {title} at {company}.{jd_line}\n\n"
+    resume += f"## SUMMARY\n{_clean_sentence(summary)}{jd_line}\n\n"
     resume += f"## SKILLS\n{skills_block}\n\n"
     if exp_lines:
         resume += f"\n## EXPERIENCE\n{chr(10).join(exp_lines)}\n"

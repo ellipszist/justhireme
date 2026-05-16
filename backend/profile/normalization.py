@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from models.schema import C, E, P, S
 
@@ -136,6 +137,39 @@ ACTION_SENTENCE_RE = re.compile(
     r"automated|optimized|improved|reduced|increased|features?|worked|used|using)\b",
     re.I,
 )
+URL_RE = re.compile(r"https?://[^\s|)]+|www\.[^\s|)]+", re.I)
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
+PHONE_RE = re.compile(r"(?:\+?\d[\d\s().-]{7,}\d)")
+CERT_DATE_RE = re.compile(
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*'?\.?\s*\d{2,4}\b|\b(?:19|20)\d{2}\b",
+    re.I,
+)
+GENERIC_PROJECT_TITLE_FRAGMENTS = {
+    "api",
+    "apis",
+    "conditioning",
+    "certificate link",
+    "github",
+    "repo",
+    "repository",
+    "live",
+    "demo",
+    "link",
+    "source code",
+}
+CERTIFICATE_ISSUERS = {
+    "nptel",
+    "coursera",
+    "udemy",
+    "edx",
+    "aws",
+    "google",
+    "microsoft",
+    "oracle",
+    "meta",
+    "ibm",
+    "linkedin learning",
+}
 
 
 def normalize_profile_payload(data: dict[str, Any]) -> dict[str, Any]:
@@ -244,10 +278,25 @@ def normalize_projects(raw_items: list[Any], *, known_skills: list[str] | None =
     known = {_key(skill) for skill in (known_skills or [])}
     for raw in raw_items:
         item = _as_dict(raw)
-        title = _clean_project_title(str(item.get("title") or item.get("name") or item.get("n") or ""))
+        raw_title = str(item.get("title") or item.get("name") or item.get("n") or "")
+        raw_impact = str(item.get("impact") or item.get("description") or "")
+        repo = _clean_repo_url(str(item.get("repo") or item.get("url") or "") or _first_url(f"{raw_title} {raw_impact}"))
+        title = _clean_project_title(raw_title)
+        impact = _clean_project_detail(raw_impact)
         stack_items = normalize_stack(item.get("stack", item.get("s", "")))
-        impact = _clean_text(str(item.get("impact") or item.get("description") or ""))
-        repo = _clean_text(str(item.get("repo") or item.get("url") or ""))
+        url_prefix = _prefix_before_first_url(raw_impact)
+        if url_prefix and len(url_prefix.split()) <= 6 and _known_skill_hits(url_prefix):
+            stack_items = _dedupe(stack_items + split_skill_names(url_prefix))
+            impact = _clean_text(impact.replace(_clean_text(url_prefix), "", 1)).strip(" |:-")
+
+        if not _valid_project_title(title, known):
+            repo_title = _repo_title_from_url(repo)
+            if repo_title and _valid_project_title(repo_title, known):
+                title = repo_title
+
+        if impact and (_looks_like_stack_cluster(impact) or (len(impact.split()) <= 5 and _known_skill_hits(impact))):
+            stack_items = _dedupe(stack_items + split_skill_names(impact))
+            impact = ""
 
         if _looks_like_stack_cluster(title):
             if out:
@@ -337,6 +386,16 @@ def normalize_text_entries(raw_items: list[Any], *, kind: str) -> list[str]:
     out: list[str] = []
     for raw in raw_items:
         text = _entry_title(raw)
+        if kind == "certification":
+            text = _clean_certification_entry(text)
+            if not text:
+                continue
+            if _is_cert_date_line(text) and out:
+                out[-1] = _append_cert_detail(out[-1], _normalize_cert_date(text))
+                continue
+            if _is_cert_issuer_only(text) and out:
+                out[-1] = _append_cert_issuer(out[-1], text)
+                continue
         if not text or _is_section_or_noise(text):
             continue
         if kind == "achievement" and _education_detail(text):
@@ -347,10 +406,58 @@ def normalize_text_entries(raw_items: list[Any], *, kind: str) -> list[str]:
     return _dedupe(out)[:30]
 
 
+def _clean_certification_entry(value: str) -> str:
+    clean = _clean_text(value)
+    clean = re.sub(r"(?i)\b(?:credential|certificate)\s+link\b", "", clean)
+    clean = re.sub(r"(?i)\b(?:view|verify|open)\s+(?:credential|certificate)\b", "", clean)
+    clean = URL_RE.sub("", clean)
+    clean = re.sub(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)(\d{4})\b", r"\1 \2", clean, flags=re.I)
+    clean = re.sub(r"\s*[-|]{2,}\s*", " - ", clean)
+    clean = _clean_text(clean).strip(" -:|")
+    if not clean or clean.lower() in {"certificate", "certification", "certifications", "credential", "credentials", "link"}:
+        return ""
+    return clean
+
+
+def _is_cert_date_line(text: str) -> bool:
+    clean = _clean_text(text)
+    return bool(clean and CERT_DATE_RE.search(clean) and len(clean.split()) <= 7 and not re.search(r"[A-Za-z]{4,}", CERT_DATE_RE.sub("", clean)))
+
+
+def _normalize_cert_date(text: str) -> str:
+    clean = re.sub(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)(\d{4})\b", r"\1 \2", text, flags=re.I)
+    return _clean_text(clean)
+
+
+def _is_cert_issuer_only(text: str) -> bool:
+    lower = _clean_text(text).lower()
+    return lower in CERTIFICATE_ISSUERS or (len(lower.split()) <= 3 and lower in CERTIFICATE_ISSUERS)
+
+
+def _append_cert_detail(base: str, detail: str) -> str:
+    base = _clean_text(base)
+    detail = _clean_text(detail)
+    if not detail or detail.lower() in base.lower():
+        return base
+    return f"{base} {detail}".strip()
+
+
+def _append_cert_issuer(base: str, issuer: str) -> str:
+    base = _clean_text(base)
+    issuer = _clean_text(issuer)
+    if not issuer or issuer.lower() in base.lower():
+        return base
+    date_match = re.search(r"(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[A-Za-z]*\s+\d{4}\b.*)$", base, flags=re.I)
+    if date_match:
+        prefix = base[:date_match.start()].strip(" -")
+        return f"{prefix} - {issuer} {date_match.group(1).strip()}".strip()
+    return f"{base} - {issuer}"
+
+
 def _normalize_candidate(raw: Any) -> dict[str, str]:
     item = _as_dict(raw)
     name = _clean_name(str(item.get("name") or item.get("n") or ""))
-    summary = _clean_text(str(item.get("summary") or item.get("s") or ""))
+    summary = _clean_summary(str(item.get("summary") or item.get("s") or ""))
     return {"name": name, "summary": summary}
 
 
@@ -380,6 +487,34 @@ def _clean_name(value: str) -> str:
     return clean
 
 
+def _clean_summary(value: str) -> str:
+    lines: list[str] = []
+    for raw_line in str(value or "").splitlines():
+        line = _clean_text(raw_line)
+        if not line:
+            continue
+        lower = line.lower().strip(" :-")
+        if lower.startswith(("email", "phone", "mobile", "links", "linkedin", "github", "portfolio", "website", "contact")):
+            continue
+        if lower.startswith(("targeting ", "applying to ", "job url", "url")):
+            continue
+        line = URL_RE.sub("", line)
+        line = EMAIL_RE.sub("", line)
+        line = PHONE_RE.sub("", line)
+        line = _clean_text(line).strip(" .;|-")
+        if line:
+            lines.append(line)
+    clean = _clean_text(" ".join(lines))
+    if not clean:
+        return ""
+    marker_count = sum(1 for marker in ("email", "phone", "links", "linkedin", "github", "http") if marker in clean.lower())
+    if marker_count >= 2:
+        return ""
+    if len(clean.split()) < 4 and not re.search(r"\b(engineer|developer|student|designer|analyst|scientist|builder|architect)\b", clean, re.I):
+        return ""
+    return clean[:900]
+
+
 def _valid_skill(skill: str) -> bool:
     clean = _clean_text(skill)
     lower = clean.lower()
@@ -398,6 +533,11 @@ def _valid_project_title(title: str, known_skills: set[str]) -> bool:
     if not title or len(title) > 120:
         return False
     lower = title.lower().strip(" :-")
+    lower_key = _key(lower)
+    if URL_RE.search(title) or EMAIL_RE.search(title):
+        return False
+    if lower in GENERIC_PROJECT_TITLE_FRAGMENTS or lower_key in {_key(item) for item in GENERIC_PROJECT_TITLE_FRAGMENTS}:
+        return False
     if lower in NON_PROJECT_TITLES or _is_section_or_noise(title) or _education_detail(title):
         return False
     if _key(title) in known_skills or _key(title) in {_key(skill) for skill in SKILL_CANONICAL.values()}:
@@ -443,8 +583,55 @@ def _projectish_text(text: str) -> bool:
 
 def _clean_project_title(title: str) -> str:
     clean = _clean_text(re.sub(r"^\d+\s*[.)/-]*\s*", "", title or ""))
+    clean = URL_RE.sub("", clean)
+    clean = re.sub(r"(?i)\b(?:github|repo|repository|live|demo|source code)\s*:\s*$", "", clean)
     clean = re.sub(r"(?i)^(featured|selected)\s+(project|projects|work|case study)\s*[:|-]?\s*", "", clean).strip()
-    return clean.strip(" :-")
+    clean = re.split(r"\s+(?:\|\s*)?(?:https?://|www\.)", clean, maxsplit=1, flags=re.I)[0]
+    return clean.strip(" :-|.,")
+
+
+def _clean_project_detail(value: str) -> str:
+    clean = _clean_text(value)
+    clean = URL_RE.sub("", clean)
+    clean = re.sub(r"(?i)\b(?:github|repo|repository|live|demo|source code|certificate link)\s*:?\s*$", "", clean)
+    return _clean_text(clean).strip(" :-|")
+
+
+def _first_url(value: str) -> str:
+    match = URL_RE.search(value or "")
+    return match.group(0).rstrip(".,;") if match else ""
+
+
+def _prefix_before_first_url(value: str) -> str:
+    match = URL_RE.search(value or "")
+    if not match:
+        return ""
+    return _clean_text(str(value or "")[:match.start()]).strip(" |:-")
+
+
+def _clean_repo_url(value: str) -> str:
+    url = _first_url(value) or _clean_text(value)
+    if not url:
+        return ""
+    if url.lower().startswith("www."):
+        url = "https://" + url
+    return url.rstrip(".,;)")
+
+
+def _repo_title_from_url(url: str) -> str:
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url if "://" in url else f"https://{url}")
+    except Exception:
+        return ""
+    if "github.com" not in parsed.netloc.lower():
+        return ""
+    parts = [unquote(part).strip() for part in parsed.path.split("/") if part.strip()]
+    if len(parts) < 2:
+        return ""
+    name = re.sub(r"\.git$", "", parts[1], flags=re.I)
+    return _clean_text(name.replace("-", " ").replace("_", " ")).strip(" .:-")
 
 
 def _education_anchor(line: str) -> bool:

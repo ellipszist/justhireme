@@ -223,15 +223,15 @@ export function ApplyJobView({ port, api, leads, openDrawer, initialInput, autoF
         <section className="card" style={{ padding: 22, display: "flex", flexDirection: "column", gap: 16 }}>
           <div>
             <div className="eyebrow">Customize for this job</div>
-            <h2 style={{ fontSize: 24, fontWeight: 700, marginTop: 5, marginBottom: 6 }}>Paste a job URL.</h2>
-            <div style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.55 }}>Analyse fit, generate the resume and cover letter, then copy outreach drafts from one page.</div>
+            <h2 style={{ fontSize: 24, fontWeight: 700, marginTop: 5, marginBottom: 6 }}>Paste the job description.</h2>
+            <div style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.55 }}>Include the posting URL if you have it; generation needs the actual role requirements to stay factual.</div>
           </div>
           <textarea
             ref={inputRef}
             className="field-input"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder="Paste job URL or full job description"
+            placeholder="Paste the full job description, optionally with the posting URL"
             rows={liveLead ? 8 : 12}
             style={{ fontSize: 14, lineHeight: 1.55, resize: "vertical" }}
           />

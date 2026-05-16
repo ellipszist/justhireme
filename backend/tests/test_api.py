@@ -125,6 +125,8 @@ class TestAuthGate(unittest.TestCase):
     def test_health_no_token_is_200(self):
         resp = get("/health", auth=False)
         self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("components", resp.json())
+        self.assertFalse(resp.json()["details_available"])
 
     def test_protected_route_no_token_is_401(self):
         resp = get("/api/v1/leads", auth=False)
@@ -290,6 +292,16 @@ class TestHealthEndpoint(unittest.TestCase):
         resp = get("/health")
         self.assertIn("log_level", resp.json())
 
+    def test_health_details_require_valid_token(self):
+        no_auth = get("/health", auth=False).json()
+        with_auth = get("/health").json()
+        wrong_auth = CLIENT.get("/health", headers={"Authorization": "Bearer wrong-token"}).json()
+
+        self.assertNotIn("components", no_auth)
+        self.assertNotIn("components", wrong_auth)
+        self.assertIn("components", with_auth)
+        self.assertTrue(with_auth["details_available"])
+
 
 class TestLeadsEndpoints(unittest.TestCase):
     def test_get_leads_returns_list(self):
@@ -372,6 +384,85 @@ class TestLeadsEndpoints(unittest.TestCase):
         data = resp.json()
         self.assertEqual(data["kind"], "job")
         self.assertIn("feedback_learning_error", data.get("source_meta", {}))
+
+    def test_manual_url_only_lead_is_saved_as_needing_description(self):
+        from api.dependencies import get_ranking_service, get_repository
+
+        saved: dict = {}
+
+        class Ranking:
+            async def apply_feedback(self, lead, _examples):
+                return lead
+
+        class Leads:
+            def save_lead(self, lead):
+                saved.update(lead)
+
+            def get_lead_by_id(self, _job_id):
+                return saved
+
+        fake_repo = types.SimpleNamespace(
+            feedback=types.SimpleNamespace(get_feedback_training_examples=lambda: []),
+            leads=Leads(),
+        )
+        app.dependency_overrides[get_repository] = lambda: fake_repo
+        app.dependency_overrides[get_ranking_service] = lambda: Ranking()
+        try:
+            resp = post(
+                "/api/v1/leads/manual",
+                json={
+                    "kind": "job",
+                    "url": "https://wellfound.com/jobs/4015090-ai-research-data-science-intern",
+                    "text": "",
+                },
+            )
+        finally:
+            app.dependency_overrides.pop(get_repository, None)
+            app.dependency_overrides.pop(get_ranking_service, None)
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["title"], "AI Research Data Science Intern")
+        self.assertEqual(data["description"], "")
+        self.assertTrue(data["source_meta"]["needs_job_description"])
+
+    def test_manual_customize_rejects_url_only_generation(self):
+        from api.dependencies import get_generation_service, get_job_runner, get_repository
+        from api.routers import generation
+
+        saved: dict = {}
+
+        class Leads:
+            def save_lead(self, lead):
+                saved.update(lead)
+
+            def get_lead_by_id(self, _job_id):
+                return saved
+
+        fake_repo = types.SimpleNamespace(leads=Leads())
+        generate_mock = mock.AsyncMock(return_value={})
+        app.dependency_overrides[get_repository] = lambda: fake_repo
+        app.dependency_overrides[get_generation_service] = lambda: object()
+        app.dependency_overrides[get_job_runner] = lambda: object()
+        try:
+            with mock.patch.object(generation, "generate_one", new=generate_mock):
+                resp = post(
+                    "/api/v1/leads/manual/generate/start",
+                    json={
+                        "kind": "job",
+                        "url": "https://wellfound.com/jobs/4015090-ai-research-data-science-intern",
+                        "text": "https://wellfound.com/jobs/4015090-ai-research-data-science-intern",
+                    },
+                )
+        finally:
+            app.dependency_overrides.pop(get_repository, None)
+            app.dependency_overrides.pop(get_generation_service, None)
+            app.dependency_overrides.pop(get_job_runner, None)
+
+        self.assertEqual(resp.status_code, 422)
+        self.assertIn("job description", resp.json()["detail"])
+        self.assertEqual(generate_mock.await_count, 0)
+        self.assertTrue(saved["source_meta"]["needs_job_description"])
 
     def test_manual_customize_start_returns_immediately(self):
         from api.dependencies import get_generation_service, get_job_runner, get_repository
@@ -639,6 +730,50 @@ class TestGenerateEndpoint(unittest.TestCase):
 
         self.assertEqual(lead["resume_asset"], "resume.pdf")
         self.assertIn("generation_persistence_errors", lead["source_meta"])
+
+    def test_generate_one_rejects_url_only_lead(self):
+        from fastapi import HTTPException
+        from api.routers import generation
+
+        broadcasts = []
+
+        class Manager:
+            async def broadcast(self, payload):
+                broadcasts.append(payload)
+
+        class JobStore:
+            def create(self, *_args, **_kwargs):
+                return types.SimpleNamespace(job_id="gen-url-only")
+
+            def update(self, *_args, **_kwargs):
+                return None
+
+        repo = types.SimpleNamespace(
+            settings=types.SimpleNamespace(get_setting=lambda *_args, **_kwargs: ""),
+            leads=types.SimpleNamespace(
+                get_lead_by_id=lambda _job_id: {
+                    "job_id": "url-only",
+                    "title": "https://wellfound.com/jobs/4015090-ai-research-data-science-intern",
+                    "company": "Wellfound",
+                    "url": "https://wellfound.com/jobs/4015090-ai-research-data-science-intern",
+                    "description": "https://wellfound.com/jobs/4015090-ai-research-data-science-intern",
+                    "source_meta": {"input_url_only": True, "needs_job_description": True},
+                },
+            ),
+        )
+        service = types.SimpleNamespace(generate_with_contacts=mock.AsyncMock())
+
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(generation.generate_one(
+                "url-only",
+                Manager(),
+                repo=repo,
+                service=service,
+                job_store=JobStore(),
+            ))
+
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(service.generate_with_contacts.await_count, 0)
 
 
 class TestIngestionEndpoints(unittest.TestCase):

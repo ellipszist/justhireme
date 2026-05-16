@@ -19,6 +19,9 @@ _log = get_logger(__name__)
 PROFILE_SNAPSHOT_KEY = "profile_snapshot_json"
 IDENTITY_KEYS = ("email", "phone", "linkedin_url", "github_url", "website_url", "city")
 _BULK_IMPORT_DEPTH: contextvars.ContextVar[int] = contextvars.ContextVar("profile_bulk_import_depth", default=0)
+_URL_RE = re.compile(r"https?://\S+|www\.\S+", re.I)
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
+_PHONE_RE = re.compile(r"(?:\+?\d[\d\s().-]{7,}\d)")
 
 
 def hash_id(text: str) -> str:
@@ -63,6 +66,26 @@ def stack_list(value) -> list[str]:
     return [part.strip() for part in str(value or "").split(",") if part.strip()]
 
 
+def clean_profile_summary(value: str) -> str:
+    lines: list[str] = []
+    for raw in str(value or "").splitlines():
+        line = re.sub(r"\s+", " ", raw).strip()
+        lower = line.lower().strip(" :-")
+        if not line:
+            continue
+        if lower.startswith(("email", "phone", "mobile", "links", "linkedin", "github", "portfolio", "website", "contact", "targeting ")):
+            continue
+        line = _URL_RE.sub("", line)
+        line = _EMAIL_RE.sub("", line)
+        line = _PHONE_RE.sub("", line)
+        line = re.sub(r"\s+", " ", line).strip(" .;|-")
+        if line:
+            lines.append(line)
+    clean = re.sub(r"\s+", " ", " ".join(lines)).strip()
+    marker_count = sum(1 for marker in ("email", "phone", "links", "linkedin", "github", "http") if marker in clean.lower())
+    return "" if marker_count >= 2 else clean
+
+
 def profile_has_data(profile: dict | None) -> bool:
     if not isinstance(profile, dict):
         return False
@@ -98,7 +121,7 @@ def normal_profile(profile: dict | None) -> dict:
     identity = profile.get("identity") if isinstance(profile.get("identity"), dict) else {}
     return {
         "n": str(profile.get("n") or ""),
-        "s": str(profile.get("s") or ""),
+        "s": clean_profile_summary(str(profile.get("s") or "")),
         "skills": list(profile.get("skills") or []),
         "projects": list(profile.get("projects") or []),
         "exp": list(profile.get("exp") or []),
@@ -858,7 +881,7 @@ def update_identity(identity: dict, db_path: str | None = None) -> dict:
 
 def update_candidate(name: str, summary: str, db_path: str | None = None) -> dict:
     name = str(name or "").strip()
-    summary = str(summary or "").strip()
+    summary = clean_profile_summary(str(summary or "").strip())
     candidate_id = hash_id(name or "Candidate")
     _refresh_after_write(db_path)
     try:

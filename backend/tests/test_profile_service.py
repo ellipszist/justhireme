@@ -120,6 +120,39 @@ def test_profile_service_import_profile_data_sanitizes_bad_buckets(monkeypatch):
     assert calls["education"] == ["Lovely Professional University, Punjab, CGPA 8.5"]
 
 
+def test_profile_service_import_profile_data_repairs_project_links_and_certificates(monkeypatch):
+    service = ProfileService()
+    calls = {"projects": [], "certifications": [], "candidate": []}
+
+    monkeypatch.setattr(service, "update_candidate", lambda name, summary: calls["candidate"].append((name, summary)))
+    monkeypatch.setattr(service, "add_project", lambda title, stack, repo, impact: calls["projects"].append((title, stack, repo, impact)))
+    monkeypatch.setattr(service, "add_certification", lambda title: calls["certifications"].append(title))
+    monkeypatch.setattr(service, "refresh_profile_snapshot", lambda: None)
+    monkeypatch.setattr("profile.service.graph_profile.sync_vectors_from_graph", lambda: {"status": "ok"})
+
+    result = asyncio.run(service.import_profile_data({
+        "candidate": {
+            "name": "Komalpreet Kaur",
+            "summary": "Email: kaur@example.com. Phone: +91 9451735039. Links: https://github.com/Komalpreet2809/Vanta",
+        },
+        "projects": [
+            {"title": "conditioning. - https://github.com/Komalpreet2809/Vanta", "impact": "Deployed FastAPI backend."},
+            {"title": "APIs.", "impact": "Playwright | https://github.com/Komalpreet2809/Specula"},
+        ],
+        "certifications": [
+            {"title": "Social Networks"},
+            {"title": "Jan2025 - Apr 2025"},
+            {"title": "NPTEL -- Certificate Link"},
+        ],
+    }))
+
+    assert result["status"] == "ok"
+    assert calls["candidate"][0] == ("Komalpreet Kaur", "")
+    assert [project[0] for project in calls["projects"]] == ["Vanta", "Specula"]
+    assert calls["projects"][1][1] == "Playwright"
+    assert calls["certifications"] == ["Social Networks - NPTEL Jan 2025 - Apr 2025"]
+
+
 def test_profile_service_import_profile_data_saves_snapshot_fallback(monkeypatch):
     service = ProfileService()
     saved = {}

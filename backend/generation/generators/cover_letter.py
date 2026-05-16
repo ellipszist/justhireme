@@ -4,7 +4,7 @@ import re
 
 from generation.generators.base import GeneratedAsset, _DocPackage
 from generation.generators.outreach_email import _fallback_outreach
-from generation.generators.resume import _fallback_package, _rank_projects
+from generation.generators.resume import _fallback_package, _rank_projects, _resume_needs_fallback
 
 
 _COVER_HEADING_RE = re.compile(
@@ -86,6 +86,10 @@ def _normalize_package(package: _DocPackage, profile: dict, lead: dict, template
         resume = fallback.resume_markdown
     if _is_trivial_doc(cover, "cover") and fallback:
         cover = fallback.cover_letter_markdown
+    if _resume_needs_fallback(resume, lead):
+        fallback = fallback or _fallback_package(profile, lead, template=template)
+        resume = fallback.resume_markdown
+        package.selected_projects = []
 
     selected = [str(p).strip() for p in package.selected_projects if str(p).strip()]
     if not selected:
