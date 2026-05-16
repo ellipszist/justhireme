@@ -263,6 +263,9 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
+      - name: Run Rust unit tests
+        run: cd src-tauri && cargo test --lib
+
       - name: Verify project versions
         run: npm run version:check -- "${{ github.ref_name }}"
 

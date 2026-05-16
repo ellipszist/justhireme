@@ -13,6 +13,7 @@ For the full production release plan, see [Production Release Roadmap](PRODUCTIO
 - [ ] `npm run build`
 - [ ] `cd backend && uv sync --dev`
 - [ ] `cd backend && uv run python -m pytest tests/test_regressions.py tests/test_api.py::TestAuthGate`
+- [ ] `cd src-tauri && cargo test --lib`
 - [ ] `cd src-tauri && cargo check`
 - [ ] For generated release assets, `npm run release:verify-updater -- release-assets vX.Y.Z`
 
@@ -24,6 +25,7 @@ For the full production release plan, see [Production Release Roadmap](PRODUCTIO
 - [ ] Release notes include SHA256 checksums for uploaded installer assets.
 - [ ] Tauri capabilities remain narrow; frontend code should not receive broad shell execution permissions.
 - [ ] The bundled sidecar listens on `127.0.0.1` and requires the runtime token for HTTP and WebSocket access.
+- [ ] macOS release notes tell users to drag `JustHireMe.app` from the DMG into `/Applications` or `~/Applications` before opening it. In-app updates cannot replace an app running from a mounted DMG or Gatekeeper App Translocation.
 
 ## Release Flow
 
@@ -34,4 +36,5 @@ For the full production release plan, see [Production Release Roadmap](PRODUCTIO
 5. For the standard Windows installer, run `npm run release:windows`.
 6. Push the tag and let the release workflow build, verify updater artifacts, and publish the GitHub Release from CI.
 7. Download and smoke-test the GitHub-built installer before sharing the release link widely.
-8. On a machine with the previous release installed, open the app, wait for the update prompt, install the update, restart, and confirm the app reports the new version while local app data remains intact.
+8. On macOS, first confirm a DMG-launched copy blocks in-app update with a clear "move app first" message instead of `Read-only file system (os error 30)`.
+9. On a machine with the previous release installed in a writable Applications folder, open the app, wait for the update prompt, install the update, restart, and confirm the app reports the new version while local app data remains intact.

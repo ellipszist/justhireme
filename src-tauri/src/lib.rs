@@ -6,6 +6,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use serde::Serialize;
+
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
@@ -19,6 +21,17 @@ struct SidecarChild(Mutex<Option<CommandChild>>);
 struct SidecarError(Mutex<Option<String>>);
 struct SidecarLastStderr(Mutex<Option<String>>);
 struct SidecarStopping(Mutex<bool>);
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInstallStatus {
+    platform: String,
+    can_update: bool,
+    needs_manual_install: bool,
+    reason: String,
+    install_dir: Option<String>,
+    app_bundle: Option<String>,
+}
 
 #[tauri::command]
 fn get_sidecar_port(state: State<SidecarPort>) -> Result<u16, String> {
@@ -59,6 +72,237 @@ fn notify_high_score_lead(app: tauri::AppHandle, title: String, body: String) {
         .title(&title)
         .body(&body)
         .show();
+}
+
+#[cfg(target_os = "macos")]
+fn display_path(path: &std::path::Path) -> String {
+    path.to_string_lossy().to_string()
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn normalized_path(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn find_app_bundle_path(exe: &std::path::Path) -> Option<PathBuf> {
+    exe.ancestors()
+        .find(|path| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .map(|extension| extension.eq_ignore_ascii_case("app"))
+                .unwrap_or(false)
+        })
+        .map(std::path::Path::to_path_buf)
+}
+
+#[cfg(target_os = "macos")]
+fn probe_install_dir_writable(install_dir: &std::path::Path) -> Result<(), String> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let probe_path = install_dir.join(format!(
+        ".justhireme-update-write-test-{}-{stamp}",
+        std::process::id()
+    ));
+
+    match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe_path)
+    {
+        Ok(mut file) => {
+            let _ = file.write_all(b"update preflight\n");
+            let _ = std::fs::remove_file(&probe_path);
+            Ok(())
+        }
+        Err(error) => Err(format!(
+            "{}{}",
+            error,
+            error
+                .raw_os_error()
+                .map(|code| format!(" (os error {code})"))
+                .unwrap_or_default()
+        )),
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn macos_update_block_reason(
+    app_bundle: &std::path::Path,
+    install_dir: &std::path::Path,
+    writable_result: Result<(), String>,
+) -> Option<String> {
+    let app_path = normalized_path(app_bundle);
+    let install_path = normalized_path(install_dir);
+
+    if app_path.contains("/AppTranslocation/") {
+        return Some(
+            "JustHireMe is running from macOS Gatekeeper App Translocation. Move JustHireMe.app to /Applications or ~/Applications, open it from there, then run the update again.".into(),
+        );
+    }
+
+    if app_path.starts_with("/Volumes/") || install_path.starts_with("/Volumes/") {
+        return Some(
+            "JustHireMe is running from a mounted disk image, which macOS exposes as read-only. Drag JustHireMe.app into /Applications or ~/Applications, open the installed copy, then run the update again.".into(),
+        );
+    }
+
+    if let Err(error) = writable_result {
+        return Some(format!(
+            "JustHireMe cannot write to its install folder ({install_path}). Install the latest DMG manually into a writable Applications folder, then future in-app updates can continue. Details: {error}"
+        ));
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{find_app_bundle_path, macos_update_block_reason};
+    use std::path::Path;
+
+    #[test]
+    fn finds_macos_app_bundle_from_executable_path() {
+        let exe = Path::new("/Applications/JustHireMe.app/Contents/MacOS/JustHireMe");
+        let bundle = find_app_bundle_path(exe).expect("bundle path");
+
+        assert_eq!(bundle, Path::new("/Applications/JustHireMe.app"));
+    }
+
+    #[test]
+    fn blocks_updates_from_mounted_disk_image() {
+        let reason = macos_update_block_reason(
+            Path::new("/Volumes/JustHireMe/JustHireMe.app"),
+            Path::new("/Volumes/JustHireMe"),
+            Ok(()),
+        )
+        .expect("blocked reason");
+
+        assert!(reason.contains("mounted disk image"));
+        assert!(reason.contains("read-only"));
+    }
+
+    #[test]
+    fn blocks_updates_from_app_translocation() {
+        let reason = macos_update_block_reason(
+            Path::new("/private/var/folders/xx/AppTranslocation/123/d/JustHireMe.app"),
+            Path::new("/private/var/folders/xx/AppTranslocation/123/d"),
+            Ok(()),
+        )
+        .expect("blocked reason");
+
+        assert!(reason.contains("App Translocation"));
+    }
+
+    #[test]
+    fn blocks_updates_when_install_folder_is_not_writable() {
+        let reason = macos_update_block_reason(
+            Path::new("/Applications/JustHireMe.app"),
+            Path::new("/Applications"),
+            Err("Permission denied (os error 13)".into()),
+        )
+        .expect("blocked reason");
+
+        assert!(reason.contains("cannot write"));
+        assert!(reason.contains("Permission denied"));
+    }
+
+    #[test]
+    fn allows_updates_from_writable_applications_folder() {
+        let reason = macos_update_block_reason(
+            Path::new("/Users/alice/Applications/JustHireMe.app"),
+            Path::new("/Users/alice/Applications"),
+            Ok(()),
+        );
+
+        assert!(reason.is_none());
+    }
+}
+
+#[tauri::command]
+fn get_update_install_status() -> UpdateInstallStatus {
+    #[cfg(target_os = "macos")]
+    {
+        let exe = match std::env::current_exe() {
+            Ok(path) => path,
+            Err(error) => {
+                return UpdateInstallStatus {
+                    platform: "macos".into(),
+                    can_update: false,
+                    needs_manual_install: true,
+                    reason: format!(
+                        "JustHireMe could not determine its app location before updating: {error}"
+                    ),
+                    install_dir: None,
+                    app_bundle: None,
+                };
+            }
+        };
+
+        let app_bundle = match find_app_bundle_path(&exe) {
+            Some(path) => path,
+            None => {
+                return UpdateInstallStatus {
+                    platform: "macos".into(),
+                    can_update: true,
+                    needs_manual_install: false,
+                    reason: "JustHireMe is not running from a macOS app bundle.".into(),
+                    install_dir: exe.parent().map(display_path),
+                    app_bundle: None,
+                };
+            }
+        };
+
+        let install_dir = match app_bundle.parent() {
+            Some(path) => path.to_path_buf(),
+            None => {
+                return UpdateInstallStatus {
+                    platform: "macos".into(),
+                    can_update: false,
+                    needs_manual_install: true,
+                    reason:
+                        "JustHireMe could not determine the folder that contains the app bundle."
+                            .into(),
+                    install_dir: None,
+                    app_bundle: Some(display_path(&app_bundle)),
+                };
+            }
+        };
+
+        let reason = macos_update_block_reason(
+            &app_bundle,
+            &install_dir,
+            probe_install_dir_writable(&install_dir),
+        );
+        return UpdateInstallStatus {
+            platform: "macos".into(),
+            can_update: reason.is_none(),
+            needs_manual_install: reason.is_some(),
+            reason: reason.unwrap_or_else(|| {
+                "JustHireMe is installed in a writable location and can use in-app updates.".into()
+            }),
+            install_dir: Some(display_path(&install_dir)),
+            app_bundle: Some(display_path(&app_bundle)),
+        };
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        UpdateInstallStatus {
+            platform: std::env::consts::OS.into(),
+            can_update: true,
+            needs_manual_install: false,
+            reason: "In-app updates are available on this platform.".into(),
+            install_dir: None,
+            app_bundle: None,
+        }
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -253,6 +497,7 @@ pub fn run() {
             get_sidecar_port,
             get_api_token,
             get_sidecar_error,
+            get_update_install_status,
             notify_high_score_lead
         ])
         .setup(|app| {

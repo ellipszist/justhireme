@@ -193,4 +193,5 @@ jobs:
           mkdir -p src-tauri/resources/sidecar-internal
           touch src-tauri/resources/sidecar-internal/.ci-placeholder
           chmod +x "src-tauri/resources/backend/jhm-sidecar-next-${triple}"
+      - run: cd src-tauri && cargo test --lib
       - run: cd src-tauri && cargo check

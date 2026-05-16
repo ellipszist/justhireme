@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
 type UpdateState = "checking" | "available" | "downloading" | "installing" | "ready" | "error";
+type UpdateInstallStatus = {
+  platform: string;
+  canUpdate: boolean;
+  needsManualInstall: boolean;
+  reason: string;
+  installDir: string | null;
+  appBundle: string | null;
+};
+
 const DISMISSED_UPDATE_KEY = "jhm.dismissedUpdate";
 const PENDING_RESTART_KEY = "jhm.pendingUpdateRestart";
+const RELEASES_URL = "https://github.com/vasu-devs/JustHireMe/releases/latest";
 
 function formatBytes(value: number) {
   if (!value) return "0 MB";
@@ -17,8 +28,17 @@ function formatDuration(seconds: number) {
   return `${Math.round(seconds / 60)} min`;
 }
 
+async function readUpdateInstallStatus() {
+  try {
+    return await invoke<UpdateInstallStatus>("get_update_install_status");
+  } catch {
+    return null;
+  }
+}
+
 export function UpdatePrompt() {
   const [update, setUpdate] = useState<Update | null>(null);
+  const [installStatus, setInstallStatus] = useState<UpdateInstallStatus | null>(null);
   const [state, setState] = useState<UpdateState>("checking");
   const [error, setError] = useState("");
   const [downloaded, setDownloaded] = useState(0);
@@ -32,17 +52,24 @@ export function UpdatePrompt() {
     let alive = true;
     const timer = window.setTimeout(() => {
       check({ timeout: 12000 })
-        .then(next => {
+        .then(async next => {
           if (!alive) return;
           if (!next || next.version === dismissedVersion) {
             setUpdate(null);
+            setInstallStatus(null);
             return;
           }
+          const status = await readUpdateInstallStatus();
+          if (!alive) return;
+          setInstallStatus(status);
           setUpdate(next);
           setState(next.version === pendingRestartVersion ? "ready" : "available");
         })
         .catch(() => {
-          if (alive) setUpdate(null);
+          if (alive) {
+            setUpdate(null);
+            setInstallStatus(null);
+          }
         });
     }, 4500);
 
@@ -66,9 +93,11 @@ export function UpdatePrompt() {
   const elapsedSeconds = startedAt ? Math.max(1, (now - startedAt) / 1000) : 0;
   const bytesPerSecond = state === "downloading" && elapsedSeconds > 0 ? downloaded / elapsedSeconds : 0;
   const etaSeconds = total && bytesPerSecond > 0 ? Math.max(0, (total - downloaded) / bytesPerSecond) : null;
+  const blockedByInstallLocation = Boolean(installStatus && !installStatus.canUpdate && state !== "ready");
   const updateMessage = (() => {
     if (state === "ready") return "The update is installed. Restart to finish.";
-    if (state === "installing") return "Download complete. Windows is applying the update; this can take a few minutes.";
+    if (blockedByInstallLocation) return installStatus?.reason || "Move JustHireMe to a writable Applications folder before updating.";
+    if (state === "installing") return "Download complete. Applying the signed update; this can take a few minutes.";
     if (state === "downloading") return "Downloading the signed update. You can keep using JustHireMe while this runs.";
     return `You are running ${update?.currentVersion}. Install the latest signed build now.`;
   })();
@@ -91,6 +120,11 @@ export function UpdatePrompt() {
   };
 
   const install = async () => {
+    if (installStatus && !installStatus.canUpdate) {
+      setError(`${installStatus.reason} Download the latest DMG from ${RELEASES_URL} if you need to repair this install now.`);
+      setState("error");
+      return;
+    }
     setState("downloading");
     setError("");
     setDownloaded(0);
@@ -129,7 +163,7 @@ export function UpdatePrompt() {
             <span>{progressLabel}</span>
           </div>
         )}
-        {state === "error" && <p className="update-error">{error || "Update failed. Try again from GitHub Releases."}</p>}
+        {state === "error" && <p className="update-error">{error || `Update failed. Try again from ${RELEASES_URL}.`}</p>}
       </div>
       <div className="update-actions">
         {state === "ready" ? (
@@ -143,8 +177,8 @@ export function UpdatePrompt() {
             Restart
           </button>
         ) : (
-          <button className="btn btn-accent" onClick={install} disabled={state === "downloading" || state === "installing"}>
-            {state === "downloading" ? "Downloading..." : state === "installing" ? "Installing..." : "Update"}
+          <button className="btn btn-accent" onClick={install} disabled={blockedByInstallLocation || state === "downloading" || state === "installing"}>
+            {blockedByInstallLocation ? "Move app first" : state === "downloading" ? "Downloading..." : state === "installing" ? "Installing..." : "Update"}
           </button>
         )}
         <button className="btn btn-ghost" onClick={dismiss} disabled={state === "downloading" || state === "installing"}>Later</button>
