@@ -158,7 +158,7 @@ if (!existsSync(python)) {
 }
 
 await rmWithRetries(distDir, { recursive: true, force: true });
-await rmWithRetries(join(workPath, "backend", "backend.pkg"), { force: true });
+await rmWithRetries(join(workPath, "backend"), { recursive: true, force: true });
 mkdirSync(distDir, { recursive: true });
 await run(python, pyinstallerArgs, { cwd: backendDir });
 

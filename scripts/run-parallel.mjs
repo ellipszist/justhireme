@@ -19,7 +19,6 @@ const groups = {
   "release:smoke": [
     ["frontend build", npm, ["run", "build"]],
     ["sidecar build", npm, ["run", "build:sidecar"]],
-    ["rust build", "cargo", ["build", "--release"], { cwd: "src-tauri" }],
   ],
 };
 

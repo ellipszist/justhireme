@@ -18,6 +18,11 @@ from data.repository import Repository
 MANUAL_FEEDBACK_TIMEOUT_SECONDS = 8
 
 
+def default_assets_dir() -> str:
+    root = os.environ.get("JHM_APP_DATA_DIR") or os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    return os.path.join(root, "JustHireMe", "assets")
+
+
 def annotate_job_lead(lead: dict) -> dict:
     from gateway.lead_adapters import classify_job_seniority
 
@@ -129,7 +134,7 @@ def create_router(manager) -> APIRouter:
         ]
         base_dir = next((os.path.dirname(path) for path in paths if path), None)
         if not base_dir:
-            base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe", "assets")
+            base_dir = default_assets_dir()
         return versioned_assets(job_id, base_dir)
 
     @router.get("/leads/{job_id}")
@@ -287,7 +292,7 @@ def create_router(manager) -> APIRouter:
             ]
             base_dir = next((os.path.dirname(path) for path in paths if path), None)
             if not base_dir:
-                base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe", "assets")
+                base_dir = default_assets_dir()
             filename = f"{job_id}_cl_v{version}.pdf" if is_cover else f"{job_id}_v{version}.pdf"
             path = os.path.join(base_dir, filename)
             missing = "Cover letter not generated yet" if is_cover else "Resume not generated yet"

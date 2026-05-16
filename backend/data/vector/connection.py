@@ -14,13 +14,26 @@ except Exception as exc:
 else:
     _LANCEDB_IMPORT_ERROR = ""
 
-BASE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "JustHireMe")
-VECTOR_DIR = os.path.join(BASE_DIR, "vector")
-os.makedirs(VECTOR_DIR, exist_ok=True)
+def default_base_dir() -> str:
+    root = os.environ.get("JHM_APP_DATA_DIR") or os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    return os.path.join(root, "JustHireMe")
+
+
+def default_vector_dir() -> str:
+    return os.path.join(default_base_dir(), "vector")
+
+
+BASE_DIR = default_base_dir()
+VECTOR_DIR = default_vector_dir()
 
 
 class NullVectorStore:
     """No-op vector store so profile CRUD never fails because embeddings are unavailable."""
+
+    available = False
+
+    def __init__(self, reason: str = ""):
+        self.reason = reason
 
     def list_tables(self):
         return []
@@ -35,10 +48,21 @@ class NullVectorStore:
         return None
 
 
-try:
+def _connect_vector_store():
+    global BASE_DIR, VECTOR_DIR
+    BASE_DIR = default_base_dir()
+    VECTOR_DIR = default_vector_dir()
+    os.makedirs(VECTOR_DIR, exist_ok=True)
     if lancedb is None:
         raise RuntimeError(_LANCEDB_IMPORT_ERROR or "LanceDB is not available")
-    vec = lancedb.connect(VECTOR_DIR)
+    return lancedb.connect(VECTOR_DIR)
+
+
+try:
+    vec = _connect_vector_store()
 except Exception as exc:
-    _log.warning("vector store disabled: %s", exc)
-    vec = NullVectorStore()
+    if lancedb is None:
+        _log.info("vector store disabled: %s", exc)
+    else:
+        _log.warning("vector store disabled: %s", exc)
+    vec = NullVectorStore(str(exc))

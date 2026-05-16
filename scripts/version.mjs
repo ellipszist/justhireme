@@ -32,10 +32,22 @@ const files = [
     write: writeTomlVersion,
   },
   {
+    name: "src-tauri/Cargo.lock",
+    path: join(repoRoot, "src-tauri", "Cargo.lock"),
+    read: (path) => tomlPackageLockVersion(path, "justhireme"),
+    write: (path, version) => writeTomlPackageLockVersion(path, "justhireme", version),
+  },
+  {
     name: "backend/pyproject.toml",
     path: join(repoRoot, "backend", "pyproject.toml"),
     read: tomlVersion,
     write: writeTomlVersion,
+  },
+  {
+    name: "backend/uv.lock",
+    path: join(repoRoot, "backend", "uv.lock"),
+    read: (path) => tomlPackageLockVersion(path, "backend"),
+    write: (path, version) => writeTomlPackageLockVersion(path, "backend", version),
   },
 ];
 
@@ -78,6 +90,41 @@ function writeTomlVersion(path, version) {
     throw new Error(`Could not update package/project version in ${path}`);
   }
   writeText(path, next);
+}
+
+function findTomlPackageBlock(text, packageName) {
+  const starts = [...text.matchAll(/^\[\[package\]\]/gm)].map((match) => match.index);
+  for (let i = 0; i < starts.length; i += 1) {
+    const index = starts[i];
+    const end = starts[i + 1] ?? text.length;
+    const block = text.slice(index, end);
+    if (new RegExp(`^name\\s*=\\s*"${packageName}"\\s*$`, "m").test(block)) {
+      return { block, index };
+    }
+  }
+  throw new Error(`Could not find ${packageName} package entry in lockfile`);
+}
+
+function tomlPackageLockVersion(path, packageName) {
+  const { block } = findTomlPackageBlock(readText(path), packageName);
+  const match = block.match(/^version\s*=\s*"([^"]+)"/m);
+  if (!match) {
+    throw new Error(`Could not find ${packageName} package version in ${path}`);
+  }
+  return match[1];
+}
+
+function writeTomlPackageLockVersion(path, packageName, version) {
+  const text = readText(path);
+  const { block, index } = findTomlPackageBlock(text, packageName);
+  const nextBlock = block.replace(/^version\s*=\s*"[^"]+"/m, `version = "${version}"`);
+  if (nextBlock === block) {
+    if (tomlPackageLockVersion(path, packageName) === version) {
+      return;
+    }
+    throw new Error(`Could not update ${packageName} package version in ${path}`);
+  }
+  writeText(path, `${text.slice(0, index)}${nextBlock}${text.slice(index + block.length)}`);
 }
 
 function normalizeVersion(raw) {

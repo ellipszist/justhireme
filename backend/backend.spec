@@ -120,9 +120,10 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    # The Tauri shell captures stdout/stderr; on Windows a console subsystem
-    # sidecar flashes a terminal window during app startup.
-    console=sys.platform != "win32",
+    # Tauri launches sidecars with CREATE_NO_WINDOW on Windows while still
+    # capturing stdout/stderr. Keep the console subsystem so the app can read
+    # the JHM_TOKEN/PORT startup handshake from the packaged sidecar.
+    console=True,
 )
 
 if onedir_sidecar:

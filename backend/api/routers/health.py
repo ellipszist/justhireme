@@ -52,6 +52,8 @@ async def _check_graph_service(repo: Repository) -> dict:
 
 def _check_vector(repo: Repository) -> dict:
     try:
+        if getattr(repo.vector.vec, "available", True) is False:
+            return {"status": "disabled", "tables": [], "reason": getattr(repo.vector.vec, "reason", "")}
         tables = list(repo.vector.vec.list_tables() or [])
         return {"status": "ok", "tables": tables}
     except Exception as exc:
