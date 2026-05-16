@@ -11,6 +11,14 @@ def free_sources_enabled(cfg: dict) -> bool:
     return _targets().free_sources_enabled(cfg)
 
 
+def has_explicit_discovery_targets(cfg: dict) -> bool:
+    return _targets().has_explicit_discovery_targets(cfg)
+
+
+def has_profile_discovery_signal(profile: dict | None) -> bool:
+    return _targets().has_profile_discovery_signal(profile)
+
+
 def has_x_token(cfg: dict) -> bool:
     return _targets().has_x_token(cfg)
 

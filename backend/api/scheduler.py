@@ -9,7 +9,14 @@ from fastapi import FastAPI
 from api.dependencies import get_automation_service, get_discovery_service, get_generation_service, get_job_runner, get_ranking_service, get_repository
 from api.routers.automation import fire_blocker
 from api.routers.discovery import run_free_source_scan, run_x_signal_scan
-from gateway.discovery_config import free_sources_enabled, has_x_token, job_targets, profile_for_discovery
+from gateway.discovery_config import (
+    free_sources_enabled,
+    has_explicit_discovery_targets,
+    has_profile_discovery_signal,
+    has_x_token,
+    job_targets,
+    profile_for_discovery,
+)
 from api.startup_validation import log_startup_warnings
 from data.sqlite.connection import init_sql
 
@@ -39,6 +46,12 @@ def create_ghost_tick(manager):
         job_store.update(ghost_job.job_id, status="running", progress=5)
 
         profile = profile_for_discovery(await asyncio.to_thread(repo.profile.get_profile), cfg)
+        if not has_profile_discovery_signal(profile) and not has_explicit_discovery_targets(cfg):
+            msg = "Ghost Mode: add a target role, profile skills, work history, or explicit job source before scanning"
+            await manager.broadcast({"type": "agent", "event": "ghost_warn", "msg": msg})
+            job_store.update(ghost_job.job_id, status="cancelled", progress=100, error=msg)
+            return
+
         boards = job_targets(cfg.get("job_boards", ""), cfg.get("job_market_focus", "global"))
         has_x = has_x_token(cfg)
         has_free = free_sources_enabled(cfg)

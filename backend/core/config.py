@@ -165,6 +165,21 @@ def terms_for_discovery(profile: dict, limit: int = 4) -> list[str]:
     for skill in profile.get("skills", []) or []:
         if isinstance(skill, dict) and skill.get("n"):
             terms.append(str(skill["n"]))
+    for project in profile.get("projects", []) or []:
+        if not isinstance(project, dict):
+            continue
+        if project.get("title"):
+            terms.append(str(project["title"]))
+        stack = project.get("stack") or []
+        stack_items = stack if isinstance(stack, list) else str(stack).split(",")
+        terms.extend(str(item) for item in stack_items[:3] if str(item).strip())
+    for cert in profile.get("certifications", []) or []:
+        if isinstance(cert, dict):
+            value = cert.get("title") or cert.get("name") or cert.get("n")
+            if value:
+                terms.append(str(value))
+        elif str(cert or "").strip():
+            terms.append(str(cert))
     seen: set[str] = set()
     out: list[str] = []
     for term in terms:
@@ -186,7 +201,38 @@ def has_profile_discovery_signal(profile: dict | None) -> bool:
     for skill in profile.get("skills", []) or []:
         if isinstance(skill, dict) and str(skill.get("n") or "").strip():
             return True
+    for project in profile.get("projects", []) or []:
+        if not isinstance(project, dict):
+            continue
+        stack = project.get("stack") or []
+        stack_items = stack if isinstance(stack, list) else str(stack).split(",")
+        if any(str(project.get(key) or "").strip() for key in ("title", "impact", "description", "d")):
+            return True
+        if any(str(item or "").strip() for item in stack_items):
+            return True
+    for cert in profile.get("certifications", []) or []:
+        if isinstance(cert, dict):
+            if any(str(cert.get(key) or "").strip() for key in ("title", "name", "n")):
+                return True
+        elif str(cert or "").strip():
+            return True
     return False
+
+
+def has_explicit_discovery_targets(cfg: dict | None) -> bool:
+    cfg = cfg or {}
+    target_keys = (
+        "job_boards",
+        "free_source_targets",
+        "company_watchlist",
+        "x_search_queries",
+        "x_watchlist",
+    )
+    if any(str(cfg.get(key) or "").strip() for key in target_keys):
+        return True
+    return truthy(cfg.get("custom_connectors_enabled", "false")) and bool(
+        str(cfg.get("custom_connectors") or "").strip()
+    )
 
 
 def profile_free_source_targets(profile: dict) -> str:

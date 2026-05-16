@@ -53,7 +53,7 @@ How to get an API key:
 - Cerebras: go to https://cloud.cerebras.ai/platform, create an API key, then paste it into Settings > Global AI after selecting Cerebras.
 - Perplexity: go to https://www.perplexity.ai/settings/api, create an API key, then paste it into Settings > Global AI after selecting Perplexity.
 - Hugging Face: go to https://huggingface.co/settings/tokens, create a token, then paste it into Settings > Global AI after selecting Hugging Face.
-- Custom: choose Custom, paste any OpenAI-compatible API key, set the base URL such as https://api.example.com/v1, and type the model id.
+- Custom: choose Custom, paste any OpenAI-compatible API key, set the base URL from your provider, and type the model id.
 - Ollama: install and run Ollama locally, pull a model such as llama3 or mistral, keep the URL as http://localhost:11434/v1 in Settings > Global AI, and select Ollama. Ollama does not use a cloud API key.
 
 API key safety:
@@ -73,11 +73,12 @@ Adding job sources and links:
 1. Open Settings.
 2. Go to Scraping & Discovery.
 3. Choose Global market for worldwide sources or India market for Indian/local and remote-India roles.
-4. Use the quick buttons for Global preset, India preset, HN Hiring, RemoteOK, Remotive, Jobicy, We Work Remotely, LinkedIn, Indeed, Naukri, Foundit, Internshala, and other role-neutral sources.
-5. To add a custom source, paste a job site, ATS board, RSS/API URL, or plain domain into the Add source input.
-6. Click Add source.
-7. Review the Target job boards / search URLs textarea.
-8. Run a scan from Dashboard.
+4. Optionally fill Target roles / titles with the roles you want the profile to search toward.
+5. Use the quick buttons for Global preset, India preset, HN Hiring, RemoteOK, Remotive, Jobicy, We Work Remotely, LinkedIn, Indeed, Naukri, Foundit, Internshala, and other role-neutral sources.
+6. To add a custom source, paste a job site, ATS board, RSS/API URL, or plain domain into the Add source input.
+7. Click Add source.
+8. Review the Target job boards / search URLs textarea.
+9. Run a scan from Dashboard.
 
 Target job boards and markets:
 - JustHireMe is not limited to tech. Global and India presets are broad job markets.
@@ -89,8 +90,8 @@ Source formats:
 - https://remoteok.com/api, Remotive API, Jobicy API: direct API sources.
 - RSS/XML/feed URLs: parsed as feeds.
 - ATS/company boards from Greenhouse, Lever, Ashby, and Workable: prefer direct URLs where possible.
-- site:example.com jobs India: broad search target.
-- Plain domain like example.com: the app converts it into a site: search target with job and location terms.
+- site:company-careers.test jobs India: broad search target.
+- Plain domain like company-careers.test: the app converts it into a site: search target with job and location terms.
 
 Custom connectors:
 - Open Settings > Scraping & Discovery > Custom Connectors.
@@ -207,12 +208,13 @@ _SOURCE_GUIDE = """
 How to add a source and scan:
 1. Open Settings > Scraping & Discovery.
 2. Choose Global market for worldwide sources or India market for Indian/local and remote-India roles.
-3. Use quick presets for Global, India, HN Hiring, RemoteOK, Remotive, Jobicy, We Work Remotely, LinkedIn, Indeed, Naukri, Foundit, or Internshala.
-4. For a custom source, paste a company careers page, ATS board, RSS/API URL, search target, or plain domain into Add source.
-5. Click Add source.
-6. Review Target job boards / search URLs.
-7. Go to Dashboard and click Scan sources.
-8. Open Leads to review approved matches.
+3. Optionally fill Target roles / titles with the roles you want the profile to search toward.
+4. Use quick presets for Global, India, HN Hiring, RemoteOK, Remotive, Jobicy, We Work Remotely, LinkedIn, Indeed, Naukri, Foundit, or Internshala.
+5. For a custom source, paste a company careers page, ATS board, RSS/API URL, search target, or plain domain into Add source.
+6. Click Add source.
+7. Review Target job boards / search URLs.
+8. Go to Dashboard and click Scan sources.
+9. Open Leads to review approved matches.
 
 For premium/private JSON APIs:
 1. Open Custom Connectors in the same settings page.
@@ -226,7 +228,7 @@ Best source formats:
 - ATS/job boards: Greenhouse, Lever, Ashby, Workable, LinkedIn, Indeed, Naukri, Foundit, Internshala, Glassdoor, SmartRecruiters, and Workday targets.
 - HN Hiring: hn-hiring.
 - Search targets: site:jobs.lever.co India, site:boards.greenhouse.io remote marketing, site:naukri.com jobs India.
-- Plain domain: example.com, which the app turns into a targeted job search.
+- Plain domain: company-careers.test, which the app turns into a targeted job search.
 
 For better scrape quality:
 1. Prefer direct ATS/API/RSS links over broad generic websites.

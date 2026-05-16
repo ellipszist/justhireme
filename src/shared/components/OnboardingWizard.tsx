@@ -134,7 +134,10 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
       llm_provider: provider,
       free_sources_enabled: true,
     };
-    if (trimmedRole) payload.onboarding_target_role = trimmedRole;
+    if (trimmedRole) {
+      payload.onboarding_target_role = trimmedRole;
+      payload.desired_position = trimmedRole;
+    }
     if (provider === "ollama") payload.ollama_url = ollamaUrl;
     const field = keyField[provider];
     if (field && apiKey.trim()) payload[field] = apiKey.trim();

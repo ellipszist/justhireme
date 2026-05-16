@@ -10,6 +10,8 @@ from api.rate_limit import RateLimiter, require_rate_limit
 from data.repository import Repository
 from gateway.discovery_config import (
     free_sources_enabled,
+    has_explicit_discovery_targets,
+    has_profile_discovery_signal,
     has_x_token,
     int_cfg,
     job_targets,
@@ -141,6 +143,12 @@ async def run_scan(
     job_store.update(job.job_id, status="running", progress=5)
     cfg = repo.settings.get_settings()
     profile = profile_for_discovery(repo.profile.get_profile(), cfg)
+    if not has_profile_discovery_signal(profile) and not has_explicit_discovery_targets(cfg):
+        msg = "Scan skipped: add a target role, profile skills, work history, or explicit job source first."
+        await manager.broadcast({"type": "agent", "event": "scan_skipped", "msg": msg})
+        job_store.update(job.job_id, status="cancelled", progress=100, error=msg)
+        return
+
     market_focus = cfg.get("job_market_focus", "global")
     raw_urls = job_targets(cfg.get("job_boards", ""), market_focus)
     await run_x_signal_scan(manager, cfg, "job", profile, discovery_service=discovery_service)

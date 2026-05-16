@@ -93,7 +93,7 @@ export function GlobalSettings({ cfg, set, onChange, prov, api }: { cfg: Cfg; se
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 12 }} />
               )}
               {prov === "custom" && (
-                <input type="text" placeholder="https://api.example.com/v1" value={cfg.custom_base_url} onChange={set("custom_base_url")} className="mono field-input"
+                <input type="text" placeholder="https://llm-gateway.your-domain.test/v1" value={cfg.custom_base_url} onChange={set("custom_base_url")} className="mono field-input"
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 12 }} />
               )}
               {prov === "azure" && (

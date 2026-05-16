@@ -3,7 +3,7 @@ query_gen.py — Generates profile-tailored job search queries.
 
 Called at the start of every scan.  For each job-board domain the user has
 configured, it produces ONE focused Google site: query that targets the
-candidate's actual tech stack rather than generic keywords.
+candidate's actual role, skills, and project evidence rather than generic keywords.
 """
 
 import re

@@ -33,6 +33,14 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
           <div style={{ borderTop: "1px dashed var(--line)", paddingTop: 18 }}>
             <SectionLabel label="Scraping & Discovery" />
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <LabelledField label="Target roles / titles" hint="optional; the profile graph still stays primary">
+                <textarea value={cfg.desired_position || cfg.onboarding_target_role || ""} onChange={e => {
+                  onChange("desired_position", e.target.value);
+                  onChange("onboarding_target_role", e.target.value);
+                }} rows={3} className="mono field-input"
+                  placeholder={"Backend Engineer\nAI Engineer\nFull-stack Developer"}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5, resize: "vertical", lineHeight: 1.6 }} />
+              </LabelledField>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <LabelledField label="Apify Token" hint="for LinkedIn/X scraping">
                   <input type="password" placeholder="apify_api_•••" value={cfg.apify_token} onChange={set("apify_token")} className="mono field-input"
@@ -85,9 +93,9 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
                     ].join("\n")}
                     style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5, resize: "vertical", lineHeight: 1.6 }} />
                 </LabelledField>
-                <LabelledField label="X watchlist handles" hint="one founder, hiring, or AI account per line">
+                <LabelledField label="X watchlist handles" hint="one founder, hiring, or company account per line">
                   <textarea value={cfg.x_watchlist} onChange={set("x_watchlist")} rows={3} className="mono field-input"
-                    placeholder={"@levelsio\n@alexalbert__\n@rauchg"}
+                    placeholder={"@target_company\n@founder_or_hiring_team\n@job_board_handle"}
                     style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5, resize: "vertical", lineHeight: 1.6 }} />
                 </LabelledField>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
@@ -129,24 +137,24 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
                   sub="Off by default; saves job leads and classifies seniority for filtering"
                   tone="green"
                 />
-                <LabelledField label="Company watchlist" hint="provider,slug per line: greenhouse,openai">
+                <LabelledField label="Company watchlist" hint="provider,slug per line: greenhouse,<company-slug>">
                   <textarea value={cfg.company_watchlist} onChange={set("company_watchlist")} rows={4} className="mono field-input"
                     placeholder={[
-                      "greenhouse,openai",
-                      "greenhouse,anthropic",
-                      "lever,perplexity",
-                      "ashby,linear",
-                      "workable,canonical",
+                      "greenhouse,<company-slug>",
+                      "lever,<company-slug>",
+                      "ashby,<company-slug>",
+                      "workable,<company-slug>",
+                      "https://careers.<company-domain>/jobs",
                     ].join("\n")}
                     style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5, resize: "vertical", lineHeight: 1.6 }} />
                 </LabelledField>
                 <LabelledField label="Free source targets" hint="github:, hn:, reddit:, or ats: targets">
                   <textarea value={cfg.free_source_targets} onChange={set("free_source_targets")} rows={5} className="mono field-input"
                     placeholder={[
-                      "github:jobs hiring help wanted",
-                      "hn:jobs remote hiring",
-                      "reddit:forhire:hiring job remote",
-                      "ats:greenhouse:openai",
+                      "github:<target role> hiring help wanted",
+                      "hn:<target role> remote hiring",
+                      "reddit:forhire:<target role> hiring remote",
+                      "ats:greenhouse:<company-slug>",
                     ].join("\n")}
                     style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", fontSize: 11.5, resize: "vertical", lineHeight: 1.6 }} />
                 </LabelledField>
@@ -176,8 +184,8 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
                   <textarea value={cfg.custom_connectors} onChange={set("custom_connectors")} rows={9} className="mono field-input"
                     placeholder={JSON.stringify([
                       {
-                        name: "PremiumJobs",
-                        url: "https://api.example.com/jobs",
+                        name: "JobFeed",
+                        url: "https://jobs-api.your-domain.test/jobs",
                         method: "GET",
                         items_path: "jobs",
                         fields: {
@@ -196,7 +204,7 @@ export function DiscoverySettings({ cfg, set, onChange }: { cfg: Cfg; set: (k: k
                 <LabelledField label="Connector headers" hint="JSON object; sensitive, preserved when masked">
                   <textarea value={cfg.custom_connector_headers} onChange={set("custom_connector_headers")} rows={5} className="mono field-input"
                     placeholder={JSON.stringify({
-                      PremiumJobs: {
+                      JobFeed: {
                         Authorization: "Bearer YOUR_TOKEN",
                         "X-API-Key": "optional-key",
                       },

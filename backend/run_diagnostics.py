@@ -31,7 +31,7 @@ def check_settings():
     repo = create_repository()
     get_setting = repo.settings.get_setting
     get_settings = repo.settings.get_settings
-    save_settings = repo.settings.save_settings
+    from discovery.targets import job_targets
 
     log("CONFIG", "Loading settings from SQLite...", C)
     cfg = get_settings()
@@ -64,12 +64,11 @@ def check_settings():
 
     boards = cfg.get("job_boards", "")
     if not boards.strip():
-        target = "https://jobs.lever.co/anthropic"
-        log("CONFIG", f"No job boards configured — inserting default: {target}", Y)
-        save_settings({"job_boards": target})
-        boards = target
+        target = "role-neutral default targets"
+        log("CONFIG", f"No job boards configured - using {target}", Y)
+        boards = ""
 
-    urls = [b.strip() for b in boards.split(",") if b.strip()]
+    urls = job_targets(boards, cfg.get("job_market_focus", "global"))
     log("CONFIG", f"Target boards: {len(urls)} configured", G)
     for u in urls:
         log("CONFIG", f"  → {u}", D)

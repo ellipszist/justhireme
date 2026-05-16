@@ -137,16 +137,37 @@ class RegressionTests(unittest.TestCase):
         ])
 
     def test_profile_free_source_targets_are_profile_derived(self):
-        from discovery.targets import profile_free_source_targets
+        from discovery.targets import has_profile_discovery_signal, profile_free_source_targets
 
         empty_targets = profile_free_source_targets({})
         profile_targets = profile_free_source_targets({"s": "Python developer", "skills": [{"n": "FastAPI"}]})
+        project_only_targets = profile_free_source_targets({
+            "projects": [{"title": "Realtime chat platform", "stack": ["React", "FastAPI"]}],
+        })
 
         self.assertEqual(empty_targets, "")
+        self.assertTrue(has_profile_discovery_signal({"projects": [{"stack": ["React"]}]}))
         self.assertIn("Python developer", profile_targets)
+        self.assertIn("Realtime chat platform", project_only_targets)
+        self.assertNotIn("github:jobs", project_only_targets)
         self.assertNotIn("openai", profile_targets.lower())
         self.assertNotIn("anthropic", profile_targets.lower())
         self.assertNotIn("perplexity", profile_targets.lower())
+
+    def test_explicit_discovery_targets_are_real_user_configuration(self):
+        from discovery.targets import has_explicit_discovery_targets
+
+        self.assertFalse(has_explicit_discovery_targets({}))
+        self.assertFalse(has_explicit_discovery_targets({"x_bearer_token": "token-only"}))
+        self.assertTrue(has_explicit_discovery_targets({"job_boards": "site:jobs.lever.co"}))
+        self.assertTrue(has_explicit_discovery_targets({"free_source_targets": "github:backend hiring"}))
+        self.assertTrue(has_explicit_discovery_targets({"company_watchlist": "greenhouse,<company-slug>"}))
+        self.assertTrue(has_explicit_discovery_targets({"x_search_queries": '"hiring" "backend"'}))
+        self.assertTrue(has_explicit_discovery_targets({"x_watchlist": "@target_company"}))
+        self.assertTrue(has_explicit_discovery_targets({
+            "custom_connectors_enabled": "true",
+            "custom_connectors": '[{"name":"JobFeed","url":"https://jobs-api.your-domain.test/jobs"}]',
+        }))
 
 class TestScoringEngineCaps(unittest.TestCase):
     def _profile(self, work_months: int = 0, embedded: bool = False) -> dict:

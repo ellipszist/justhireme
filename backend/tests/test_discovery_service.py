@@ -160,6 +160,95 @@ def test_run_scan_continues_when_board_scan_batch_fails():
     assert messages[-1] == "Evaluation cycle complete"
 
 
+def test_run_scan_skips_empty_profile_without_explicit_sources():
+    from api.routers import discovery
+
+    broadcasts = []
+    job_updates = []
+
+    class Manager:
+        async def broadcast(self, payload):
+            broadcasts.append(payload)
+
+    class JobStore:
+        def create(self, *_args, **_kwargs):
+            return SimpleNamespace(job_id="scan-empty")
+
+        def update(self, *args, **kwargs):
+            job_updates.append((args, kwargs))
+
+    repo = SimpleNamespace(
+        settings=SimpleNamespace(get_settings=lambda: {}),
+        profile=SimpleNamespace(get_profile=lambda: {}),
+        leads=SimpleNamespace(),
+    )
+    service = SimpleNamespace(
+        scan_x=mock.AsyncMock(),
+        scan_free_sources=mock.AsyncMock(),
+        plan_board_targets=mock.AsyncMock(),
+        scan_job_boards=mock.AsyncMock(),
+    )
+    ranking = SimpleNamespace(evaluate_lead=mock.AsyncMock())
+
+    with mock.patch.object(discovery, "get_job_runner", return_value=JobStore()):
+        asyncio.run(discovery.run_scan(
+            Manager(),
+            repo=repo,
+            discovery_service=service,
+            ranking_service=ranking,
+        ))
+
+    assert any(payload.get("event") == "scan_skipped" for payload in broadcasts)
+    assert job_updates[-1][1]["status"] == "cancelled"
+    service.plan_board_targets.assert_not_called()
+    service.scan_job_boards.assert_not_called()
+    ranking.evaluate_lead.assert_not_called()
+
+
+def test_run_scan_uses_target_role_as_profile_signal():
+    from api.routers import discovery
+
+    class Manager:
+        async def broadcast(self, _payload):
+            return None
+
+    class JobStore:
+        def create(self, *_args, **_kwargs):
+            return SimpleNamespace(job_id="scan-target-role")
+
+        def update(self, *_args, **_kwargs):
+            return None
+
+    repo = SimpleNamespace(
+        settings=SimpleNamespace(
+            get_settings=lambda: {"desired_position": "Backend Engineer"},
+            save_settings=lambda _settings: None,
+        ),
+        profile=SimpleNamespace(get_profile=lambda: {}),
+        leads=SimpleNamespace(get_discovered_leads=lambda: []),
+    )
+    service = SimpleNamespace(
+        scan_x=mock.AsyncMock(return_value=SimpleNamespace(leads=[], usage={}, errors=[])),
+        scan_free_sources=mock.AsyncMock(return_value=SimpleNamespace(leads=[], usage={}, errors=[])),
+        plan_board_targets=mock.AsyncMock(return_value=[]),
+        scan_job_boards=mock.AsyncMock(),
+    )
+    ranking = SimpleNamespace(evaluate_lead=mock.AsyncMock())
+
+    with mock.patch.object(discovery, "get_job_runner", return_value=JobStore()):
+        asyncio.run(discovery.run_scan(
+            Manager(),
+            repo=repo,
+            discovery_service=service,
+            ranking_service=ranking,
+        ))
+
+    planned_profile = service.plan_board_targets.call_args.args[0]
+    assert planned_profile["desired_position"] == "Backend Engineer"
+    assert "Backend Engineer" in planned_profile["s"]
+    service.scan_job_boards.assert_not_called()
+
+
 def test_cleanup_bad_leads_skips_already_discarded_rows():
     from data.sqlite.leads import cleanup_bad_leads
 
