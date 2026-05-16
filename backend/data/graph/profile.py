@@ -5,6 +5,7 @@ import contextvars
 import hashlib
 import json
 import re
+from urllib.parse import unquote
 from collections.abc import Iterable
 
 from core.logging import get_logger
@@ -119,9 +120,9 @@ def load_profile_snapshot(db_path: str | None = None) -> dict:
         return {}
 
 
-def save_profile_snapshot(profile: dict, db_path: str | None = None) -> None:
+def save_profile_snapshot(profile: dict, db_path: str | None = None, *, allow_empty: bool = False) -> None:
     profile = normal_profile(profile)
-    if not profile_has_data(profile):
+    if not allow_empty and not profile_has_data(profile):
         return
     try:
         payload = {PROFILE_SNAPSHOT_KEY: json.dumps(profile, ensure_ascii=False)}
@@ -611,7 +612,7 @@ def delete_skill(skill_id: str, db_path: str | None = None) -> None:
     _refresh_after_write(db_path)
     snapshot = normal_profile(load_profile_snapshot(db_path))
     snapshot["skills"] = [item for item in snapshot.get("skills", []) if not (isinstance(item, dict) and str(item.get("id") or "") == str(skill_id))]
-    save_profile_snapshot(snapshot, db_path)
+    save_profile_snapshot(snapshot, db_path, allow_empty=True)
 
 
 def add_experience(role: str, company: str, period: str, description: str, db_path: str | None = None) -> dict:
@@ -676,7 +677,7 @@ def delete_experience(experience_id: str, db_path: str | None = None) -> None:
     _refresh_after_write(db_path)
     snapshot = normal_profile(load_profile_snapshot(db_path))
     snapshot["exp"] = [item for item in snapshot.get("exp", []) if not (isinstance(item, dict) and str(item.get("id") or "") == str(experience_id))]
-    save_profile_snapshot(snapshot, db_path)
+    save_profile_snapshot(snapshot, db_path, allow_empty=True)
 
 
 def add_project(title: str, stack: str, repo: str, impact: str, db_path: str | None = None) -> dict:
@@ -740,7 +741,7 @@ def delete_project(project_id: str, db_path: str | None = None) -> None:
     _refresh_after_write(db_path)
     snapshot = normal_profile(load_profile_snapshot(db_path))
     snapshot["projects"] = [item for item in snapshot.get("projects", []) if not (isinstance(item, dict) and str(item.get("id") or "") == str(project_id))]
-    save_profile_snapshot(snapshot, db_path)
+    save_profile_snapshot(snapshot, db_path, allow_empty=True)
 
 
 def _add_text_node(label: str, rel: str, title: str, db_path: str | None = None) -> dict:
@@ -767,6 +768,54 @@ def _add_text_node(label: str, rel: str, title: str, db_path: str | None = None)
     return {"id": node_id, "title": title}
 
 
+def _entry_text(value) -> str:
+    if isinstance(value, dict):
+        return str(value.get("title") or "").strip()
+    return str(value or "").strip()
+
+
+def _entry_key(value) -> str:
+    return re.sub(r"\s+", " ", _entry_text(value)).strip().lower()
+
+
+def _text_node_ids(label: str, entry: str) -> list[str]:
+    entry = unquote(str(entry or "")).strip()
+    if not entry:
+        return []
+    wanted = {entry, hash_id(entry)}
+    wanted_key = _entry_key(entry)
+    ids: list[str] = []
+    for row in _query_rows(f"MATCH (n:{label}) RETURN n.id, n.title"):
+        node_id = str(row[0] or "").strip()
+        title = str(row[1] or "").strip()
+        if node_id in wanted or _entry_key(title) == wanted_key:
+            ids.append(node_id)
+    if not ids:
+        ids.append(hash_id(entry))
+    return list(dict.fromkeys(ids))
+
+
+def _delete_text_node(label: str, profile_key: str, entry: str, db_path: str | None = None) -> None:
+    entry = unquote(str(entry or "")).strip()
+    if not entry:
+        return
+    delete_ids = _text_node_ids(label, entry)
+    for node_id in delete_ids:
+        delete_vec_id_from_all(node_id)
+        _safe_execute(f"MATCH (n:{label}) WHERE n.id = $id DETACH DELETE n", {"id": node_id})
+
+    _refresh_after_write(db_path)
+    snapshot = normal_profile(load_profile_snapshot(db_path))
+    entry_key = _entry_key(entry)
+    delete_id_set = set(delete_ids)
+    snapshot[profile_key] = [
+        item
+        for item in snapshot.get(profile_key, [])
+        if _entry_key(item) != entry_key and hash_id(_entry_text(item)) not in delete_id_set
+    ]
+    save_profile_snapshot(snapshot, db_path, allow_empty=True)
+
+
 def add_education(title: str, db_path: str | None = None) -> dict:
     return _add_text_node("Education", "HAS_EDUCATION", title, db_path)
 
@@ -777,6 +826,18 @@ def add_certification(title: str, db_path: str | None = None) -> dict:
 
 def add_achievement(title: str, db_path: str | None = None) -> dict:
     return _add_text_node("Achievement", "HAS_ACHIEVEMENT", title, db_path)
+
+
+def delete_education(entry: str, db_path: str | None = None) -> None:
+    _delete_text_node("Education", "education", entry, db_path)
+
+
+def delete_certification(entry: str, db_path: str | None = None) -> None:
+    _delete_text_node("Certification", "certifications", entry, db_path)
+
+
+def delete_achievement(entry: str, db_path: str | None = None) -> None:
+    _delete_text_node("Achievement", "achievements", entry, db_path)
 
 
 def update_identity(identity: dict, db_path: str | None = None) -> dict:

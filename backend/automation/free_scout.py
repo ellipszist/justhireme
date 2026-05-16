@@ -48,14 +48,7 @@ _log = get_logger(__name__)
 LAST_ERRORS: list[str] = []
 LAST_USAGE: dict = {}
 
-DEFAULT_TARGETS = [
-    "ats:greenhouse:openai",
-    "ats:greenhouse:anthropic",
-    "ats:lever:perplexity",
-    "github:jobs hiring help wanted",
-    "hn:jobs remote hiring",
-    "reddit:forhire:hiring job remote",
-]
+DEFAULT_TARGETS: list[str] = []
 
 _CONNECTOR_MAX_ITEMS = 60
 
@@ -90,7 +83,7 @@ def split_lines(raw: str | None) -> list[str]:
 def targets_from_settings(raw_targets: str | None, raw_watchlist: str | None) -> list[str]:
     targets = split_lines(raw_targets)
     targets.extend(_ats_targets_from_watchlist(raw_watchlist))
-    return targets or DEFAULT_TARGETS
+    return targets or list(DEFAULT_TARGETS)
 
 
 def _dot_get(value, path: str, default=""):
@@ -307,6 +300,10 @@ def run(
         "errors": 0,
         "by_source": {},
     }
+    if not all_targets and not custom_connectors:
+        LAST_ERRORS.append("No free-source targets configured. Add profile context, source targets, a company watchlist, or custom connectors.")
+        return []
+
     leads: list[dict] = []
     seen: set[str] = set()
 

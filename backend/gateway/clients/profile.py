@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from urllib.parse import quote
 
 from gateway.clients.base import BaseServiceClient
 
@@ -48,11 +49,20 @@ class ProfileHttpClient(BaseServiceClient):
     async def add_education(self, title: str) -> dict:
         return await self._request("POST", "/internal/v1/profile/education", json={"title": title})
 
+    async def delete_education(self, entry: str) -> dict:
+        return await self._request("DELETE", f"/internal/v1/profile/education/{quote(entry, safe='')}")
+
     async def add_certification(self, title: str) -> dict:
         return await self._request("POST", "/internal/v1/profile/certification", json={"title": title})
 
+    async def delete_certification(self, entry: str) -> dict:
+        return await self._request("DELETE", f"/internal/v1/profile/certification/{quote(entry, safe='')}")
+
     async def add_achievement(self, title: str) -> dict:
         return await self._request("POST", "/internal/v1/profile/achievement", json={"title": title})
+
+    async def delete_achievement(self, entry: str) -> dict:
+        return await self._request("DELETE", f"/internal/v1/profile/achievement/{quote(entry, safe='')}")
 
     async def ingest_resume(self, raw: str = "", pdf_path: str | None = None):
         return await self._request("POST", "/internal/v1/profile/ingest/resume", json={"raw": raw, "pdf_path": pdf_path}, timeout=180.0)

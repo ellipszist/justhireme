@@ -8,6 +8,7 @@ import {
   sortLeads,
   stripCompanyPrefix,
 } from "./leadUtils";
+import * as leadUtils from "./leadUtils";
 
 const lead = (overrides: Partial<Lead> = {}): Lead => ({
   job_id: overrides.job_id || "lead",
@@ -105,5 +106,11 @@ describe("getMark", () => {
 
   it("returns a fallback mark for empty company names", () => {
     expect(getMark("")).toBe("?");
+  });
+});
+
+describe("runtime demo data", () => {
+  it("does not export fake onboarding jobs", () => {
+    expect(JSON.stringify(leadUtils)).not.toMatch(/jobs\.example\.com|NimbusWorks/);
   });
 });

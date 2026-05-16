@@ -212,7 +212,7 @@ def generate(profile: dict, urls: list[str], market_focus: str = "global") -> li
     passthrough = _enrich_passthrough_targets(passthrough, profile)
 
     if not site_domains:
-        return urls  # nothing to enrich
+        return passthrough  # API/RSS/direct targets may still have been enriched.
 
     # ── Build a compact profile summary for the prompt ──────────────────────
     target_role      = (profile.get("s") or "General job seeker").strip()

@@ -88,14 +88,32 @@ async def add_education(body: ProfileEntryBody, service: ProfileService = Depend
     return service.add_education(body.title)
 
 
+@router.delete("/education/{entry:path}")
+async def delete_education(entry: str, service: ProfileService = Depends(get_profile_service)):
+    service.delete_education(entry)
+    return {"ok": True}
+
+
 @router.post("/certification")
 async def add_certification(body: ProfileEntryBody, service: ProfileService = Depends(get_profile_service)):
     return service.add_certification(body.title)
 
 
+@router.delete("/certification/{entry:path}")
+async def delete_certification(entry: str, service: ProfileService = Depends(get_profile_service)):
+    service.delete_certification(entry)
+    return {"ok": True}
+
+
 @router.post("/achievement")
 async def add_achievement(body: ProfileEntryBody, service: ProfileService = Depends(get_profile_service)):
     return service.add_achievement(body.title)
+
+
+@router.delete("/achievement/{entry:path}")
+async def delete_achievement(entry: str, service: ProfileService = Depends(get_profile_service)):
+    service.delete_achievement(entry)
+    return {"ok": True}
 
 
 @router.post("/ingest/resume")

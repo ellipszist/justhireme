@@ -117,6 +117,37 @@ class RegressionTests(unittest.TestCase):
         self.assertIn("https://jobicy.com/api/v2/remote-jobs?count=50&tag=Growth+Marketing+Manager", queries)
         self.assertTrue(any(q.startswith("site:linkedin.com/jobs") and "Growth Marketing Manager" in q for q in queries))
 
+    def test_query_generation_enriches_api_sources_without_site_targets(self):
+        from discovery import query_gen
+
+        profile = {"s": "Growth Marketing Manager", "skills": [{"n": "SEO"}], "projects": []}
+
+        queries = query_gen.generate(
+            profile,
+            [
+                "https://remotive.com/api/remote-jobs",
+                "https://jobicy.com/api/v2/remote-jobs?count=50",
+            ],
+            "global",
+        )
+
+        self.assertEqual(queries, [
+            "https://remotive.com/api/remote-jobs?search=Growth+Marketing+Manager",
+            "https://jobicy.com/api/v2/remote-jobs?count=50&tag=Growth+Marketing+Manager",
+        ])
+
+    def test_profile_free_source_targets_are_profile_derived(self):
+        from discovery.targets import profile_free_source_targets
+
+        empty_targets = profile_free_source_targets({})
+        profile_targets = profile_free_source_targets({"s": "Python developer", "skills": [{"n": "FastAPI"}]})
+
+        self.assertEqual(empty_targets, "")
+        self.assertIn("Python developer", profile_targets)
+        self.assertNotIn("openai", profile_targets.lower())
+        self.assertNotIn("anthropic", profile_targets.lower())
+        self.assertNotIn("perplexity", profile_targets.lower())
+
 class TestScoringEngineCaps(unittest.TestCase):
     def _profile(self, work_months: int = 0, embedded: bool = False) -> dict:
         from ranking.scoring_engine import infer_experience_level

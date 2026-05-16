@@ -35,6 +35,18 @@ def test_discovery_service_runs_free_sources_with_profile_targets():
     assert kwargs["kind_filter"] == "job"
 
 
+def test_discovery_service_does_not_scan_free_sources_without_profile_or_targets():
+    service = DiscoveryService()
+
+    with mock.patch("automation.source_adapters.run_free_scout") as run:
+        result = asyncio.run(service.scan_free_sources({"free_sources_enabled": "true"}, profile={}))
+
+    run.assert_not_called()
+    assert result.leads == []
+    assert result.usage == {}
+    assert result.errors == ["Free-source scan skipped: add a target role, profile skills, source targets, or a company watchlist."]
+
+
 def test_discovery_service_skips_x_without_token():
     service = DiscoveryService()
 

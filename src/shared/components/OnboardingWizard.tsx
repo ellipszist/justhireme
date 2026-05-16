@@ -2,7 +2,6 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import Icon from "./Icon";
 import type { ApiFetch } from "../../types";
-import { DEMO_JOB_DRAFT } from "../lib/leadUtils";
 
 export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFetch; onFinish: (draft: string) => void; onOpenSettings: () => void }) {
   const [step, setStep] = useState(0);
@@ -14,11 +13,11 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
-  const [demoDraft, setDemoDraft] = useState(DEMO_JOB_DRAFT);
+  const [jobDraft, setJobDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const steps = ["Resume", "AI Setup", "Workspace Tour", "Demo Job"];
+  const steps = ["Resume", "AI Setup", "Workspace Tour", "First Job"];
   const keyField: Record<string, string> = {
     openai: "openai_api_key",
     anthropic: "anthropic_key",
@@ -89,7 +88,7 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
     huggingface: "Hugging Face router for supported hosted inference providers.",
   };
   const tourPages = [
-    { name: "Customize", detail: "Paste a job URL or job text, analyze fit, generate a tailored resume, cover letter, and outreach drafts from one screen." },
+    { name: "Customize", detail: "Paste a real job URL or job text, analyze fit, generate a tailored resume, cover letter, and outreach drafts from one screen." },
     { name: "Dashboard", detail: "See the working snapshot: saved leads, pipeline counts, recent activity, source coverage, and what the agent has been doing." },
     { name: "Job Pipeline", detail: "Scan sources, review discovered jobs, sort by fit and signal, open details, mark applied, and remove weak leads." },
     { name: "Knowledge", detail: "Inspect the local profile graph built from your resume, projects, GitHub, portfolio, and manual context." },
@@ -196,7 +195,7 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
             <div className="eyebrow">First Run</div>
             <h2 style={{ fontSize: 30, fontWeight: 800, marginTop: 6 }}>Get to your first package</h2>
             <p style={{ color: "var(--ink-2)", fontSize: 13.5, lineHeight: 1.55, marginTop: 8 }}>
-              Import your resume, connect AI, learn the workspace, then open the one-shot customization page with a demo job ready.
+              Import your resume, connect AI, learn the workspace, then open the one-shot customization page for a real posting.
             </p>
           </div>
           {progress}
@@ -206,10 +205,10 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
               {step === 0 && "Your profile graph starts with resume data."}
               {step === 1 && "These defaults shape scoring, generation, source selection, and generated application packages."}
               {step === 2 && "Every page is part of the same local-first workflow: find jobs, understand fit, tailor, apply, and learn from outcomes."}
-              {step === 3 && "The demo opens directly in Customize with all generated outputs on one page."}
+              {step === 3 && "Paste a real posting now or open Customize empty and add one there."}
             </div>
           </div>
-          <button className="btn btn-ghost" onClick={() => onFinish(DEMO_JOB_DRAFT)} style={{ alignSelf: "flex-start" }}>
+          <button className="btn btn-ghost" onClick={() => onFinish("")} style={{ alignSelf: "flex-start" }}>
             Skip setup
           </button>
         </div>
@@ -332,12 +331,17 @@ export function OnboardingWizard({ api, onFinish, onOpenSettings }: { api: ApiFe
           {step === 3 && (
             <div className="col gap-4">
               <div>
-                <label className="eyebrow">Demo job URL</label>
-                <textarea className="field-input" value={demoDraft} onChange={e => setDemoDraft(e.target.value)} rows={12} style={{ marginTop: 7, lineHeight: 1.55, resize: "vertical" }} />
+                <label className="eyebrow">Job URL or description</label>
+                <textarea className="field-input" value={jobDraft} onChange={e => setJobDraft(e.target.value)} rows={12} style={{ marginTop: 7, lineHeight: 1.55, resize: "vertical" }} />
               </div>
-              <button className="btn btn-accent" onClick={() => onFinish(demoDraft)} style={{ justifyContent: "center", padding: "12px 16px" }}>
-                <Icon name="spark" size={14} color="#fff" /> Try it on a job
-              </button>
+              <div className="row gap-2" style={{ flexWrap: "wrap" }}>
+                <button className="btn btn-accent" onClick={() => onFinish(jobDraft)} disabled={!jobDraft.trim()} style={{ justifyContent: "center", padding: "12px 16px", flex: "1 1 220px" }}>
+                  <Icon name="spark" size={14} color="#fff" /> Try it on this job
+                </button>
+                <button className="btn" onClick={() => onFinish("")} style={{ justifyContent: "center", flex: "1 1 220px" }}>
+                  Open Customize
+                </button>
+              </div>
             </div>
           )}
         </div>

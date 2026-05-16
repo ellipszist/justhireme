@@ -57,6 +57,15 @@ class ProfileService:
     def add_achievement(self, title: str) -> dict:
         return graph_profile.add_achievement(title)
 
+    def delete_education(self, entry: str) -> None:
+        graph_profile.delete_education(entry)
+
+    def delete_certification(self, entry: str) -> None:
+        graph_profile.delete_certification(entry)
+
+    def delete_achievement(self, entry: str) -> None:
+        graph_profile.delete_achievement(entry)
+
     async def ingest_resume(self, raw: str = "", pdf_path: str | None = None):
         from profile.ingestor import ingest
 

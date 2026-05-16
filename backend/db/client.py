@@ -379,6 +379,18 @@ def add_achievement(title: str) -> dict:
     return graph_profile.add_achievement(title, sql)
 
 
+def delete_education(entry: str):
+    graph_profile.delete_education(entry, sql)
+
+
+def delete_certification(entry: str):
+    graph_profile.delete_certification(entry, sql)
+
+
+def delete_achievement(entry: str):
+    graph_profile.delete_achievement(entry, sql)
+
+
 def update_candidate(name: str, summary: str) -> dict:
     return graph_profile.update_candidate(name, summary, sql)
 

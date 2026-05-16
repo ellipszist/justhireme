@@ -176,7 +176,22 @@ def terms_for_discovery(profile: dict, limit: int = 4) -> list[str]:
     return out[:limit] or ["jobs"]
 
 
+def has_profile_discovery_signal(profile: dict | None) -> bool:
+    profile = profile or {}
+    if str(profile.get("desired_position") or profile.get("s") or "").strip():
+        return True
+    for exp in profile.get("exp", []) or []:
+        if isinstance(exp, dict) and str(exp.get("role") or "").strip():
+            return True
+    for skill in profile.get("skills", []) or []:
+        if isinstance(skill, dict) and str(skill.get("n") or "").strip():
+            return True
+    return False
+
+
 def profile_free_source_targets(profile: dict) -> str:
+    if not has_profile_discovery_signal(profile):
+        return ""
     terms = terms_for_discovery(profile, 3)
     role_query = " ".join(terms[:2])
     return "\n".join([
@@ -217,4 +232,3 @@ def truthy(value) -> bool:
 
 def free_sources_enabled(cfg: dict) -> bool:
     return truthy(cfg.get("free_sources_enabled", "false"))
-

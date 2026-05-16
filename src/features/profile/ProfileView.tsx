@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Icon from "../../shared/components/Icon";
 import type { ApiFetch, View } from "../../types";
+import { entryTitle, normalizeProfileResponse, profileDeletePath } from "./profileUtils";
 
 const stackItems = (stack: any): string[] =>
   (Array.isArray(stack) ? stack : String(stack || "").split(","))
     .map((s: string) => s.trim())
     .filter(Boolean);
-
-const entryTitle = (item: any): string => typeof item === "string" ? item : String(item?.title || "");
 
 export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View) => void }) {
   const [profile, setProfile] = useState<any>(null);
@@ -21,26 +20,27 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
   const [activeProfileTab, setActiveProfileTab] = useState<"skills" | "experience" | "projects" | "education" | "certifications" | "achievements">("skills");
   const [expandedProfileList, setExpandedProfileList] = useState(false);
 
-  const fetchProfile = useCallback(async () => {
+  const fetchProfile = useCallback(async (options?: { errorPrefix?: string }) => {
     try {
       const r = await api(`/api/v1/profile`);
       if (!r.ok) throw new Error(`Profile load failed (${r.status})`);
       const data = await r.json();
-      if (!data || !Array.isArray(data.skills) || !Array.isArray(data.projects) || !Array.isArray(data.exp)) {
-        throw new Error("Profile response was not a valid identity graph");
-      }
-      setProfile(data);
+      setProfile(normalizeProfileResponse(data));
       setProfileErr(null);
+      return true;
     } catch (err: any) {
       console.error("Profile load failed:", err);
-      setProfileErr(err?.message || "Profile load failed");
+      const message = err?.message || "Profile load failed";
+      setProfileErr(options?.errorPrefix ? `${options.errorPrefix}: ${message}` : message);
+      return false;
     }
   }, [api]);
 
   useEffect(() => { fetchProfile(); }, [fetchProfile]);
   useEffect(() => {
-    window.addEventListener("profile-refresh", fetchProfile);
-    return () => window.removeEventListener("profile-refresh", fetchProfile);
+    const onProfileRefresh = () => { void fetchProfile(); };
+    window.addEventListener("profile-refresh", onProfileRefresh);
+    return () => window.removeEventListener("profile-refresh", onProfileRefresh);
   }, [fetchProfile]);
   useEffect(() => { setExpandedProfileList(false); }, [activeProfileTab]);
   useEffect(() => {
@@ -61,10 +61,13 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
   const deleteItem = async (type: string, id: string) => {
     if (!window.confirm("Delete this item?")) return;
     try {
-      const res = await api(`/api/v1/profile/${type}/${id}`, { method: "DELETE" });
-      if (!res.ok) console.error("Delete failed:", res.status);
-    } catch (err) {
+      const res = await api(profileDeletePath(type, id), { method: "DELETE" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || `Delete failed (${res.status})`);
+      setProfileErr(null);
+    } catch (err: any) {
       console.error("Delete error:", err);
+      setProfileErr(err?.message || "Delete failed");
     }
     await fetchProfile();
     window.dispatchEvent(new CustomEvent("profile-refresh"));
@@ -89,13 +92,14 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.detail || `Save failed (${res.status})`);
-      setProfile((prev: any) => ({ ...(prev || {}), n: body.n ?? candForm.n, s: body.s ?? candForm.s }));
+      setProfile((prev: any) => normalizeProfileResponse({ ...(prev || {}), n: body.n ?? candForm.n, s: body.s ?? candForm.s }));
       setEditingCandidate(false);
-      await fetchProfile();
+      setProfileErr(null);
+      await fetchProfile({ errorPrefix: "Identity Context saved, but refresh failed" });
       window.dispatchEvent(new CustomEvent("profile-refresh"));
       window.dispatchEvent(new CustomEvent("graph-refresh"));
     } catch (err: any) {
-      setProfileErr(err?.message || "Identity save failed");
+      setProfileErr(err?.message || "Identity Context save failed");
     }
   };
 
@@ -106,9 +110,10 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.detail || `Save failed (${res.status})`);
-      setProfile((prev: any) => ({ ...(prev || {}), identity: { ...((prev || {}).identity || {}), ...body } }));
+      setProfile((prev: any) => normalizeProfileResponse({ ...(prev || {}), identity: { ...((prev || {}).identity || {}), ...body } }));
       setEditingIdentity(false);
-      await fetchProfile();
+      setProfileErr(null);
+      await fetchProfile({ errorPrefix: "Contact details saved, but refresh failed" });
       window.dispatchEvent(new CustomEvent("profile-refresh"));
       window.dispatchEvent(new CustomEvent("graph-refresh"));
     } catch (err: any) {
@@ -174,7 +179,7 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
       <div className="profile-shell profile-shell-compact">
         {profileErr && (
           <div style={{ marginBottom: 16, padding: "12px 14px", borderRadius: 8, background: "var(--bad-soft)", border: "1px solid var(--bad)", color: "var(--bad)", fontSize: 13 }}>
-            Could not refresh the Identity Graph. Your existing profile was not overwritten.
+            {profileErr}
           </div>
         )}
         <div className="profile-workspace">
@@ -327,7 +332,7 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
                             <span className="profile-count-badge">{s.count}</span>
                             {s.id ? (
                               <button className="profile-row-action" onClick={() => deleteItem("skill", s.id)} title="Delete skill">
-                                <Icon name="arrow-right" size={14} />
+                                <Icon name="trash" size={14} />
                               </button>
                             ) : (
                               <Icon name="arrow-right" size={14} />
@@ -428,7 +433,12 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
                           <Icon name="file" size={14} />
                           <span>{entryTitle(item)}</span>
                         </div>
-                        <span className="profile-count-badge">{idx + 1}</span>
+                        <div className="profile-list-trailing">
+                          <span className="profile-count-badge">{idx + 1}</span>
+                          <button className="profile-row-action" onClick={() => deleteItem("education", entryTitle(item))} title="Delete education">
+                            <Icon name="trash" size={14} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -442,7 +452,12 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
                           <Icon name="check" size={14} />
                           <span>{entryTitle(item)}</span>
                         </div>
-                        <span className="profile-count-badge">{idx + 1}</span>
+                        <div className="profile-list-trailing">
+                          <span className="profile-count-badge">{idx + 1}</span>
+                          <button className="profile-row-action" onClick={() => deleteItem("certification", entryTitle(item))} title="Delete certification">
+                            <Icon name="trash" size={14} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -456,7 +471,12 @@ export function ProfileView({ api, setView }: { api: ApiFetch; setView: (v: View
                           <Icon name="trending" size={14} />
                           <span>{entryTitle(item)}</span>
                         </div>
-                        <span className="profile-count-badge">{idx + 1}</span>
+                        <div className="profile-list-trailing">
+                          <span className="profile-count-badge">{idx + 1}</span>
+                          <button className="profile-row-action" onClick={() => deleteItem("achievement", entryTitle(item))} title="Delete achievement">
+                            <Icon name="trash" size={14} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

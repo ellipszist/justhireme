@@ -211,6 +211,71 @@ def test_graph_profile_manual_candidate_save_falls_back_when_graph_unavailable(m
     assert saved["s"] == "Applied AI engineer"
 
 
+def test_graph_profile_delete_education_accepts_title_path_and_updates_snapshot(monkeypatch):
+    from data.graph import profile as graph_profile
+
+    saved = {}
+    deleted_vec_ids = []
+    graph_deletes = []
+
+    monkeypatch.setattr(graph_profile, "_query_rows", lambda query, _params=None: [["edu-1", "B.Tech / MBA"]] if "Education" in query else [])
+    monkeypatch.setattr(graph_profile, "_safe_execute", lambda query, params=None: graph_deletes.append((query, params)))
+    monkeypatch.setattr(graph_profile, "delete_vec_id_from_all", lambda row_id: deleted_vec_ids.append(row_id))
+    monkeypatch.setattr(graph_profile, "_refresh_after_write", lambda _db_path=None: None)
+    monkeypatch.setattr(
+        graph_profile,
+        "load_profile_snapshot",
+        lambda _db_path=None: {
+            "n": "Jane",
+            "s": "",
+            "skills": [],
+            "projects": [],
+            "exp": [],
+            "education": ["B.Tech / MBA", "MSc"],
+        },
+    )
+    monkeypatch.setattr(graph_profile, "save_profile_snapshot", lambda profile, _db_path=None, **_kwargs: saved.update(profile))
+
+    graph_profile.delete_education("B.Tech%20%2F%20MBA")
+
+    assert deleted_vec_ids == ["edu-1"]
+    assert graph_deletes[0][1] == {"id": "edu-1"}
+    assert saved["education"] == ["MSc"]
+
+
+def test_graph_profile_delete_last_text_entry_allows_empty_snapshot(monkeypatch):
+    from data.graph import profile as graph_profile
+
+    saved = {}
+
+    monkeypatch.setattr(graph_profile, "_query_rows", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(graph_profile, "_safe_execute", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(graph_profile, "delete_vec_id_from_all", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(graph_profile, "_refresh_after_write", lambda _db_path=None: None)
+    monkeypatch.setattr(
+        graph_profile,
+        "load_profile_snapshot",
+        lambda _db_path=None: {
+            "n": "",
+            "s": "",
+            "skills": [],
+            "projects": [],
+            "exp": [],
+            "education": ["Only entry"],
+        },
+    )
+    monkeypatch.setattr(
+        graph_profile,
+        "save_profile_snapshot",
+        lambda profile, _db_path=None, **kwargs: saved.update({"profile": profile, "allow_empty": kwargs.get("allow_empty")}),
+    )
+
+    graph_profile.delete_education("Only entry")
+
+    assert saved["profile"]["education"] == []
+    assert saved["allow_empty"] is True
+
+
 def test_graph_profile_read_profile_tolerates_missing_query_results(monkeypatch):
     from data.graph import profile as graph_profile
 

@@ -188,6 +188,20 @@ This role is a great fit for customer-facing technical professionals. Apply here
             ["ats:greenhouse:openai", "ats:lever:perplexity", "ats:ashby:linear", "ats:workable:acme"],
         )
 
+    def test_free_scout_has_no_company_specific_runtime_defaults(self):
+        from automation import free_scout
+
+        self.assertEqual(free_scout.targets_from_settings("", ""), [])
+        with mock.patch.object(free_scout, "_scrape_target", new=mock.AsyncMock()) as scrape_target:
+            leads = free_scout.run(raw_targets="", raw_watchlist="", custom_connectors_enabled=False)
+
+        scrape_target.assert_not_called()
+        self.assertEqual(leads, [])
+        self.assertIn("No free-source targets configured", free_scout.LAST_ERRORS[0])
+        self.assertNotIn("openai", " ".join(free_scout.DEFAULT_TARGETS).lower())
+        self.assertNotIn("anthropic", " ".join(free_scout.DEFAULT_TARGETS).lower())
+        self.assertNotIn("perplexity", " ".join(free_scout.DEFAULT_TARGETS).lower())
+
     def test_free_scout_runs_custom_connectors_through_save_pipeline(self):
         from automation import free_scout
 

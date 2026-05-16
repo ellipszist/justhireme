@@ -1,7 +1,7 @@
 {
   "name": "justhireme",
   "private": true,
-  "version": "0.1.38",
+  "version": "0.1.39",
   "description": "Local-first AI job intelligence workbench for scraping, ranking, and tailoring applications.",
   "license": "AGPL-3.0-only",
   "repository": {
@@ -28,6 +28,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "smoke:sidecar": "node scripts/smoke-sidecar.mjs",
+    "smoke:windows-update": "node scripts/smoke-windows-update.mjs",
+    "smoke:live-sources": "node scripts/smoke-live-sources.mjs",
     "release:smoke": "node scripts/run-parallel.mjs release:smoke && cd src-tauri && cargo build --release && cd .. && npm run smoke:sidecar",
     "release": "npm run release:windows",
     "release:windows": "npm run version:check && npm run build && npm run build:sidecar && npm run package:windows",

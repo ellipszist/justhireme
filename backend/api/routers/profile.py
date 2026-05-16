@@ -93,6 +93,12 @@ async def add_education_endpoint(body: ProfileEntryBody, service=Depends(get_pro
     return await _maybe_await(service.add_education(body.title))
 
 
+@router.delete("/profile/education/{entry:path}")
+async def delete_education_endpoint(entry: str, service=Depends(get_profile_service)):
+    await _maybe_await(service.delete_education(entry))
+    return {"ok": True}
+
+
 @router.post("/profile/certification")
 async def add_certification_endpoint(body: ProfileEntryBody, service=Depends(get_profile_service)):
     if not body.title.strip():
@@ -100,11 +106,23 @@ async def add_certification_endpoint(body: ProfileEntryBody, service=Depends(get
     return await _maybe_await(service.add_certification(body.title))
 
 
+@router.delete("/profile/certification/{entry:path}")
+async def delete_certification_endpoint(entry: str, service=Depends(get_profile_service)):
+    await _maybe_await(service.delete_certification(entry))
+    return {"ok": True}
+
+
 @router.post("/profile/achievement")
 async def add_achievement_endpoint(body: ProfileEntryBody, service=Depends(get_profile_service)):
     if not body.title.strip():
         raise HTTPException(status_code=422, detail="Achievement title is required")
     return await _maybe_await(service.add_achievement(body.title))
+
+
+@router.delete("/profile/achievement/{entry:path}")
+async def delete_achievement_endpoint(entry: str, service=Depends(get_profile_service)):
+    await _maybe_await(service.delete_achievement(entry))
+    return {"ok": True}
 
 
 async def _maybe_await(value):

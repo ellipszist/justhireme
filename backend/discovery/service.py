@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 from discovery.targets import (
     free_sources_enabled,
+    has_profile_discovery_signal,
     has_x_token,
     int_cfg,
     profile_free_source_targets,
@@ -45,9 +46,19 @@ class DiscoveryService:
 
         from automation.source_adapters import run_free_scout
 
+        raw_targets = cfg.get("free_source_targets", "") or profile_free_source_targets(profile or {})
+        has_watchlist = bool(str(cfg.get("company_watchlist", "") or "").strip())
+        has_connectors = truthy(cfg.get("custom_connectors_enabled", "false")) and bool(str(cfg.get("custom_connectors", "") or "").strip())
+        if not str(raw_targets or "").strip() and not has_watchlist and not has_connectors:
+            if has_profile_discovery_signal(profile):
+                message = "Free-source scan skipped: no runnable source targets were derived from this profile."
+            else:
+                message = "Free-source scan skipped: add a target role, profile skills, source targets, or a company watchlist."
+            return DiscoveryRunResult(errors=[message])
+
         result = await asyncio.to_thread(
             run_free_scout,
-            raw_targets=cfg.get("free_source_targets", "") or profile_free_source_targets(profile or {}),
+            raw_targets=raw_targets,
             raw_watchlist=cfg.get("company_watchlist", ""),
             raw_custom_connectors=cfg.get("custom_connectors", ""),
             raw_custom_headers=cfg.get("custom_connector_headers", ""),
