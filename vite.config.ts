@@ -5,6 +5,21 @@ import tailwindcss from "@tailwindcss/vite";
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
+function manualChunks(id: string) {
+  const normalized = id.replace(/\\/g, "/");
+  if (!normalized.includes("/node_modules/")) return undefined;
+  if (normalized.includes("/node_modules/react/") || normalized.includes("/node_modules/react-dom/")) {
+    return "react";
+  }
+  if (normalized.includes("/node_modules/framer-motion/")) {
+    return "motion";
+  }
+  if (normalized.includes("/node_modules/@tauri-apps/")) {
+    return "tauri";
+  }
+  return undefined;
+}
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
@@ -16,17 +31,7 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ["react", "react-dom"],
-          motion: ["framer-motion"],
-          tauri: [
-            "@tauri-apps/api",
-            "@tauri-apps/plugin-opener",
-            "@tauri-apps/plugin-process",
-            "@tauri-apps/plugin-shell",
-            "@tauri-apps/plugin-updater",
-          ],
-        },
+        manualChunks,
       },
     },
   },
