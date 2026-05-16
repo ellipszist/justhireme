@@ -27,8 +27,21 @@ function bytes(path) {
   return 0;
 }
 
-function remove(path) {
-  rmSync(path, { recursive: true, force: true });
+function remove(path, options = {}) {
+  try {
+    rmSync(path, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 500,
+    });
+  } catch (error) {
+    if (options.allowFailure) {
+      console.warn(`Could not remove ${path}: ${error.message}`);
+      return;
+    }
+    throw error;
+  }
 }
 
 function sleep(ms) {
@@ -267,9 +280,10 @@ try {
   passed = true;
 } finally {
   killProcessTree(child);
-  remove(appDataDir);
+  await sleep(500);
+  remove(appDataDir, { allowFailure: true });
   if (cleanupDir) {
-    remove(cleanupDir);
+    remove(cleanupDir, { allowFailure: true });
   }
 }
 
