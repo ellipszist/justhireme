@@ -360,8 +360,18 @@ jobs:
             echo "Packaged .app not found." >&2
             exit 1
           fi
-          export JHM_SIDECAR_PATH="$app_path/Contents/MacOS/jhm-sidecar-next"
-          export JHM_SIDECAR_CWD="$(dirname "$JHM_SIDECAR_PATH")"
+          app_path="$(cd "$app_path" && pwd -P)"
+          echo "Packaged app: $app_path"
+          find "$app_path/Contents" -maxdepth 4 -name "jhm-sidecar-next*" -print
+          sidecar_path="$app_path/Contents/MacOS/jhm-sidecar-next"
+          if [ ! -f "$sidecar_path" ]; then
+            sidecar_path="$(find "$app_path/Contents" -type f -name "jhm-sidecar-next*" -print -quit)"
+          fi
+          if [ -z "$sidecar_path" ] || [ ! -f "$sidecar_path" ]; then
+            echo "Packaged sidecar not found in $app_path." >&2
+            exit 1
+          fi
+          export JHM_SIDECAR_PATH="$sidecar_path"
           npm run smoke:sidecar
 
       - name: Collect release assets (Windows)

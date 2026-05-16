@@ -81,16 +81,18 @@ function prepareFallbackSidecar(manifest) {
 }
 
 function resolveExplicitSidecar() {
-  const sidecar = process.env.JHM_SIDECAR_PATH;
-  if (!sidecar) {
+  const rawSidecar = process.env.JHM_SIDECAR_PATH;
+  if (!rawSidecar) {
     return null;
   }
+  const sidecar = resolve(rawSidecar);
   if (!existsSync(sidecar)) {
     fail(`Sidecar override not found at ${sidecar}`);
   }
+  const rawCwd = process.env.JHM_SIDECAR_CWD;
   return {
     sidecar,
-    cwd: process.env.JHM_SIDECAR_CWD || dirname(sidecar),
+    cwd: rawCwd ? resolve(rawCwd) : appDataDir,
     cleanupDir: "",
   };
 }
@@ -253,6 +255,7 @@ let passed = false;
 
 remove(appDataDir);
 mkdirSync(appDataDir, { recursive: true });
+mkdirSync(cwd, { recursive: true });
 
 const child = spawn(sidecar, ["--no-services"], {
   cwd,
