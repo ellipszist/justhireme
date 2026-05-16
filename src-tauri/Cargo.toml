@@ -1,6 +1,6 @@
 [package]
 name = "justhireme"
-version = "0.1.46"
+version = "0.1.47"
 description = "Local-first autonomous job-seeking engine"
 authors = ["Vasudev Siddh"]
 edition = "2021"

@@ -263,6 +263,12 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
+      - name: Download backend sidecar
+        uses: actions/download-artifact@v8
+        with:
+          name: backend-sidecar-${{ matrix.platform }}
+          path: src-tauri/resources/
+
       - name: Run Rust unit tests
         run: cd src-tauri && cargo test --lib
 
@@ -271,12 +277,6 @@ jobs:
 
       - name: Build frontend
         run: npm run build
-
-      - name: Download backend sidecar
-        uses: actions/download-artifact@v8
-        with:
-          name: backend-sidecar-${{ matrix.platform }}
-          path: src-tauri/resources/
 
       - name: Verify sidecar exists (Windows)
         if: matrix.platform == 'windows'
