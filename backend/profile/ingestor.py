@@ -209,7 +209,12 @@ def _strip_md(text: str) -> str:
 
 
 def _split_csv(value: str) -> list[str]:
-    return [_strip_md(part) for part in str(value or "").split(",") if _strip_md(part)]
+    from profile.normalization import split_skill_names
+
+    out: list[str] = []
+    for part in str(value or "").split(","):
+        out.extend(split_skill_names(part))
+    return out or [_strip_md(part) for part in str(value or "").split(",") if _strip_md(part)]
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -500,6 +505,9 @@ def _parse_local(txt: str) -> C:
         education=education,
         achievements=achievements,
     )
+    from profile.normalization import normalize_candidate_model
+
+    parsed = normalize_candidate_model(parsed)
     if _profile_has_content(parsed):
         return parsed
     return _parse_resume_heuristic(txt)
@@ -598,26 +606,92 @@ def _parse_resume_heuristic(txt: str) -> C:
             break
 
     project_lines = _section_lines(clean_text, ("projects", "selected projects", "personal projects"))
-    projects: list[P] = []
-    for line in project_lines[:10]:
-        if len(line) < 5:
-            continue
-        title = re.split(r"\s[-:|]\s", line, maxsplit=1)[0].strip()[:160]
-        stack = [skill.n for skill in skills if skill.n.lower() in line.lower()][:8]
-        projects.append(P(title=title or line[:80], stack=stack, repo=_first_url(line), impact=line[:900], s=stack))
-        if len(projects) >= 5:
-            break
+    projects = _projects_from_resume_lines(project_lines, skills)
+    education = _education_from_resume_lines(_section_lines(clean_text, ("education",)))
 
-    return C(
+    parsed = C(
         n=name,
         s=summary,
         skills=skills,
         exp=exp,
         projects=projects,
         certifications=_section_lines(clean_text, ("certifications", "certificates"))[:8],
-        education=_section_lines(clean_text, ("education",))[:6],
+        education=education,
         achievements=_section_lines(clean_text, ("achievements", "awards"))[:8],
     )
+    from profile.normalization import normalize_candidate_model
+
+    return normalize_candidate_model(parsed)
+
+
+def _projects_from_resume_lines(lines: list[str], skills: list) -> list:
+    from models.schema import P
+    from profile.normalization import normalize_projects, normalize_stack
+
+    raw_projects: list[dict] = []
+    current: dict | None = None
+
+    def flush():
+        nonlocal current
+        if current:
+            raw_projects.append(current)
+            current = None
+
+    for raw_line in lines:
+        line = _strip_md(raw_line)
+        if not line:
+            continue
+        lower = line.lower()
+        repo = _first_url(line)
+        stack = normalize_stack(line) if re.search(r"(?i)\b(tech stack|stack|built with|using)\b", line) else []
+        looks_like_bullet = bool(re.match(r"(?i)^(built|created|developed|designed|engineered|implemented|integrated|launched|shipped|automated|features?|supports?)\b", line))
+        looks_like_title = (
+            not looks_like_bullet
+            and not re.search(r"(?i)\b(tech stack|stack|github|repo|link|live|demo)\s*:", line)
+            and len(line.split()) <= 10
+        )
+        if looks_like_title:
+            flush()
+            title, detail = _split_project_title_detail(line)
+            current = {"title": title, "impact": detail, "repo": repo, "stack": ""}
+            continue
+        if current is None:
+            continue
+        if repo and not current.get("repo"):
+            current["repo"] = repo
+        if stack:
+            current["stack"] = ", ".join(normalize_stack(current.get("stack", "")) + stack)
+        elif "stack" not in lower and "github" not in lower and "repo" not in lower:
+            current["impact"] = "\n".join(part for part in [current.get("impact", ""), line] if part)
+    flush()
+
+    known_skills = [skill.n for skill in skills]
+    clean_projects = normalize_projects(raw_projects, known_skills=known_skills)
+    return [
+        P(
+            title=item["title"],
+            stack=normalize_stack(item.get("stack", "")),
+            repo=item.get("repo") or "",
+            impact=item.get("impact", ""),
+            s=normalize_stack(item.get("stack", "")),
+        )
+        for item in clean_projects[:8]
+    ]
+
+
+def _split_project_title_detail(line: str) -> tuple[str, str]:
+    for separator in (" - ", " – ", " — ", " | ", ": "):
+        if separator in line:
+            title, detail = line.split(separator, 1)
+            if len(title.split()) <= 8:
+                return title.strip(), detail.strip()
+    return line.strip(), ""
+
+
+def _education_from_resume_lines(lines: list[str]) -> list[str]:
+    from profile.normalization import normalize_education_entries
+
+    return normalize_education_entries(lines)
 
 
 def run(raw: str = "", pdf: str | None = None) -> C:
@@ -672,6 +746,9 @@ def ingest(raw: str = "", pdf: str | None = None) -> C:
         _log.warning("No usable text for extraction - returning empty profile")
         return C(n="Unknown", s="")
     p = run(txt)
+    from profile.normalization import normalize_candidate_model
+
+    p = normalize_candidate_model(p)
     try:
         _graph(p)
     except Exception as exc:

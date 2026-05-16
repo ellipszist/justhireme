@@ -114,6 +114,25 @@ def test_portfolio_ingestor_uses_http_fallback_when_browser_returns_no_pages(mon
     assert any(skill["name"] == "React" for skill in result["skills"])
 
 
+def test_portfolio_ingestor_hides_raw_missing_playwright_error(monkeypatch):
+    import profile.portfolio_ingestor as portfolio
+
+    async def fake_browser(_url):
+        raise ModuleNotFoundError("No module named 'playwright'")
+
+    def fake_http(_url):
+        return []
+
+    monkeypatch.setattr(portfolio, "_crawl_portfolio_browser", fake_browser)
+    monkeypatch.setattr(portfolio, "_crawl_portfolio_http", fake_http)
+
+    result = asyncio.run(portfolio.ingest_portfolio_url("https://example.com"))
+
+    assert result["status_code"] == 502
+    assert "browser-based portfolio scanning is not available" in result["error"]
+    assert "No module named" not in result["error"]
+
+
 def test_portfolio_ingestor_filters_noisy_projects(monkeypatch):
     import profile.portfolio_ingestor as portfolio
 
@@ -352,3 +371,45 @@ def test_portfolio_ingestor_rejects_browser_nav_and_identity_as_projects(monkeyp
     assert "Jane Doe" not in titles
     assert "ProjectsGitHub" not in titles
     assert "Contact jane@example.com" not in titles
+
+
+def test_portfolio_ingestor_normalizes_preview_buckets(monkeypatch):
+    import profile.portfolio_ingestor as portfolio
+
+    pages = [
+        portfolio.PageSnapshot(
+            url="https://example.com/",
+            title="Jane Doe | Engineer",
+            text="""
+            Jane Doe
+            Full-stack engineer building React and FastAPI products.
+            Featured Projects
+            React
+            JustHireMe
+            Built a local-first job workbench with React, FastAPI and PostgreSQL.
+            Built graph ranking and resume generation workflows.
+            Education
+            Lovely Professional University
+            Punjab
+            CGPA 8.5
+            """,
+            links=[],
+        )
+    ]
+
+    async def fake_browser(_url):
+        return pages, ""
+
+    async def fake_llm(_url, _pages, _draft):
+        return None
+
+    monkeypatch.setattr(portfolio, "_crawl_portfolio_browser", fake_browser)
+    monkeypatch.setattr(portfolio, "_extract_with_llm", fake_llm)
+
+    result = asyncio.run(portfolio.ingest_portfolio_url("https://example.com"))
+
+    titles = [project["title"] for project in result["projects"]]
+    assert "JustHireMe" in titles
+    assert "React" not in titles
+    assert not any(title.startswith("Built ") for title in titles)
+    assert [item["title"] for item in result["education"]] == ["Lovely Professional University, Punjab, CGPA 8.5"]

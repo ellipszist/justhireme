@@ -211,7 +211,7 @@ async def ingest_portfolio_url(url: str) -> dict:
 
     pages = _dedupe_pages(pages)
     if not pages and fetch_error:
-        return {"error": f"{fetch_error} HTTP fallback also could not fetch portfolio content.", "status_code": 502}
+        return {"error": _portfolio_fetch_failure_message(fetch_error), "status_code": 502}
     if not pages:
         return {"error": "Could not fetch portfolio content", "status_code": 502}
 
@@ -223,6 +223,7 @@ async def ingest_portfolio_url(url: str) -> dict:
         result = _merge_extract(deterministic, extract)
     else:
         result = deterministic
+    result = _normalize_result_payload(result)
 
     result.update({
         "source": "portfolio_url",
@@ -247,11 +248,45 @@ async def ingest_portfolio_url(url: str) -> dict:
     return result
 
 
+def _normalize_result_payload(result: dict) -> dict:
+    try:
+        from profile.normalization import normalize_profile_payload
+
+        cleaned = normalize_profile_payload(result)
+        return {
+            **result,
+            "candidate": cleaned.get("candidate", result.get("candidate", {})),
+            "identity": cleaned.get("identity", result.get("identity", {})),
+            "skills": cleaned.get("skills", result.get("skills", [])),
+            "projects": cleaned.get("projects", result.get("projects", [])),
+            "education": cleaned.get("education", result.get("education", [])),
+            "certifications": cleaned.get("certifications", result.get("certifications", [])),
+            "achievements": cleaned.get("achievements", result.get("achievements", [])),
+        }
+    except Exception as exc:
+        _log.warning("portfolio normalization skipped: %s", exc)
+        return result
+
+
 def _normalize_url(url: str) -> str:
     parsed = urlparse(url.strip())
     if not parsed.scheme:
         parsed = urlparse(f"https://{url.strip()}")
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path or "/", "", parsed.query, ""))
+
+
+def _portfolio_fetch_failure_message(fetch_error: str) -> str:
+    if _is_missing_playwright_error(fetch_error):
+        return (
+            "This portfolio appears to require JavaScript rendering, but browser-based "
+            "portfolio scanning is not available in this build. Update or rebuild "
+            "JustHireMe with the browser feature enabled, then retry."
+        )
+    return f"{fetch_error} HTTP fallback also could not fetch portfolio content."
+
+
+def _is_missing_playwright_error(fetch_error: str) -> bool:
+    return "no module named" in fetch_error.lower() and "playwright" in fetch_error.lower()
 
 
 async def _crawl_portfolio_browser(url: str) -> tuple[list[PageSnapshot], str]:
@@ -856,7 +891,7 @@ def _section_items(text: str, names: tuple[str, ...], limit: int = 8) -> list[st
     capture = False
     for line in lines:
         lower = line.lower()
-        if any(name in lower for name in names) and len(line.split()) <= 7:
+        if not capture and any(name in lower for name in names) and len(line.split()) <= 7:
             capture = True
             continue
         if capture and re.search(r"\b(projects?|skills?|contact|experience|services?)\b", lower) and len(line.split()) <= 7:

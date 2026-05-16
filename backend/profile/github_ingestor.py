@@ -70,6 +70,15 @@ TOPIC_SKILLS = {
     "ai": "AI",
     "machine-learning": "Machine Learning",
     "ml": "Machine Learning",
+    "tailwind": "Tailwind CSS",
+    "tailwindcss": "Tailwind CSS",
+    "vite": "Vite",
+    "prisma": "Prisma",
+    "tauri": "Tauri",
+    "langchain": "LangChain",
+    "langgraph": "LangGraph",
+    "lancedb": "LanceDB",
+    "qdrant": "Qdrant",
 }
 
 DEPENDENCY_SKILLS = {
@@ -227,8 +236,6 @@ def _skills_from_topics(topics: list[str]) -> list[str]:
         key = str(topic).strip().lower()
         if key in TOPIC_SKILLS:
             skills.append(TOPIC_SKILLS[key])
-        elif 2 <= len(key) <= 35 and not key.endswith("-app"):
-            skills.append(key.replace("-", " ").title())
     return skills
 
 

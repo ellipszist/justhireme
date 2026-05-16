@@ -24,7 +24,7 @@ site.getusersitepackages = lambda: str(venv_site_packages)
 
 release_features = {
     feature.strip().lower()
-    for feature in os.environ.get("JHM_RELEASE_FEATURES", "core,graph").split(",")
+    for feature in os.environ.get("JHM_RELEASE_FEATURES", "core,graph,browser").split(",")
     if feature.strip()
 }
 include_browser = "browser" in release_features or "all" in release_features

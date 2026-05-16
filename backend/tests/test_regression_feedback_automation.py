@@ -83,6 +83,11 @@ class RegressionTests(unittest.TestCase):
         self.assertTrue(_ready_to_submit({"uploaded": True, "fields": [], "vision_actions": 2}))
 
 class TestBrowserRuntimePackaging(unittest.TestCase):
+    def test_sidecar_default_release_features_include_browser(self):
+        spec = (Path(__file__).resolve().parents[1] / "backend.spec").read_text(encoding="utf-8")
+
+        self.assertIn('"core,graph,browser"', spec)
+
     def test_browser_runtime_asset_name_is_platform_specific(self):
         from automation import browser_runtime
 

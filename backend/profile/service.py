@@ -83,42 +83,51 @@ class ProfileService:
 
     async def ingest_linkedin(self, zip_bytes: bytes) -> dict:
         from profile.linkedin_parser import parse_linkedin_export
+        from profile.normalization import normalize_profile_payload
 
         parsed = await asyncio.to_thread(parse_linkedin_export, zip_bytes)
+        cleaned = normalize_profile_payload({
+            "candidate": {"name": parsed["candidate"].get("n", ""), "summary": parsed["candidate"].get("s", "")},
+            "skills": [{"name": item.get("n", ""), "category": item.get("cat", "general")} for item in parsed.get("skills", [])],
+            "experience": parsed.get("experience", []),
+            "education": parsed.get("education", []),
+            "projects": parsed.get("projects", []),
+            "certifications": parsed.get("certifications", []),
+        })
         errors: list[str] = []
 
-        candidate = parsed["candidate"]
-        if candidate["n"]:
+        candidate = cleaned["candidate"]
+        if candidate["name"]:
             try:
-                await asyncio.to_thread(self.update_candidate, candidate["n"], candidate["s"])
+                await asyncio.to_thread(self.update_candidate, candidate["name"], candidate["summary"])
             except Exception as exc:
                 errors.append(f"candidate: {exc}")
 
-        for skill in parsed["skills"]:
+        for skill in cleaned["skills"]:
             try:
-                await asyncio.to_thread(self.add_skill, skill["n"], skill["cat"])
+                await asyncio.to_thread(self.add_skill, skill["name"], skill["category"])
             except Exception:
                 pass
 
-        for exp in parsed["experience"]:
+        for exp in cleaned.get("experience", parsed["experience"]):
             try:
                 await asyncio.to_thread(self.add_experience, exp["role"], exp["co"], exp["period"], exp["d"])
             except Exception as exc:
                 errors.append(f"exp {exp.get('role')}: {exc}")
 
-        for edu in parsed["education"]:
+        for edu in cleaned["education"]:
             try:
                 await asyncio.to_thread(self.add_education, edu["title"])
             except Exception as exc:
                 errors.append(f"edu: {exc}")
 
-        for project in parsed["projects"]:
+        for project in cleaned["projects"]:
             try:
                 await asyncio.to_thread(self.add_project, project["title"], project["stack"], project["repo"], project["impact"])
             except Exception as exc:
                 errors.append(f"proj {project.get('title')}: {exc}")
 
-        for cert in parsed["certifications"]:
+        for cert in cleaned["certifications"]:
             try:
                 await asyncio.to_thread(self.add_certification, cert["title"])
             except Exception as exc:
@@ -133,12 +142,20 @@ class ProfileService:
 
     async def ingest_github(self, username: str, token: str | None = None, max_repos: int = 100) -> dict:
         from profile.github_ingestor import ingest_github
+        from profile.normalization import normalize_profile_payload
 
         result = await ingest_github(username, token=token, max_repos=max_repos)
         if "error" in result:
             return result
 
         errors = list(result.get("errors", []))
+        cleaned = normalize_profile_payload({
+            "skills": [{"name": item.get("n", ""), "category": item.get("cat", "github")} for item in result.get("skills", [])],
+            "projects": result.get("projects", []),
+        })
+        result["skills"] = [{"n": item["name"], "cat": item.get("category", "github")} for item in cleaned["skills"]]
+        result["projects"] = cleaned["projects"]
+
         for skill in result["skills"]:
             try:
                 await asyncio.to_thread(self.add_skill, skill["n"], skill["cat"])
@@ -185,7 +202,10 @@ class ProfileService:
         return result
 
     async def import_profile_data(self, body: Any) -> dict:
+        from profile.normalization import normalize_profile_payload
+
         data = _as_dict(body)
+        data = normalize_profile_payload(data)
         errors: list[str] = []
         stats = {key: 0 for key in ["skills", "experience", "projects", "education", "certifications", "achievements"]}
         existing_snapshot = await asyncio.to_thread(self.get_profile)

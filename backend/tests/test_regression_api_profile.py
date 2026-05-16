@@ -132,3 +132,47 @@ End-to-end build of a production-grade financial reporting platform.
         self.assertIn("BranchGPT", [p.title for p in profile.projects])
         self.assertIn("Waldo", [p.title for p in profile.projects])
         self.assertIn("siddhvasudev1402@gmail.com", profile.s)
+
+    def test_resume_heuristic_keeps_project_bullets_and_education_details_together(self):
+        from profile.ingestor import _parse_resume_heuristic
+
+        raw = """
+Vasudev Siddh
+vasu@example.com
+
+Skills
+React, TypeScript, FastAPI, PostgreSQL
+
+Projects
+JustHireMe
+- Built a local-first job intelligence workbench.
+- Stack: React, TypeScript, FastAPI, PostgreSQL
+- GitHub: https://github.com/vasu-devs/JustHireMe
+React
+Built graph ranking and resume generation workflows.
+BranchGPT - Git-like chat interface for conversation DAGs.
+Implemented branching, pruning, and context restore flows.
+
+Education
+Lovely Professional University
+Punjab
+CGPA 8.5
+"""
+
+        profile = _parse_resume_heuristic(raw)
+        titles = [project.title for project in profile.projects]
+
+        self.assertEqual(profile.n, "Vasudev Siddh")
+        self.assertIn("JustHireMe", titles)
+        self.assertIn("BranchGPT", titles)
+        self.assertNotIn("React", titles)
+        self.assertFalse(any(title.startswith("Built ") for title in titles))
+        self.assertEqual(profile.education, ["Lovely Professional University, Punjab, CGPA 8.5"])
+
+    def test_profile_normalizer_does_not_keep_role_text_as_candidate_name(self):
+        from models.schema import C
+        from profile.normalization import normalize_candidate_model
+
+        profile = normalize_candidate_model(C(n="Full-stack engineer building AI products", s=""))
+
+        self.assertEqual(profile.n, "Candidate")

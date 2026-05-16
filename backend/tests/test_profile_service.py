@@ -84,6 +84,42 @@ def test_profile_service_import_profile_data_accepts_legacy_keys(monkeypatch):
     assert seen["exp"] == ("Dev", "Acme", "2025", "APIs")
 
 
+def test_profile_service_import_profile_data_sanitizes_bad_buckets(monkeypatch):
+    service = ProfileService()
+    calls = {"skills": [], "projects": [], "education": []}
+
+    monkeypatch.setattr(service, "add_skill", lambda name, category: calls["skills"].append((name, category)))
+    monkeypatch.setattr(service, "add_project", lambda title, stack, repo, impact: calls["projects"].append((title, stack, repo, impact)))
+    monkeypatch.setattr(service, "add_education", lambda title: calls["education"].append(title))
+    monkeypatch.setattr(service, "refresh_profile_snapshot", lambda: None)
+    monkeypatch.setattr("profile.service.graph_profile.sync_vectors_from_graph", lambda: {"status": "ok"})
+
+    result = asyncio.run(service.import_profile_data({
+        "skills": [
+            {"name": "React, FastAPI"},
+            {"name": "Built a dashboard with PostgreSQL automation for operators."},
+        ],
+        "projects": [
+            {"title": "React"},
+            {"title": "JustHireMe", "stack": "React, FastAPI", "impact": "Local-first job workbench"},
+            {"title": "Built graph ranking and resume generation workflows."},
+            {"title": "Punjab"},
+        ],
+        "education": [
+            {"title": "Lovely Professional University"},
+            {"title": "Punjab"},
+            {"title": "CGPA 8.5"},
+        ],
+    }))
+
+    assert result["status"] == "ok"
+    assert calls["skills"] == [("React", "general"), ("FastAPI", "general")]
+    assert len(calls["projects"]) == 1
+    assert calls["projects"][0][0] == "JustHireMe"
+    assert "Built graph ranking" in calls["projects"][0][3]
+    assert calls["education"] == ["Lovely Professional University, Punjab, CGPA 8.5"]
+
+
 def test_profile_service_import_profile_data_saves_snapshot_fallback(monkeypatch):
     service = ProfileService()
     saved = {}
