@@ -10,6 +10,12 @@ backend_root = Path("backend").resolve()
 if not (backend_root / "main.py").exists():
     backend_root = Path(".").resolve()
 onedir_sidecar = sys.platform == "win32"
+macos_entitlements = backend_root.parent / "src-tauri" / "macos-entitlements.plist"
+exe_kwargs = {}
+if sys.platform == "darwin":
+    exe_kwargs["codesign_identity"] = os.environ.get("JHM_MACOS_CODESIGN_IDENTITY", "-")
+    if macos_entitlements.exists():
+        exe_kwargs["entitlements_file"] = str(macos_entitlements)
 if sys.platform == "win32":
     venv_site_packages = backend_root / ".venv" / "Lib" / "site-packages"
 else:
@@ -124,6 +130,7 @@ exe = EXE(
     # capturing stdout/stderr. Keep the console subsystem so the app can read
     # the JHM_TOKEN/PORT startup handshake from the packaged sidecar.
     console=True,
+    **exe_kwargs,
 )
 
 if onedir_sidecar:

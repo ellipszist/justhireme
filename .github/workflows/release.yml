@@ -330,7 +330,7 @@ jobs:
           sidecar="src-tauri/resources/backend/jhm-sidecar-next-${triple}"
           chmod +x "$sidecar"
           xattr -cr src-tauri/resources/backend src-tauri/resources/sidecar-internal || true
-          codesign --force --sign - "$sidecar"
+          codesign --force --sign - --entitlements src-tauri/macos-entitlements.plist "$sidecar"
 
       - name: Verify updater signing secrets
         env:
@@ -369,6 +369,11 @@ jobs:
           fi
           if [ -z "$sidecar_path" ] || [ ! -f "$sidecar_path" ]; then
             echo "Packaged sidecar not found in $app_path." >&2
+            exit 1
+          fi
+          codesign -d --entitlements :- "$sidecar_path" 2>&1 | tee packaged-sidecar-entitlements.txt
+          if ! grep -q "com.apple.security.cs.disable-library-validation" packaged-sidecar-entitlements.txt; then
+            echo "Packaged macOS sidecar is missing disable-library-validation entitlement." >&2
             exit 1
           fi
           export JHM_SIDECAR_PATH="$sidecar_path"
