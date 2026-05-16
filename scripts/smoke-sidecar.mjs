@@ -67,7 +67,27 @@ function prepareFallbackSidecar(manifest) {
   return { sidecar: target, cwd: runDir, cleanupDir: runDir };
 }
 
+function resolveExplicitSidecar() {
+  const sidecar = process.env.JHM_SIDECAR_PATH;
+  if (!sidecar) {
+    return null;
+  }
+  if (!existsSync(sidecar)) {
+    fail(`Sidecar override not found at ${sidecar}`);
+  }
+  return {
+    sidecar,
+    cwd: process.env.JHM_SIDECAR_CWD || dirname(sidecar),
+    cleanupDir: "",
+  };
+}
+
 function resolveSidecar(manifest) {
+  const explicit = resolveExplicitSidecar();
+  if (explicit) {
+    return explicit;
+  }
+
   const sidecar = targetSidecarPath();
   const internal = join(targetReleaseDir, "_internal");
 
@@ -206,12 +226,14 @@ function requireHealth(health) {
   return { sqlite, graph, vector, app: health.status };
 }
 
-if (!existsSync(manifestPath)) {
+const explicitSidecar = resolveExplicitSidecar();
+
+if (!explicitSidecar && !existsSync(manifestPath)) {
   fail(`Sidecar manifest not found at ${manifestPath}. Run npm run build:sidecar first.`);
 }
 
-const manifest = readJson(manifestPath);
-const { sidecar, cwd, cleanupDir } = resolveSidecar(manifest);
+const manifest = explicitSidecar ? {} : readJson(manifestPath);
+const { sidecar, cwd, cleanupDir } = explicitSidecar || resolveSidecar(manifest);
 const stdoutLines = [];
 const stderrLines = [];
 let passed = false;

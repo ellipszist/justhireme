@@ -121,6 +121,9 @@ jobs:
           echo "Sidecar runtime size: $((runtime_kb / 1024)) MB"
           cat src-tauri/resources/backend/sidecar-manifest.json
 
+      - name: Smoke sidecar startup
+        run: npm run smoke:sidecar
+
       - name: Upload backend sidecar artifact
         uses: actions/upload-artifact@v7
         with:
@@ -346,6 +349,20 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run ${{ matrix.package_script }}
+
+      - name: Smoke packaged macOS sidecar
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_path="$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name "*.app" -type d -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "Packaged .app not found." >&2
+            exit 1
+          fi
+          export JHM_SIDECAR_PATH="$app_path/Contents/MacOS/jhm-sidecar-next"
+          export JHM_SIDECAR_CWD="$(dirname "$JHM_SIDECAR_PATH")"
+          npm run smoke:sidecar
 
       - name: Collect release assets (Windows)
         if: matrix.platform == 'windows'

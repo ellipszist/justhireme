@@ -17,6 +17,7 @@ struct SidecarPort(Mutex<Option<u16>>);
 struct ApiTokenState(Mutex<Option<String>>);
 struct SidecarChild(Mutex<Option<CommandChild>>);
 struct SidecarError(Mutex<Option<String>>);
+struct SidecarLastStderr(Mutex<Option<String>>);
 struct SidecarStopping(Mutex<bool>);
 
 #[tauri::command]
@@ -129,7 +130,13 @@ fn cleanup_debug_python_sidecars(backend_dir: &Path) {
     );
 
     let _ = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
         .creation_flags(CREATE_NO_WINDOW)
         .output();
 }
@@ -157,7 +164,10 @@ fn kill_process_tree(pid: u32) {
 }
 
 fn sidecar_pid_path(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_data_dir().ok().map(|dir| dir.join("sidecar.pid"))
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join("sidecar.pid"))
 }
 
 fn cleanup_stale_sidecar(app: &AppHandle) {
@@ -237,6 +247,7 @@ pub fn run() {
         .manage(ApiTokenState(Mutex::new(None)))
         .manage(SidecarChild(Mutex::new(None)))
         .manage(SidecarError(Mutex::new(None)))
+        .manage(SidecarLastStderr(Mutex::new(None)))
         .manage(SidecarStopping(Mutex::new(false)))
         .invoke_handler(tauri::generate_handler![
             get_sidecar_port,
@@ -308,6 +319,7 @@ pub fn run() {
                 let _ = std::fs::create_dir_all(&app_data_dir);
                 let app_data = app_data_dir.to_string_lossy().to_string();
                 sidecar_cmd = sidecar_cmd
+                    .current_dir(&app_data_dir)
                     .env("LOCALAPPDATA", app_data.clone())
                     .env("JHM_APP_DATA_DIR", app_data);
             }
@@ -372,14 +384,17 @@ pub fn run() {
                                 let line = raw_line.trim();
                                 if let Some(port_str) = line.strip_prefix("PORT:") {
                                     if let Ok(port) = port_str.parse::<u16>() {
-                                        if let Ok(mut g) = app_handle.state::<SidecarPort>().0.lock() {
+                                        if let Ok(mut g) =
+                                            app_handle.state::<SidecarPort>().0.lock()
+                                        {
                                             *g = Some(port);
                                         }
                                         let _ = app_handle.emit("sidecar-port", port);
                                         eprintln!("[tauri] Sidecar port: {port}");
                                     }
                                 } else if let Some(token) = line.strip_prefix("JHM_TOKEN=") {
-                                    if let Ok(mut g) = app_handle.state::<ApiTokenState>().0.lock() {
+                                    if let Ok(mut g) = app_handle.state::<ApiTokenState>().0.lock()
+                                    {
                                         *g = Some(token.to_string());
                                     }
                                     let _ = app_handle.emit("sidecar-token", token.to_string());
@@ -387,19 +402,31 @@ pub fn run() {
                             }
                         }
                         CommandEvent::Stderr(b) => {
-                            let line = String::from_utf8_lossy(&b).trim().to_string();
-                            if !line.is_empty() {
-                                eprintln!("[sidecar] {line}");
-                                let lower = line.to_lowercase();
-                                let is_error = lower.contains("error")
-                                    || lower.contains("traceback")
-                                    || lower.contains("exception")
-                                    || lower.contains("failed");
-                                if is_error {
-                                    if let Ok(mut guard) = app_handle.state::<SidecarError>().0.lock() {
-                                        *guard = Some(line.clone());
+                            let text = String::from_utf8_lossy(&b).to_string();
+                            for raw_line in text.lines() {
+                                let line = raw_line.trim();
+                                if !line.is_empty() {
+                                    eprintln!("[sidecar] {line}");
+                                    if let Ok(mut guard) =
+                                        app_handle.state::<SidecarLastStderr>().0.lock()
+                                    {
+                                        *guard = Some(line.to_string());
                                     }
-                                    let _ = app_handle.emit("sidecar-error", line);
+                                    let lower = line.to_lowercase();
+                                    let is_error = lower.contains("error")
+                                        || lower.contains("traceback")
+                                        || lower.contains("exception")
+                                        || lower.contains("failed")
+                                        || lower.contains("library not loaded")
+                                        || lower.contains("not valid for use in process");
+                                    if is_error {
+                                        if let Ok(mut guard) =
+                                            app_handle.state::<SidecarError>().0.lock()
+                                        {
+                                            *guard = Some(line.to_string());
+                                        }
+                                        let _ = app_handle.emit("sidecar-error", line.to_string());
+                                    }
                                 }
                             }
                         }
@@ -414,7 +441,25 @@ pub fn run() {
                             if intentional_shutdown {
                                 continue;
                             }
-                            let msg = format!("Sidecar terminated before startup: {:?}", s.code);
+                            let base = format!("Sidecar terminated before startup: {:?}", s.code);
+                            let detail = app_handle
+                                .state::<SidecarError>()
+                                .0
+                                .lock()
+                                .ok()
+                                .and_then(|guard| guard.clone())
+                                .or_else(|| {
+                                    app_handle
+                                        .state::<SidecarLastStderr>()
+                                        .0
+                                        .lock()
+                                        .ok()
+                                        .and_then(|guard| guard.clone())
+                                });
+                            let msg = detail
+                                .filter(|line| !line.trim().is_empty())
+                                .map(|line| format!("{base}. Last backend output: {line}"))
+                                .unwrap_or(base);
                             if let Ok(mut guard) = app_handle.state::<SidecarError>().0.lock() {
                                 *guard = Some(msg.clone());
                             }
@@ -434,7 +479,10 @@ pub fn run() {
     app.run(|app_handle, event| match event {
         RunEvent::WindowEvent { label, event, .. } => {
             eprintln!("[tauri] Window event on {label}: {event:?}");
-            if matches!(event, WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed) {
+            if matches!(
+                event,
+                WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
+            ) {
                 shutdown_sidecar(app_handle);
             }
         }

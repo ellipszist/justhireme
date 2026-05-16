@@ -95,6 +95,36 @@ jobs:
       - run: cd backend && uv run python -m pytest tests/test_import_boundaries.py -q
       - run: cd backend && uv run python -m pytest tests -q
 
+  macos-sidecar-smoke:
+    name: macOS sidecar smoke
+    runs-on: macos-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install backend dependencies
+        run: cd backend && uv sync --dev
+
+      - name: Build macOS sidecar
+        run: npm run build:sidecar
+
+      - name: Smoke macOS sidecar
+        run: npm run smoke:sidecar
+
   backend-domains:
     name: Backend domain tests
     runs-on: ubuntu-latest
