@@ -9,7 +9,7 @@ const repoUrl = "https://github.com/vasu-devs/JustHireMe";
 const coffeeUrl = "https://buymeacoffee.com/vasu.devs";
 const releaseNotice = {
   title: "Release assets are publishing.",
-  copy: "The newest build is being prepared by GitHub Actions. Download links fall back to the releases page until platform installers are available.",
+  copy: "The newest build is being prepared by GitHub Actions. Download buttons unlock when direct installer assets are available.",
 };
 
 const navItems = ["Workflow", "Why local", "Features", "Feedback", "Release"];
@@ -258,26 +258,48 @@ function useDownloadCounter() {
   return { downloads, configured, trackDownload };
 }
 
-function PlatformDownload({ platform, asset, releaseTag, releaseUrl, onDownload }) {
+function getFirstAvailableDownload(assets) {
+  for (const platform of platformOptions) {
+    const asset = assets?.[platform.id];
+    if (asset?.url) {
+      return { platformId: platform.id, asset };
+    }
+  }
+  return null;
+}
+
+function PlatformDownload({ platform, asset, releaseTag, onDownload }) {
   const available = Boolean(asset?.url);
-  const fallbackUrl = releaseUrl || `${repoUrl}/releases`;
-  const href = available ? asset.url : fallbackUrl;
-  const title = available ? `Download ${asset.name}` : `Open all JustHireMe releases for ${platform.label}`;
+  const title = available ? `Download ${asset.name}` : `${platform.label} installer is still publishing`;
   const content = (
     <>
-      <Icon name={available ? "download" : "external"} />
+      <Icon name={available ? "download" : "pulse"} />
       <span>
         <strong>{platform.label}</strong>
-        <small>{available ? (releaseTag || "Latest release") : "View releases"}</small>
+        <small>{available ? (releaseTag || "Latest release") : "Publishing"}</small>
       </span>
     </>
   );
 
+  if (!available) {
+    return (
+      <button
+        className={`platform-button tone-${platform.tone}`}
+        type="button"
+        disabled
+        title={title}
+      >
+        {content}
+      </button>
+    );
+  }
+
   return (
     <a
       className={`platform-button tone-${platform.tone}`}
-      href={href}
-      onClick={() => available && onDownload(platform.id)}
+      href={asset.url}
+      download={asset.name}
+      onClick={() => onDownload(platform.id)}
       title={title}
     >
       {content}
@@ -301,7 +323,7 @@ function ReleaseNoticeBanner({ compact = false, release }) {
       <span className="release-notice-icon"><Icon name="pulse" /></span>
       <div>
         <strong>{release?.available ? latestText : releaseNotice.title}</strong>
-        <p>{release?.available ? "Pick your platform below. If an installer is still missing, the link opens the GitHub release page." : releaseNotice.copy}</p>
+        <p>{release?.available ? "Pick an available platform below. Missing installers stay disabled until direct download assets publish." : releaseNotice.copy}</p>
       </div>
       <a className="button primary" href={release?.url || `${repoUrl}/releases`}>
         <Icon name="external" />
@@ -672,7 +694,9 @@ function App() {
   const hasReleaseAssets = platformOptions.some((platform) => release.assets?.[platform.id]?.url);
   const preferredPlatformId = React.useMemo(getPreferredPlatformId, []);
   const preferredAsset = release.assets?.[preferredPlatformId];
-  const downloadHref = preferredAsset?.url || release.url || `${repoUrl}/releases`;
+  const availableDownload = preferredAsset?.url
+    ? { platformId: preferredPlatformId, asset: preferredAsset }
+    : getFirstAvailableDownload(release.assets);
 
   return (
     <>
@@ -703,15 +727,28 @@ function App() {
               <span>Desktop-first</span>
             </div>
             <div className="hero-actions">
-              <a
-                className="button primary"
-                href={downloadHref}
-                onClick={() => preferredAsset?.url && trackDownload(preferredPlatformId)}
-                title={preferredAsset?.name ? `Download ${preferredAsset.name}` : "Open the latest JustHireMe release"}
-              >
-                <Icon name="download" />
-                Download
-              </a>
+              {availableDownload ? (
+                <a
+                  className="button primary"
+                  href={availableDownload.asset.url}
+                  download={availableDownload.asset.name}
+                  onClick={() => trackDownload(availableDownload.platformId)}
+                  title={`Download ${availableDownload.asset.name}`}
+                >
+                  <Icon name="download" />
+                  Download
+                </a>
+              ) : (
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled
+                  title="Installer assets are still publishing"
+                >
+                  <Icon name="pulse" />
+                  Download pending
+                </button>
+              )}
               <a className="button secondary" href={repoUrl}>
                 <Icon name="star" />
                 {github.stars == null ? "GitHub stars" : `${formatCount(github.stars)} stars`}
@@ -724,7 +761,6 @@ function App() {
                   platform={platform}
                   asset={release.assets?.[platform.id]}
                   releaseTag={release.tag}
-                  releaseUrl={release.url}
                   onDownload={trackDownload}
                 />
               ))}
@@ -732,7 +768,7 @@ function App() {
             {!hasReleaseAssets && (
               <div className="wait-note">
                 <span className="spinner" />
-                Installer assets are still publishing. Links open GitHub Releases for now.
+                Installer assets are still publishing. Download controls will stay disabled until direct assets are ready.
               </div>
             )}
             <div className="live-counter" title={configured ? "Backed by the deployed view counter" : "Connect Upstash Redis on Vercel to persist this counter"}>
@@ -870,7 +906,6 @@ function App() {
                 platform={platform}
                 asset={release.assets?.[platform.id]}
                 releaseTag={release.tag}
-                releaseUrl={release.url}
                 onDownload={trackDownload}
               />
             ))}
