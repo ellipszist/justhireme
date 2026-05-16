@@ -269,6 +269,22 @@ jobs:
           name: backend-sidecar-${{ matrix.platform }}
           path: src-tauri/resources/
 
+      - name: Prepare downloaded sidecar resources for Rust tests (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          triple="$(rustc -vV | awk '/host:/ {print $2}')"
+          sidecar="src-tauri/resources/backend/jhm-sidecar-next-${triple}"
+          mkdir -p src-tauri/resources/sidecar-internal
+          touch src-tauri/resources/sidecar-internal/.release-placeholder
+          if [ ! -f "$sidecar" ]; then
+            find src-tauri/resources -maxdepth 3 -type f -print
+            echo "Sidecar not found at $sidecar" >&2
+            exit 1
+          fi
+          chmod +x "$sidecar"
+
       - name: Run Rust unit tests
         run: cd src-tauri && cargo test --lib
 
